@@ -1,10 +1,10 @@
-# Autoinjector - Python 3 Version
+# Autoinjector 2.0
 -------------
-This branch is for the updated version of the Autoinjector that is compatible with Python 3.7+. The legacy (Python 2.7+) Autoinjector software and instructions are available in the [PVCAM branch.](https://github.com/bsbrl/autoinjector/tree/PVCAM#Autoinjector)
+This repo is developed to expand the functionality of [BSBRL autoinjector](https://github.com/bsbrl/autoinjector/tree/Python3). I intend to include features for automated 3D targetting of annotated injection regions, automated tissue detection, and potentially automated 3D pipette calibration.
 
 -------------
 
-The autoinjector is an automated computer vision guided platform to serially inject tissue with user parameter selection along a specified trajectory using a 3-axis micromanipulator. This read me takes you through the system requirements, install instructions, operating instructions, and how to customize the code based on different cameras. For a complete description of the device see the Autoinjector paper and supplementary materials. 
+The autoinjector is an automated computer vision guided platform to serially inject tissue with user parameter selection along a specified trajectory using a 4-axis micromanipulator. This read me takes you through the system requirements, install instructions, operating instructions, and how to customize the code based on different cameras. For a complete description of the device see the Autoinjector paper and supplementary materials. 
 
 1. [System Requirements](https://github.com/bsbrl/autoinjector/tree/Python3#system-requirements)
 	- [Hardware Requirements](https://github.com/bsbrl/autoinjector/tree/Python3#hardware-requirements)

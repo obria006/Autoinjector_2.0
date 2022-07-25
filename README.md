@@ -37,19 +37,21 @@ Currently, the autoinjector is only available with Windows support. The followin
 			- os
 			- user
 		- Matplotlib 3.5.2
-		- pymmcore 10.1.1.70.5
 		- NumPy 1.21.6
 		- OpenCV 4.5.5.64
-		- Pyserial 3.5
+		- pymmcore 10.1.1.70.5
 		- PyQt 6.3.0
-		- Sensapex 1.22.4
+		- Pyserial 3.5
+		- pywin32 304
+		- Sensapex 1.22.6
 		- scikit-image 0.19.2
 		- Scipy 1.7.3
 2. [Arduino 1.8+](https://github.com/bsbrl/autoinjector/tree/Python3#2-arduino)
 3. [Micromanager 2.0+](https://github.com/bsbrl/autoinjector/tree/Python3#3-micromanager)
 4. [Sensapex software](https://github.com/bsbrl/autoinjector/tree/Python3#4-sensapex-software)
-5. [Your camera driver](https://github.com/bsbrl/autoinjector/tree/Python3#5-your-camera-driver)
-6. [The Autoinjector software](https://github.com/bsbrl/autoinjector/tree/Python3#6-autoinjector-software)
+5. [ZEN Interface](https://github.com/bsbrl/autoinjector/tree/Python3#5-zen-interface)
+6. [Your camera driver](https://github.com/bsbrl/autoinjector/tree/Python3#6-your-camera-driver)
+7. [The Autoinjector software](https://github.com/bsbrl/autoinjector/tree/Python3#7-autoinjector-software)
 
 ## Install Instructions
 
@@ -79,18 +81,24 @@ Install the following software to operate the Autoinjector. It is recommended to
 			python -m pip install opencv-python==4.5.5.64
 			```
 
+		- [PyQt6](https://pypi.org/project/PyQt6/)
+			```
+			python -m pip install pyqt6==6.3
+			```
+
 		- [Pyserial](https://pypi.org/project/pyserial/3.5/)
 			```
 			python -m pip install pyserial==3.5
 			```
 
-		- [PyQt6](https://pypi.org/project/PyQt6/)
-			```
-			python -m pip install pyqt6==6.3
-			```
 		- [pymmcore](https://pypi.org/project/pymmcore/)
 			```
 			python -m pip install pymmcore==10.1.1.70.5
+			```
+
+		- [pywin32](https://pypi.org/project/pywin32/304/)
+			```
+			python -m pip install pywin32==304
 			```
 
 		- [scikit-image](http://scikit-image.org/docs/dev/install.html)
@@ -103,9 +111,9 @@ Install the following software to operate the Autoinjector. It is recommended to
 			python -m pip install scipy==1.7.3
 			```
 
-		- [Sensapex](https://pypi.org/project/sensapex/1.22.4/)
+		- [Sensapex](https://pypi.org/project/sensapex/1.22.6/)
 			```
-			python -m pip install sensapex==1.22.4
+			python -m pip install sensapex==1.22.6
 			```
 			**Note: Installing sensapex from pip will likely be an incomplete installation. You will likely need to follow the guidance in this [GitHub issue](https://github.com/sensapex/sensapex-py/issues/9) to properly install the Sensapex package. In short, you must download the 1.022 binaries from [Sensapex](http://dist.sensapex.com/misc/um-sdk/latest/) and place the "libum.dll" file in the senspex package folder containing "sensapex.py" (i.e. `/python-installation-path/Lib/site-packages/sensapex`)**
 
@@ -124,10 +132,16 @@ Install the following software to operate the Autoinjector. It is recommended to
 2. Follow the guidance in this [GitHub issue](https://github.com/sensapex/sensapex-py/issues/9) to properly install the Sensapex package.
 	* To complete the installation, you must download the 1.022 binaries from [Sensapex](http://dist.sensapex.com/misc/um-sdk/latest/) and place the "libum.dll" file in the senspex package folder containing "sensapex.py" (i.e. `/python-installation-path/Lib/site-packages/sensapex`)
 
-### 5. Your Camera Driver
+### 5. Zen interface
+* Note: Python interfaces with ZEN software to control the automated movements of the microscope. This interface is achieved via the COM interface in Zeiss's [Open Application Development](https://github.com/zeiss-microscopy/OAD). Further info/guidance for the COM interface is available on the [OAD GitHub](https://github.com/zeiss-microscopy/OAD/tree/master/Interfaces/COM_interface)*
+1. Download the "regScripting_Release.bat" file from Zeiss's [OAD GitHub](https://github.com/zeiss-microscopy/OAD/tree/master/Interfaces/COM_interface/Sourcecode_COM_Python). The file should be located in `/OAD/Interfaces/COM_interface/Sourcecode_COM_Python`.
+2. Modify the paths of `dll-1` and `dll-2` to match the installation paths on your system.
+3. Run "regScripting_Release.bat" as admin to make the ZEN commands available to Python. 
+
+### 6. Your Camera Driver
 Follow the instructions for your camera driver install. In our work we have used the [Hamamatsu Orca Camera](https://www.hamamatsu.com/us/en/product/type/C13440-20CU/index.html) and [Photometrics Cool Snap Dyno PVCam](https://www.photometrics.com/products/ccdcams/coolsnap-dyno.php)
 
-### 6. Autoinjector Software 
+### 7. Autoinjector Software 
 1. Download or clone this repository by clicking "Clone or Download" button on the top right area of the [Autoinjector Respository](https://github.com/bsbrl/autoinjector/tree/Python3) and extract the files. 
 
 2. Upload arduino code:

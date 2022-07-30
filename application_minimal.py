@@ -15,6 +15,7 @@ import serial
 import time
 import sys
 import numpy as np
+import traceback
 
 
 
@@ -433,18 +434,18 @@ class ControlWindow(QMainWindow):
             retval = msg.exec()
 
         except:
-             self.error_msg.setText("Please select magnification in Calibration window. \n Python error = \n" + str(sys.exc_info()[1]))
-             self.error_msg.exec()
-             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
+            self.error_msg.setText("Please select magnification in Calibration window. \n Python error = \n" + str(sys.exc_info()[1]))
+            self.error_msg.exec()
+            self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
 
     def motorcalib_step1(self):
         try:
             # gets position of tip if tip is selected. commands motors to move only in y direction
             self.tipposition1 = self.vidctrl.tipcircle
-            print('Add:',self.tipposition1.x(),self.tipposition1.y())
             movey = delmotor('y', 'increase', self.motorcalibdist, 1000,'relative',0)
             movey.start()
         except:
+            print(traceback.format_exc())
             self.error_msg.setText("Please click on the tip first and press step 1.1 calibration again. \n Python error = \n" + str(sys.exc_info()[1]))
             self.error_msg.exec()
             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
@@ -472,7 +473,7 @@ class ControlWindow(QMainWindow):
             ymotorline = np.sqrt((np.square(ycameraline) + np.square(xcameraline)))
             self.ymotortheta = np.arctan(float(xcameraline)/ycameraline)
             self.ymotorthetadeg =np.rad2deg(self.ymotortheta)
-            print(self.ymotortheta)
+            print('angle',self.ymotortheta, self.ymotorthetadeg)
             self.yscale = self.motorcalibdist/ymotorline
 
             #calculate total FOV of microscope in micromenters
@@ -502,10 +503,6 @@ class ControlWindow(QMainWindow):
             self.d = drawobj(self.vidctrl.frame)
             self.d.drawedgecoord1 = np.asarray(self.d.drawedgecoord1)
             self.vidctrl.edgearraypointer(self.d.drawedgecoord1)
-            print('pointer is')
-            print(self.d.drawedgecoord1)
-            np.set_printoptions(threshold=np.inf)
-            print(self.d.drawedgecoord1)
             
         except:
             self.error_msg.setText("CAM error, is camera plugged in? \nPython error = \n" + str(sys.exc_info()[1]))

@@ -402,21 +402,21 @@ class ControlWindow(QMainWindow):
     """
 
     def setmag(self):
-      items = ("4x", "10x", "20x","40x")
+        items = ("4x", "10x", "20x","40x")
         
-      item, ok = QInputDialog.getItem(self, "Select Magnification", 
-         "Select Magnification (Assuming 10x objective lens)", items, 0, False)
-      self.response_monitor_window.append(">> Magnification set to " +str(item))
+        item, ok = QInputDialog.getItem(self, "Select Magnification", 
+            "Select Magnification (Assuming 10x objective lens)", items, 0, False)
+        self.response_monitor_window.append(">> Magnification set to " +str(item))
 
-      if ok and item:
-         if item == "4x":
-            self.motorcalibdist = self.fourtyxmag*10
-         elif item == "10x":
-            self.motorcalibdist = self.fourtyxmag*4
-         elif item == "20x":
-            self.motorcalibdist = self.fourtyxmag*2
-         elif item == "40x":
-            self.motorcalibdist = self.fourtyxmag
+        if ok and item:
+            if item == "4x":
+                self.motorcalibdist = self.fourtyxmag*10
+            elif item == "10x":
+                self.motorcalibdist = self.fourtyxmag*4
+            elif item == "20x":
+                self.motorcalibdist = self.fourtyxmag*2
+            elif item == "40x":
+                self.motorcalibdist = self.fourtyxmag
 
     def showdialog(self):
         #calibrates motors 
@@ -441,12 +441,13 @@ class ControlWindow(QMainWindow):
         try:
             # gets position of tip if tip is selected. commands motors to move only in y direction
             self.tipposition1 = self.vidctrl.tipcircle
+            print('Add:',self.tipposition1.x(),self.tipposition1.y())
             movey = delmotor('y', 'increase', self.motorcalibdist, 1000,'relative',0)
             movey.start()
         except:
-             self.error_msg.setText("Please click on the tip first and press step 1.1 calibration again. \n Python error = \n" + str(sys.exc_info()[1]))
-             self.error_msg.exec()
-             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
+            self.error_msg.setText("Please click on the tip first and press step 1.1 calibration again. \n Python error = \n" + str(sys.exc_info()[1]))
+            self.error_msg.exec()
+            self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
             
     def motorcalib_step2(self):
         try:
@@ -461,9 +462,9 @@ class ControlWindow(QMainWindow):
             xcameraline = abs(x2 - x1)
             self.calculatetheta(xcameraline,ycameraline)
         except:
-             self.error_msg.setText("Please click on the tip now and press step 1.2 calibration again. \n Python error = \n" + str(sys.exc_info()[1]))
-             self.error_msg.exec()
-             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
+            self.error_msg.setText("Please click on the tip now and press step 1.2 calibration again. \n Python error = \n" + str(sys.exc_info()[1]))
+            self.error_msg.exec()
+            self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
 
     def calculatetheta(self,xcameraline,ycameraline):
         try:
@@ -485,9 +486,9 @@ class ControlWindow(QMainWindow):
             print("pixel size = " +str(self.pixelsize))
             
         except:
-             self.error_msg.setText("Error calculating angle. \n Python error = \n" + str(sys.exc_info()[1]))
-             self.error_msg.exec()
-             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
+            self.error_msg.setText("Error calculating angle. \n Python error = \n" + str(sys.exc_info()[1]))
+            self.error_msg.exec()
+            self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
 
     """
     ----------Desired Trajectory Control -----------------------------------------------------------------
@@ -545,9 +546,9 @@ class ControlWindow(QMainWindow):
             move = delmotor('x', 'increase', getpos.futuremotor, 1000,'absolute',0)
             move.start()
         except:
-             self.error_msg.setText("restest err. \nPython error = \n" + str(sys.exc_info()[1]))
-             self.error_msg.exec()
-             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
+            self.error_msg.setText("restest err. \nPython error = \n" + str(sys.exc_info()[1]))
+            self.error_msg.exec()
+            self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
         
     def get_current_pos_func(self):
         try:
@@ -559,9 +560,9 @@ class ControlWindow(QMainWindow):
             self.c1 = self.vidctrl.positionnow
             print('m1 real =' + str(self.m1))
         except:
-             self.error_msg.setText("restest err. \nPython error = \n" + str(sys.exc_info()[1]))
-             self.error_msg.exec()
-             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
+            self.error_msg.setText("restest err. \nPython error = \n" + str(sys.exc_info()[1]))
+            self.error_msg.exec()
+            self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
 
     def calculate_error_func(self):
         try:
@@ -584,9 +585,9 @@ class ControlWindow(QMainWindow):
                 self.errord = abs(int(self.m2[3])-int(self.m1[3]))
                 print(self.errord)
         except:
-             self.error_msg.setText("restest err. \nPython error = \n" + str(sys.exc_info()[1]))
-             self.error_msg.exec()
-             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
+            self.error_msg.setText("restest err. \nPython error = \n" + str(sys.exc_info()[1]))
+            self.error_msg.exec()
+            self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
 
     def go_to_centerpoint_func(self):
         try:
@@ -602,9 +603,9 @@ class ControlWindow(QMainWindow):
             move = delmotor('x', 'increase', m0, 1000,'absolute',0)
             move.start()
         except:
-             self.error_msg.setText("restest err. \nPython error = \n" + str(sys.exc_info()[1]))
-             self.error_msg.exec()
-             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
+            self.error_msg.setText("restest err. \nPython error = \n" + str(sys.exc_info()[1]))
+            self.error_msg.exec()
+            self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
 
     def add_restestpoint(self):
         #changes selected point
@@ -632,9 +633,9 @@ class ControlWindow(QMainWindow):
             self.motoryposition.setText(str(self.registerpositiony) +  self.mu +"m")
             self.motorzposition.setText(str(self.registerpositionz) +  self.mu +"m")
         except:
-             self.error_msg.setText("Manipulator error. \nPython error = \n" + str(sys.exc_info()[1]))
-             self.error_msg.exec()
-             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
+            self.error_msg.setText("Manipulator error. \nPython error = \n" + str(sys.exc_info()[1]))
+            self.error_msg.exec()
+            self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
 
     def advancemotor(self, axis, direction):
         try:
@@ -643,9 +644,9 @@ class ControlWindow(QMainWindow):
             move = delmotor(axis, direction, dist, speed,'relative',0)
             move.start()
         except:
-             self.error_msg.setText("Please enter an increment and speed in the manipulator window. \nPython error = \n" + str(sys.exc_info()[1]))
-             self.error_msg.exec()
-             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
+            self.error_msg.setText("Please enter an increment and speed in the manipulator window. \nPython error = \n" + str(sys.exc_info()[1]))
+            self.error_msg.exec()
+            self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
 
 
     """
@@ -668,9 +669,9 @@ class ControlWindow(QMainWindow):
             self.injector_compensate.start()
 
         except:
-             self.error_msg.setText("Error, did you enter all parameters? Is the arduino plugged in? \nPython error = \n" + str(sys.exc_info()[1]))
-             self.error_msg.exec()
-             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
+            self.error_msg.setText("Error, did you enter all parameters? Is the arduino plugged in? \nPython error = \n" + str(sys.exc_info()[1]))
+            self.error_msg.exec()
+            self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
         
     def runalongedgetrajectory(self):
         try:
@@ -714,6 +715,6 @@ if __name__ == "__main__":
     import sys
     app = QApplication(sys.argv)
     app.setApplicationName('MyWindow')
-    main = ControlWindow('HamamatsuHam_DCAM', 'HamamatsuHam', 'HamamatsuHam_DCAM', '2x2', 270, 256, 1.3, 'Off', 'com3', 40000)
+    main = ControlWindow('HamamatsuHam_DCAM', 'HamamatsuHam', 'HamamatsuHam_DCAM', '2x2', 180, 256, 1.3, 'Off', 'com3', 40000)
     main.show()
     sys.exit(app.exec())

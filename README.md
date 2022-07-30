@@ -163,13 +163,18 @@ Follow the instructions for your camera driver install. In our work we have used
 		This will launch the Autoinjector and report any problems to the command prompt if there is an error in the downloaded sotware. 
 
 ## Running the Application
-The coordinates between various hardware systems (the micromanipulator, the camera, and the microscope and accessories). When interfacing with the microscope and its accessories, the Autoinjector software establishes a COM connection with Zeiss ZEN software to coordinate hardware control. Usually, a user would also use the camera in the ZEN software, but we want to stream video to an external GUI (not in the ZEN software). Consequently, its important to follow the correct series of startup steps to prevent ZEN from "taking control" of the camera and preventing other applications (the Autoinjector GUI) from accessing it.
-	1. Turn on associated Zeiss hardware in the following order: SMC 2009 -> Focus Controller.2 -> Power Supply 232 -> Power button on microscope
-	2. Open ZEN pro software.
-	3. Conduct the initial calibration. **Ensure the motorized stage will not collide with anything!**
-	4. Turn on the camera power.
-	5. To run the program normally, click the file "launchapp.py" in the Autoinjector folder. This will launch the GUI and report any errors with hardware. For additional operating instructions see the user manual included with the publication.
- 
+When interfacing with the microscope and its accessories, the Autoinjector software establishes a COM connection with Zeiss ZEN software to coordinate hardware control. Usually, a user would also use the camera in the ZEN software, but we want to stream video to an external GUI (not in the ZEN software). Consequently, its important to follow the correct series of startup steps to prevent ZEN from "taking control" of the camera and preventing other applications (the Autoinjector GUI) from accessing it.
+
+1. Turn on associated Zeiss hardware in the following order: SMC 2009 -> Focus Controller.2 -> Power Supply 232 -> Power button on microscope
+
+2. Open ZEN pro software.
+
+3. Conduct the initial calibration. **Ensure the motorized stage will not collide with anything!**
+
+4. Turn on the camera power.
+
+5. To run the program normally, click the file "launchapp.py" in the Autoinjector folder. This will launch the GUI and report any errors with hardware. For additional operating instructions see the user manual included with the publication.
+
 
 ## License
 This work is lisenced under the MIT lisence. See LISENCE.txt for additional information.  

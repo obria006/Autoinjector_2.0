@@ -144,3 +144,4 @@ Lib
 *.cfg
 share
 *.ps1
+.vscode

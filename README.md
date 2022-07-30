@@ -6,12 +6,12 @@ This repo is developed to expand the functionality of [BSBRL autoinjector](https
 
 The autoinjector is an automated computer vision guided platform to serially inject tissue with user parameter selection along a specified trajectory using a 4-axis micromanipulator. This read me takes you through the system requirements, install instructions, operating instructions, and how to customize the code based on different cameras. For a complete description of the device see the Autoinjector paper and supplementary materials. 
 
-1. [System Requirements](https://github.com/bsbrl/autoinjector/tree/Python3#system-requirements)
-	- [Hardware Requirements](https://github.com/bsbrl/autoinjector/tree/Python3#hardware-requirements)
-	- [Software Requirements](https://github.com/bsbrl/autoinjector/tree/Python3#software-requirements)
-2. [Install Instructions](https://github.com/bsbrl/autoinjector/tree/Python3#install-instructions)
-3. [Running the Application](https://github.com/bsbrl/autoinjector/tree/Python3#running-the-application)
-4. [License](https://github.com/bsbrl/autoinjector/tree/Python3#license)
+1. [System Requirements](https://github.com/obria006/Autoinjector_2.0#system-requirements)
+	- [Hardware Requirements](https://github.com/obria006/Autoinjector_2.0#hardware-requirements)
+	- [Software Requirements](https://github.com/obria006/Autoinjector_2.0#software-requirements)
+2. [Install Instructions](https://github.com/obria006/Autoinjector_2.0#install-instructions)
+3. [Running the Application](https://github.com/obria006/Autoinjector_2.0#running-the-application)
+4. [License](https://github.com/obria006/Autoinjector_2.0#license)
 
 It is recommended to start in order. 
 
@@ -28,8 +28,8 @@ A complete list of available cameras can be found at micromanager's device suppo
 
 ### Software Requirements
 Currently, the autoinjector is only available with Windows support. The following libraries are used in the Autoinjector software (see install instructions for how to install). 
-1. [Python 3.7+](https://github.com/bsbrl/autoinjector/tree/Python3#1-python)
-	- [Packages](https://github.com/bsbrl/autoinjector/tree/Python3#python-packages)
+1. [Python 3.7+](https://github.com/obria006/Autoinjector_2.0#1-python)
+	- [Packages](https://github.com/obria006/Autoinjector_2.0#python-packages)
 		- pip 
 		- Native python libraties
 			- time
@@ -46,12 +46,12 @@ Currently, the autoinjector is only available with Windows support. The followin
 		- Sensapex 1.22.6
 		- scikit-image 0.19.2
 		- Scipy 1.7.3
-2. [Arduino 1.8+](https://github.com/bsbrl/autoinjector/tree/Python3#2-arduino)
-3. [Micromanager 2.0+](https://github.com/bsbrl/autoinjector/tree/Python3#3-micromanager)
-4. [Sensapex software](https://github.com/bsbrl/autoinjector/tree/Python3#4-sensapex-software)
-5. [ZEN Interface](https://github.com/bsbrl/autoinjector/tree/Python3#5-zen-interface)
-6. [Your camera driver](https://github.com/bsbrl/autoinjector/tree/Python3#6-your-camera-driver)
-7. [The Autoinjector software](https://github.com/bsbrl/autoinjector/tree/Python3#7-autoinjector-software)
+2. [Arduino 1.8+](https://github.com/obria006/Autoinjector_2.0#2-arduino)
+3. [Micromanager 2.0+](https://github.com/obria006/Autoinjector_2.0#3-micromanager)
+4. [Sensapex software](https://github.com/obria006/Autoinjector_2.0#4-sensapex-software)
+5. [ZEN Interface](https://github.com/obria006/Autoinjector_2.0#5-zen-interface)
+6. [Your camera driver](https://github.com/obria006/Autoinjector_2.0#6-your-camera-driver)
+7. [The Autoinjector software](https://github.com/obria006/Autoinjector_2.0#7-autoinjector-software)
 
 ## Install Instructions
 
@@ -133,7 +133,7 @@ Install the following software to operate the Autoinjector. It is recommended to
 	* To complete the installation, you must download the 1.022 binaries from [Sensapex](http://dist.sensapex.com/misc/um-sdk/latest/) and place the "libum.dll" file in the senspex package folder containing "sensapex.py" (i.e. `/python-installation-path/Lib/site-packages/sensapex`)
 
 ### 5. Zen interface
-* Note: Python interfaces with ZEN software to control the automated movements of the microscope. This interface is achieved via the COM interface in Zeiss's [Open Application Development](https://github.com/zeiss-microscopy/OAD). Further info/guidance for the COM interface is available on the [OAD GitHub](https://github.com/zeiss-microscopy/OAD/tree/master/Interfaces/COM_interface)*
+*Note: Python interfaces with ZEN software to control the automated movements of the microscope. This interface is achieved via the COM interface in Zeiss's [Open Application Development](https://github.com/zeiss-microscopy/OAD). Further info/guidance for the COM interface is available on the [OAD GitHub](https://github.com/zeiss-microscopy/OAD/tree/master/Interfaces/COM_interface)*
 1. Download the "regScripting_Release.bat" file from Zeiss's [OAD GitHub](https://github.com/zeiss-microscopy/OAD/tree/master/Interfaces/COM_interface/Sourcecode_COM_Python). The file should be located in `/OAD/Interfaces/COM_interface/Sourcecode_COM_Python`.
 2. Modify the paths of `dll-1` and `dll-2` to match the installation paths on your system.
 3. Run "regScripting_Release.bat" as admin to make the ZEN commands available to Python. 
@@ -142,7 +142,7 @@ Install the following software to operate the Autoinjector. It is recommended to
 Follow the instructions for your camera driver install. In our work we have used the [Hamamatsu Orca Camera](https://www.hamamatsu.com/us/en/product/type/C13440-20CU/index.html) and [Photometrics Cool Snap Dyno PVCam](https://www.photometrics.com/products/ccdcams/coolsnap-dyno.php)
 
 ### 7. Autoinjector Software 
-1. Download or clone this repository by clicking "Clone or Download" button on the top right area of the [Autoinjector Respository](https://github.com/bsbrl/autoinjector/tree/Python3) and extract the files. 
+1. Download or clone this repository by clicking "Clone or Download" button on the top right area of the [Autoinjector Respository](https://github.com/obria006/Autoinjector_2.0) and extract the files. 
 
 2. Upload arduino code:
 	1. Once the arduino is installed, connect your arduino to your computer via USB.
@@ -162,8 +162,14 @@ Follow the instructions for your camera driver install. In our work we have used
 		```
 		This will launch the Autoinjector and report any problems to the command prompt if there is an error in the downloaded sotware. 
 
-## Running the Application 
- To run the program normally, click the file "launchapp.py" in the Autoinjector folder. This will launch the GUI and report any errors with hardware. For additional operating instructions see the user manual included with the publication.
+## Running the Application
+The coordinates between various hardware systems (the micromanipulator, the camera, and the microscope and accessories). When interfacing with the microscope and its accessories, the Autoinjector software establishes a COM connection with Zeiss ZEN software to coordinate hardware control. Usually, a user would also use the camera in the ZEN software, but we want to stream video to an external GUI (not in the ZEN software). Consequently, its important to follow the correct series of startup steps to prevent ZEN from "taking control" of the camera and preventing other applications (the Autoinjector GUI) from accessing it.
+	1. Turn on associated Zeiss hardware in the following order: SMC 2009 -> Focus Controller.2 -> Power Supply 232 -> Power button on microscope
+	2. Open ZEN pro software.
+	3. Conduct the initial calibration. **Ensure the motorized stage will not collide with anything!**
+	4. Turn on the camera power.
+	5. To run the program normally, click the file "launchapp.py" in the Autoinjector folder. This will launch the GUI and report any errors with hardware. For additional operating instructions see the user manual included with the publication.
+ 
 
 ## License
 This work is lisenced under the MIT lisence. See LISENCE.txt for additional information.  

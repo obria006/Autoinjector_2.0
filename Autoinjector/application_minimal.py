@@ -10,12 +10,7 @@ from src.motorcontrol.motorlocationThread import motorpositionThread
 from src.motorcontrol.trajectorythread_minimal import trajectoryimplementor
 from src.pythonarduino.injectioncontrolmod import injection
 from src.resolutiontest.gotoposition import GetPos
-import cv2
-import serial
-import time
-import sys
-import numpy as np
-import traceback
+from src.miscellaneous.standard_logger import StandardLogger as logr
 
 
 
@@ -30,6 +25,7 @@ class ControlWindow(QMainWindow):
 
     def __init__(self,cam,brand,val,bins,rot,imagevals,scale,restest,com,fourtyxcalibdist, parent=None):
         super().__init__(parent)
+        self.logger = logr(__name__)
         self._central_widget = QWidget(self)
         self.setCentralWidget(self._central_widget)
         QApplication.setStyle(QStyleFactory.create("Fusion"))

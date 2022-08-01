@@ -86,6 +86,7 @@ class vidcontrols(QThread):
         if self.cap.getRemainingImageCount() > 0:
             self.frame = self.cap.getLastImage()
             self.frame = img_as_ubyte(self.frame) #convert to 8 bit from 16 bit
+            self.unmod_frame = np.copy(self.frame)
 
             if self.rot > 0: #rotate 
                 rows,cols = self.frame.shape 

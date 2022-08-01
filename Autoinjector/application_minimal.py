@@ -1,8 +1,16 @@
 
 # -*- coding: utf-8 -*-
+import cv2
+import serial
+import time
+import os
+import sys
+import numpy as np
+import traceback
 from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
 from PyQt6.QtGui import QIcon
+import pandas as pd
 from src.imageprocessing.videocontrolsThread import vidcontrols as vc
 from src.imageprocessing.draw import drawobj
 from src.motorcontrol.altermotorposition import delmotor
@@ -12,6 +20,7 @@ from src.pythonarduino.injectioncontrolmod import injection
 from src.resolutiontest.gotoposition import GetPos
 from src.cfg_mgmt.cfg_mngr import CfgManager
 from src.miscellaneous.standard_logger import StandardLogger as logr
+from src.data_generation.data_generators import PipTipData
 
 
 
@@ -445,11 +454,30 @@ class ControlWindow(QMainWindow):
             self.error_msg.setText("Please select magnification in Calibration window. \n Python error = \n" + str(sys.exc_info()[1]))
             self.error_msg.exec()
             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
+    
+    def save_pip_cal_data(self, tip_position):
+        '''
+        Save image from camera and annotated coordinates of a mouse click
+
+        Arguments:
+            tip_position: QMouseEvent with .x() and .y() methods coorespond to
+                x and y coordinates of annotation on image.
+        '''
+        
+        # Directories for data
+        data_dir = self.cfg.cfg_gui.values['data directory'].replace('\\','/')
+        pip_data_dir = f"{data_dir}/pipette/calibration_images"
+        # Instance of object to save data
+        pip_data_saver = PipTipData(pip_data_dir=pip_data_dir)
+        image = np.copy(self.vidctrl.unmod_frame)
+        tip_dict = {'x':tip_position.x(), 'y':tip_position.y()}
+        pip_data_saver.save_data(image=image, tip_position=tip_dict)
 
     def motorcalib_step1(self):
         try:
             # gets position of tip if tip is selected. commands motors to move only in y direction
             self.tipposition1 = self.vidctrl.tipcircle
+            self.save_pip_cal_data(self.tipposition1)
             movey = delmotor('y', 'increase', self.motorcalibdist, 1000,'relative',0)
             movey.start()
         except:
@@ -461,6 +489,8 @@ class ControlWindow(QMainWindow):
     def motorcalib_step2(self):
         try:
             self.tipposition2 = self.vidctrl.tipcircle
+            # gets position of tip if tip is selected. commands motors to move only in y direction
+            self.save_pip_cal_data(self.tipposition2)
             if self.tipposition2 == self.tipposition1:
                 s = l
             y1 = self.tipposition1.y()

@@ -1,9 +1,8 @@
 from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
 import os, sys, time
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-from sensapex_utils.sensapex_utils import SensapexDevice, UMP
-from .injectioncontrolmod import injection 
+from src.sensapex_utils.sensapex_utils import SensapexDevice, UMP
+from src.motorcontrol.injectioncontrolmod import injection 
 import numpy as np
 
 class motorpositionThread(QThread):

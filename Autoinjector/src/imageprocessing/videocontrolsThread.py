@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import time
 import pymmcore
-from .restestgrid import ResTest
+from src.imageprocessing.restestgrid import ResTest
 import os
 import sys
 from skimage.util import img_as_ubyte

@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
 import os, sys, time
-from .motorcontrol_thread import motorcontroller_improved as mci
+from src.motorcontrol.motorcontrol_thread import motorcontroller_improved as mci
 import numpy as np
 import traceback
 

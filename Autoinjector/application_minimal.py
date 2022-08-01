@@ -3,13 +3,13 @@
 from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
 from PyQt6.QtGui import QIcon
-from imageprocessing.videocontrolsThread import vidcontrols as vc
-from imageprocessing.draw import drawobj
-from motorcontrol.altermotorposition import delmotor
-from motorcontrol.motorlocationThread import motorpositionThread
-from motorcontrol.trajectorythread_minimal import trajectoryimplementor
-from pythonarduino.injectioncontrolmod import injection
-from resolutiontest.gotoposition import GetPos
+from src.imageprocessing.videocontrolsThread import vidcontrols as vc
+from src.imageprocessing.draw import drawobj
+from src.motorcontrol.altermotorposition import delmotor
+from src.motorcontrol.motorlocationThread import motorpositionThread
+from src.motorcontrol.trajectorythread_minimal import trajectoryimplementor
+from src.pythonarduino.injectioncontrolmod import injection
+from src.resolutiontest.gotoposition import GetPos
 import cv2
 import serial
 import time

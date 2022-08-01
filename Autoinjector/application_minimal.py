@@ -10,6 +10,7 @@ from src.motorcontrol.motorlocationThread import motorpositionThread
 from src.motorcontrol.trajectorythread_minimal import trajectoryimplementor
 from src.pythonarduino.injectioncontrolmod import injection
 from src.resolutiontest.gotoposition import GetPos
+from src.cfg_mgmt.cfg_mngr import CfgManager
 from src.miscellaneous.standard_logger import StandardLogger as logr
 
 
@@ -63,6 +64,7 @@ class ControlWindow(QMainWindow):
         self.vidctrl.start()
         self.file_selected = 0
         self.restest = restest
+        self.setup_gui()
         self.GUIsetup()
 
         #initiate parameters for injection
@@ -73,6 +75,16 @@ class ControlWindow(QMainWindow):
         self.overrideon = 'No'
 
         self.i = 0 #restest point number
+
+    def setup_gui(self):
+        ''' Function for initializing the GUI '''
+        # Load the configuration values
+        self.get_gui_cfg()
+    
+    def get_gui_cfg(self):
+        ''' Loads the configuration values for the GUI '''
+        self.cfg = CfgManager()
+        self.cfg.cfg_from_pointer()
     
     # ---------- Initialize GUI -------------------------------------------------------
     def GUIsetup(self):

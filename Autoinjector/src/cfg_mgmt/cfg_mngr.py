@@ -7,6 +7,33 @@ from src.cfg_mgmt.cfg_io import YamlIOHandler
 from src.miscellaneous import validify as val
 from src.miscellaneous.standard_logger import StandardLogger as logr
 
+class CfgManager():
+    '''
+    Class that coordiantes CfgPointer and CfgGUI
+    '''
+
+    def __init__(self):
+        self.logger = logr(__name__)
+        self.cfg_ptr = CfgPointer()
+        self.cfg_gui = CfgGUI()
+
+    def cfg_from_pointer(self):
+        '''
+        Load the configuration from the pointer. If "defaults" = true in
+        pointer, then loads default values
+        '''
+        # Load the pointer file
+        self.cfg_ptr.load_pointer()
+        # Use cfg defaults if desired
+        if self.cfg_ptr.ptr_data["Use default config"] is True:
+            self.cfg_gui.default_cfg()
+        # Otherwise load values from config file
+        else:
+            cfg_path = self.cfg_ptr.ptr_data["Latest config path"]
+            cfg_fname = os.path.basename(cfg_path)
+            self.cfg_gui.load_cfg(cfg_fname)
+        
+        
 class CfgPointer():
     '''
     Class that points to the GUI configuration.
@@ -16,14 +43,14 @@ class CfgPointer():
 
     def __init__(self):
         ''' Initializes pointer from filepath '''
+        self.logger = logr(__name__)
         # Confirm a configs directory exists
-        ptr_path = "configs/pointer.yaml"
+        ptr_path = "Autoinjector/configs/pointer.yaml"
         ptr_dir = Path(ptr_path).parent.absolute()
         if os.path.isdir(ptr_dir) is False:
             self.logger.critical(f'No "configs" directory found at: {ptr_dir}')
             raise IOError(f'No "configs" directory found at: {ptr_dir}')
         # Set attributes
-        self.logger = logr(__name__)
         self.ptr_path = ptr_path
         self.ptr_data = {"Latest config path":"",
                         "Use default config":True}
@@ -84,16 +111,15 @@ class CfgGUI():
 
     def __init__(self):
         # Confirm a configs directory exists
-        cfg_dir = Path("configs/pointer.yaml").parent.absolute()
+        self.logger = logr(__name__)
+        cfg_dir = Path("Autoinjector/configs/pointer.yaml").parent.absolute()
         if os.path.isdir(cfg_dir) is False:
             self.logger.critical(f'No "configs" directory found at: {cfg_dir}')
             raise IOError(f'No "configs" directory found at: {cfg_dir}')
         # Set attributes
-        self.logger = logr(__name__)
         self.cfg_dir = cfg_dir
         self.cfg_io = YamlIOHandler()
         self.values = {}
-        self.default_cfg()
 
     def default_cfg(self):
         ''' Set config values to the default values '''

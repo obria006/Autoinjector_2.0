@@ -8,6 +8,11 @@ class StandardLogger(logging.Logger):
     Defines a standard logger that can be used for most in autoinjector GUI.
     Streams all logger levels to the console, and streams warnings and above
     to a file. File is located at logs/YYYYMMDD.log
+
+    Usage:
+        # In the script/function that you want logging
+        from src.miscellaneous.standard_logger import StandardLogger
+        logger = StandardLogger(__name__)
     '''
 
     def __init__(self, name:str):
@@ -31,7 +36,7 @@ class StandardLogger(logging.Logger):
         s_handler.setFormatter(s_formatter)
         self.addHandler(s_handler)
         now = datetime.now().strftime("%Y%m%d")
-        log_path = f"logs/{now}.log"
+        log_path = f"Autoinjector/logs/{now}.log"
         f_handler = logging.FileHandler(log_path)
         f_handler.setLevel(logging.WARNING)
         f_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s: %(message)s')

@@ -20,7 +20,7 @@ from src.pythonarduino.injectioncontrolmod import injection
 from src.resolutiontest.gotoposition import GetPos
 from src.cfg_mgmt.cfg_mngr import CfgManager
 from src.miscellaneous.standard_logger import StandardLogger as logr
-from src.data_generation.data_generators import PipTipData
+from src.data_generation.data_generators import PipTipData, TissueEdgeData
 
 
 
@@ -455,13 +455,12 @@ class ControlWindow(QMainWindow):
             self.error_msg.exec()
             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
     
-    def save_pip_cal_data(self, tip_position):
+    def save_pip_cal_data(self, tip_dict:dict):
         '''
         Save image from camera and annotated coordinates of a mouse click
 
         Arguments:
-            tip_position: QMouseEvent with .x() and .y() methods coorespond to
-                x and y coordinates of annotation on image.
+            tip_dict: {'x':x, 'y':y} x and y coordinates of tip annotation on image.
         '''
         
         # Directories for data
@@ -470,14 +469,14 @@ class ControlWindow(QMainWindow):
         # Instance of object to save data
         pip_data_saver = PipTipData(pip_data_dir=pip_data_dir)
         image = np.copy(self.vidctrl.unmod_frame)
-        tip_dict = {'x':tip_position.x(), 'y':tip_position.y()}
         pip_data_saver.save_data(image=image, tip_position=tip_dict)
 
     def motorcalib_step1(self):
         try:
             # gets position of tip if tip is selected. commands motors to move only in y direction
             self.tipposition1 = self.vidctrl.tipcircle
-            self.save_pip_cal_data(self.tipposition1)
+            tip_dict = {'x':self.tipposition1.x(), 'y':self.tipposition1.y()}
+            self.save_pip_cal_data(tip_dict)
             movey = delmotor('y', 'increase', self.motorcalibdist, 1000,'relative',0)
             movey.start()
         except:
@@ -490,7 +489,8 @@ class ControlWindow(QMainWindow):
         try:
             self.tipposition2 = self.vidctrl.tipcircle
             # gets position of tip if tip is selected. commands motors to move only in y direction
-            self.save_pip_cal_data(self.tipposition2)
+            tip_dict = {'x':self.tipposition2.x(), 'y':self.tipposition2.y()}
+            self.save_pip_cal_data(tip_dict)
             if self.tipposition2 == self.tipposition1:
                 s = l
             y1 = self.tipposition1.y()
@@ -533,6 +533,23 @@ class ControlWindow(QMainWindow):
     ----------Desired Trajectory Control -----------------------------------------------------------------
     This ontrols the detection of the edge of the tissue, and the tip of the pipette
     """   
+    def save_tiss_anot_data(self, raw_annot:np.ndarray, interpolate_annot:np.ndarray):
+        '''
+        Save image from camera and annotated coordinates of tissue trajectory
+
+        Arguments:
+            raw_annot (np.ndarray): nx2 array of drawn annotation coord. nth row = [x_n, y_n]
+            interpolate_annot (np.ndarray): nx2 array of interpolated annotation coord. nth row = [x_n, y_n]
+        '''
+        
+        # Directories for data
+        data_dir = self.cfg.cfg_gui.values['data directory'].replace('\\','/')
+        tis_data_dir = f"{data_dir}/tissue/annotation_images"
+        # Instance of object to save data
+        tis_data_saver = TissueEdgeData(tis_data_dir=tis_data_dir)
+        image = np.copy(self.vidctrl.unmod_frame)
+        tis_data_saver.save_data(image=image, raw_annot=raw_annot, interpolate_annot=interpolate_annot)
+
 
     def drawedge(self):
         
@@ -541,6 +558,9 @@ class ControlWindow(QMainWindow):
             self.d = drawobj(self.vidctrl.frame)
             self.d.drawedgecoord1 = np.asarray(self.d.drawedgecoord1)
             self.vidctrl.edgearraypointer(self.d.drawedgecoord1)
+            raw = np.asarray(self.d.drawedgecoord)
+            inter = np.asarray(self.d.drawedgecoord1)
+            self.save_tiss_anot_data(raw_annot=raw, interpolate_annot=inter)
             
         except:
             self.error_msg.setText("CAM error, is camera plugged in? \nPython error = \n" + str(sys.exc_info()[1]))

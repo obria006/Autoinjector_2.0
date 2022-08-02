@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 from src.imageprocessing.image_io import save_image
 from src.miscellaneous.standard_logger import StandardLogger as logr
+from src.miscellaneous import validify as val
 
 class PipTipData():
     ''' Class handles coordianted saving of pipette image and annotated tip '''
@@ -18,7 +19,9 @@ class PipTipData():
         Arguments:
             pip_data_dir (str): Parent directory of where to save data
         '''
+
         self.logger = logr(__name__)
+        
         # Ensure parent directory exists
         if os.path.isdir(pip_data_dir) is False:
             self.logger.error(f"Pipette image directory doesn't exist: {pip_data_dir}")
@@ -44,12 +47,20 @@ class PipTipData():
             image (np.ndarray): Image that was saved
             tip_position (dict): Coords of tip annotation in image {'x':x, 'y':y}
         '''
+
+        # Validate arguments
+        if val.is_of_types(image, [np.ndarray]) is False:
+            raise TypeError('image must be an np.ndarray')
+        if val.is_of_types(tip_position, [dict]) is False:
+            raise TypeError('tip_postition must be a dict')
         tip_keys = list(tip_position.keys())
         if 'x' not in tip_keys or 'y' not in tip_keys:
             raise ValueError(f"tip_position must 'x' an 'y' keys. {tip_keys} is invalid.")
+
         # Time of saving
         ymd_hms = datetime.now().strftime("%Y%m%d_%H%M%S")
         ymd = datetime.now().strftime("%Y%m%d")
+
         # Save the pipette image
         try:
             img_path = f"{self.pip_tip_dir}/{ymd_hms}_pipette.jpeg"
@@ -60,7 +71,7 @@ class PipTipData():
         else:
             self.logger.info(f'Saved pipette image: {img_path}')
 
-        # Save the pipette data
+        # Save the pipette data for individual image
         try:
             tip_df = self._make_coord_df(img_path, image, tip_position)
             coord_path = f"{self.pip_tip_dir}/{ymd_hms}_coordinates.csv"
@@ -71,7 +82,7 @@ class PipTipData():
         else:
             self.logger.info(f'Saved pipette coords: {coord_path}')
 
-        # Save the pipette to master file
+        # Save the pipette to master file (compilation of )
         try:
             tip_df = self._make_coord_df(img_path, image, tip_position)
             coord_path = f"{self.pip_tip_dir}/{ymd}_master_coordinates.csv"
@@ -97,12 +108,16 @@ class PipTipData():
         Returns:
             Dataframe of [image path, x, y, norm x, norm y, img width, img height]
         '''
+        # Get x and y coordinates of annoation
         x = tip_position['x']
         y = tip_position['y']
-        rows = image.shape[1]
-        cols = image.shape[0]
+        # Get image size
+        rows = image.shape[0]
+        cols = image.shape[1]
+        # Normalize the x and y coords by image size
         norm_x = x / cols
         norm_y = y / rows
+        # Make data dict and DataFrame
         data = {'filepath':[img_path],
                 'x':[x],
                 'y':[y],

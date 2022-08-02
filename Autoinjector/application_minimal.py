@@ -1,12 +1,13 @@
 
 # -*- coding: utf-8 -*-
-import cv2
-import serial
 import time
 import os
 import sys
-import numpy as np
 import traceback
+from functools import partial
+import cv2
+import serial
+import numpy as np
 from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
 from PyQt6.QtGui import QIcon
@@ -84,18 +85,43 @@ class ControlWindow(QMainWindow):
         self.overrideon = 'No'
 
         self.i = 0 #restest point number
-
+    
+    # ---------- Initialize GUI -------------------------------------------------------
     def setup_gui(self):
         ''' Function for initializing the GUI '''
         # Load the configuration values
         self.get_gui_cfg()
+        self.data_generator_widgets()
     
     def get_gui_cfg(self):
         ''' Loads the configuration values for the GUI '''
         self.cfg = CfgManager()
         self.cfg.cfg_from_pointer()
-    
-    # ---------- Initialize GUI -------------------------------------------------------
+
+    def data_generator_widgets(self):
+        ''' 
+        Creates widgets for data generation 
+        
+        Workflow:
+        wid1 = QtWidget
+        wid2 = QtWidget
+        layout = QTTYPELAYOUT
+        layout.addWidget(wid1)
+        layout.addWidget(wid2)
+        groupbox = QGroupBox
+        groupbox.setLayout(layout)
+        masterlayout.addWidget(groupbox)
+        '''
+        self.save_tip_annot = QCheckBox("Save tip annotation")
+        self.save_tip_annot.setChecked(True)
+        self.save_tiss_annot = QCheckBox("Save tissue annotation")
+        self.save_tiss_annot.setChecked(True)
+        data_gen_layout = QVBoxLayout()
+        data_gen_layout.addWidget(self.save_tip_annot)
+        data_gen_layout.addWidget(self.save_tiss_annot)
+        self.data_gen_group = QGroupBox('GUI Data Acquisition')
+        self.data_gen_group.setLayout(data_gen_layout)
+
     def GUIsetup(self):
         #Create widgets for image display
         self.image_analysis_window_box = QVBoxLayout()
@@ -301,6 +327,7 @@ class ControlWindow(QMainWindow):
         self.leftside.addWidget(groupbox_motorcalib_window)
         self.leftside.addWidget(groupbox_image_processing_windowmanual)
         self.leftside.addWidget(groupbox_misc)
+        self.leftside.addWidget(self.data_gen_group)
 
         if self.restest == "On":
             #resolution test
@@ -413,6 +440,27 @@ class ControlWindow(QMainWindow):
     def updateoverride(self,text):
         self.overrideon = str(text)
         self.response_monitor_window.append(">> Override calibrated settings for resolution test set to ON.")
+    
+    """
+    ------------------------ Data Generation Controls -------------------------
+    Functions control saving images from data
+    """
+    def acquire_tip_data(self, tip_position):
+        '''
+        Queries whether checkbox selected to save tip data, and saves data if checked
+        '''
+        if self.save_tip_annot.isChecked():
+            tip_dict = {'x':tip_position.x(), 'y':tip_position.y()}
+            self.save_pip_cal_data(tip_dict)
+
+    def acquire_tissue_data(self, raw_edge_coord, inter_edge_cood):
+        '''
+        Queries whether checkbox selected to save tissue data, and saves data if checked
+        '''
+        if self.save_tiss_annot.isChecked():
+            raw = np.asarray(raw_edge_coord)
+            inter = np.asarray(inter_edge_coord)
+            self.save_tiss_anot_data(raw_annot=raw, interpolate_annot=inter)
 
     """
     ----------Calibration Controls -----------------------------------------------------------------
@@ -475,8 +523,9 @@ class ControlWindow(QMainWindow):
         try:
             # gets position of tip if tip is selected. commands motors to move only in y direction
             self.tipposition1 = self.vidctrl.tipcircle
-            tip_dict = {'x':self.tipposition1.x(), 'y':self.tipposition1.y()}
-            self.save_pip_cal_data(tip_dict)
+            if self.save_tip_annot.isChecked():
+                tip_dict = {'x':self.tipposition1.x(), 'y':self.tipposition1.y()}
+                self.save_pip_cal_data(tip_dict)
             movey = delmotor('y', 'increase', self.motorcalibdist, 1000,'relative',0)
             movey.start()
         except:
@@ -489,8 +538,9 @@ class ControlWindow(QMainWindow):
         try:
             self.tipposition2 = self.vidctrl.tipcircle
             # gets position of tip if tip is selected. commands motors to move only in y direction
-            tip_dict = {'x':self.tipposition2.x(), 'y':self.tipposition2.y()}
-            self.save_pip_cal_data(tip_dict)
+            if self.save_tip_annot.isChecked():
+                tip_dict = {'x':self.tipposition2.x(), 'y':self.tipposition2.y()}
+                self.save_pip_cal_data(tip_dict)
             if self.tipposition2 == self.tipposition1:
                 s = l
             y1 = self.tipposition1.y()
@@ -558,9 +608,10 @@ class ControlWindow(QMainWindow):
             self.d = drawobj(self.vidctrl.frame)
             self.d.drawedgecoord1 = np.asarray(self.d.drawedgecoord1)
             self.vidctrl.edgearraypointer(self.d.drawedgecoord1)
-            raw = np.asarray(self.d.drawedgecoord)
-            inter = np.asarray(self.d.drawedgecoord1)
-            self.save_tiss_anot_data(raw_annot=raw, interpolate_annot=inter)
+            if self.save_tiss_annot.isChecked():
+                raw = np.asarray(self.d.drawedgecoord)
+                inter = np.asarray(self.d.drawedgecoord1)
+                self.save_tiss_anot_data(raw_annot=raw, interpolate_annot=inter)
             
         except:
             self.error_msg.setText("CAM error, is camera plugged in? \nPython error = \n" + str(sys.exc_info()[1]))

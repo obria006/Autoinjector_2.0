@@ -86,13 +86,13 @@ class vidcontrols(QThread):
         if self.cap.getRemainingImageCount() > 0:
             self.frame = self.cap.getLastImage()
             self.frame = img_as_ubyte(self.frame) #convert to 8 bit from 16 bit
-            self.unmod_frame = np.copy(self.frame)
 
             if self.rot > 0: #rotate 
                 rows,cols = self.frame.shape 
                 M = cv2.getRotationMatrix2D((cols/2,rows/2),self.rot,1)
                 self.frame = cv2.warpAffine(self.frame,M,(cols,rows))
 
+            self.unmod_frame = np.copy(self.frame)
             self.width = int(self.frame.shape[0])
             self.height = int(self.frame.shape[1])
 

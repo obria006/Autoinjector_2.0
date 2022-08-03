@@ -22,6 +22,7 @@ from src.resolutiontest.gotoposition import GetPos
 from src.cfg_mgmt.cfg_mngr import CfgManager
 from src.miscellaneous.standard_logger import StandardLogger as logr
 from src.data_generation.data_generators import PipTipData, TissueEdgeData
+from src.ZEN_interface.ZEN_App import ZenGroup
 
 
 
@@ -75,7 +76,6 @@ class ControlWindow(QMainWindow):
         self.file_selected = 0
         self.restest = restest
         self.setup_gui()
-        self.GUIsetup()
 
         #initiate parameters for injection
         self.ninjection = 0 
@@ -92,6 +92,15 @@ class ControlWindow(QMainWindow):
         # Load the configuration values
         self.get_gui_cfg()
         self.data_generator_widgets()
+        self.zen_group = ZenGroup()
+        self.zen_group.obj_changed.connect(self.obj_changed)
+        self.GUIsetup()
+        self.init_from_ZEN()
+
+    def obj_changed(self, mag_level:float):
+        if mag_level in list(self.zen_group.zen.objectives['magnification']):
+            self.motorcalibdist = self.fourtyxmag*(40/mag_level)
+            self.response_monitor_window.append(">> Magnification set to " +str(mag_level))
     
     def get_gui_cfg(self):
         ''' Loads the configuration values for the GUI '''
@@ -122,6 +131,13 @@ class ControlWindow(QMainWindow):
         self.data_gen_group = QGroupBox('GUI Data Acquisition')
         self.data_gen_group.setLayout(data_gen_layout)
 
+    def init_from_ZEN(self):
+        # Set magnification
+        mag_level = self.zen_group.zen.get_obj_info('magnification')
+        if mag_level in list(self.zen_group.zen.objectives['magnification']):
+            self.motorcalibdist = self.fourtyxmag*(40/mag_level)
+            self.response_monitor_window.append(">> Magnification set to " +str(mag_level))
+
     def GUIsetup(self):
         #Create widgets for image display
         self.image_analysis_window_box = QVBoxLayout()
@@ -131,9 +147,9 @@ class ControlWindow(QMainWindow):
         groupbox_image_analysis_window.setLayout(self.image_analysis_window_box)
 
         #motor calibration controls
-        magnification = QPushButton("Magnification")
-        magnification.clicked.connect(self.setmag)
-        instruct0 = QLabel("Step 0")
+        # magnification = QPushButton("Magnification")
+        # magnification.clicked.connect(self.setmag)
+        # instruct0 = QLabel("Step 0")
         instruct1 = QLabel("Step 1")
         instruct2 = QLabel("Pipette \n Angle")
         motorcalib_window_calibutton = QPushButton("Step 1.1", self)
@@ -144,8 +160,8 @@ class ControlWindow(QMainWindow):
         motorcalib_window_pipetteangle_button = QPushButton("Set Angle", self)
         motorcalib_window_pipetteangle_button.clicked.connect(self.setpipetteangle)
         motorcalib_window = QGridLayout()
-        motorcalib_window.addWidget(instruct0,0,0)
-        motorcalib_window.addWidget(magnification,0,1,1,2)
+        # motorcalib_window.addWidget(instruct0,0,0)
+        # motorcalib_window.addWidget(magnification,0,1,1,2)
         motorcalib_window.addWidget(instruct1,2,0)
         motorcalib_window.addWidget(motorcalib_window_calibutton,2,1)
         motorcalib_window.addWidget(motorcalib_window_calibutton2,2,2)
@@ -390,6 +406,7 @@ class ControlWindow(QMainWindow):
         self.leftside.addStretch()
         self.rightside=QVBoxLayout()
         self.rightside.addWidget(groupbox_motorpanel_window)
+        self.rightside.addWidget(self.zen_group)
         self.rightside.addWidget(groubox_trajectory)
         self.rightside.addStretch()
 

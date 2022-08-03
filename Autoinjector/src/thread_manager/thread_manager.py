@@ -21,7 +21,7 @@ class Worker(QObject)
 '''
 from PyQt6.QtCore import QObject, QThread, pyqtSignal, pyqtBoundSignal
 
-class QThreading():
+class aQThreader():
     ''' 
     Manages threads for PyQT. Inspired from RealPython QThread article. 
     
@@ -33,13 +33,21 @@ class QThreading():
 
     Usage:
         # Prototypical usage in GUI main event loop
-        thread = QThread()
         worker = QWorker(foo, args, kwargs)
-        threaded_func = QThreading(thread, worker)
+        threaded_func = aQThreader(worker)
         # Other connections to worker.finished
         threaded_func.start()
     '''
-    def __init__(self, thread:QThread, worker:QObject):
+    def __init__(self, worker:QObject):
+        '''
+        Instantate aQThreader object by validate correct worker object and creating a
+        thread.
+
+        Arguments:
+            worker (QObject): QObject with function to be threaded. Worker must
+                have "finished" class attribute as pyQtSignal, "run" method, and
+                emit the "finished" signal when "run" is complete.
+        '''
         # Validate worker is a QObject with finished attribute and run method
         if not isinstance(worker, QObject):
             raise TypeError('worker must be a QObject')
@@ -51,7 +59,7 @@ class QThreading():
             raise AttributeError('worker must have "run" method')
         elif callable(worker.run) is False:
             raise AttributeError('worker has "run" attribute but it is not callable.')
-        self.thread = thread
+        self.thread = QThread()
         self.worker = worker
 
     def start(self):
@@ -62,12 +70,12 @@ class QThreading():
         self.thread.finished.connect(self.thread.deleteLater)
         self.thread.start()
 
-class QWorker(QObject):
+class aQWorker(QObject):
     '''
     Worker QObject to be threaded by QThread.
 
     User passes a function (and its arguments) during instantiation. When
-    used as input to QThreading, the passed function is threaded to 
+    used as input to aQthreader, the passed function is threaded to 
     improve GUI responsiveness (when the fcn normally takes long to run).
 
     Class Attributes:

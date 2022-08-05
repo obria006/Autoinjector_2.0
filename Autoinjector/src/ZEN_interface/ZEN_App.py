@@ -25,6 +25,8 @@ import src.miscellaneous.validify as val
 
 class ZenGroup(QGroupBox):
     obj_changed = pyqtSignal([float])
+    opto_changed = pyqtSignal([float])
+    ref_changed = pyqtSignal([str])
     def __init__(self, parent=None):
         super().__init__('Zeiss Control',parent)
         self.logger = logr(__name__)
@@ -68,11 +70,35 @@ class ZenGroup(QGroupBox):
         h_layout4.addWidget(self.obj_selector)
         v_layout.addLayout(h_layout4)
         self.setLayout(v_layout)
+
+        # Optovar widgets
+        opto_selector_label = QLabel('Optovar:', parent=self)
+        self.opto_selector = QComboBox(parent=self)
+        self.opto_selector.setPlaceholderText('Magnification')
+        self.opto_selector.currentTextChanged.connect(self.change_optovar)
+        h_layout5 = QHBoxLayout()
+        h_layout5.addWidget(opto_selector_label)
+        h_layout5.addWidget(self.opto_selector)
+        v_layout.addLayout(h_layout5)
+        self.setLayout(v_layout)
+
+        # Reflector widgets
+        ref_selector_label = QLabel('Reflector:', parent=self)
+        self.ref_selector = QComboBox(parent=self)
+        self.ref_selector.setPlaceholderText('Name')
+        self.ref_selector.currentTextChanged.connect(self.change_reflector)
+        h_layout6 = QHBoxLayout()
+        h_layout6.addWidget(ref_selector_label)
+        h_layout6.addWidget(self.ref_selector)
+        v_layout.addLayout(h_layout6)
+        self.setLayout(v_layout)
     
     def _init_states(self):
         self.foc_inc.insert(str(1000))
         self.static_z_label_update()
-        self._populate_obj_box()      
+        self._populate_obj_box()
+        self._populate_opto_box()
+        self._populate_ref_box()
 
     def plus_focus(self):
         ''' Moves focus in positive direction '''
@@ -137,6 +163,26 @@ class ZenGroup(QGroupBox):
         self.zen.goto_obj_pos(selected_pos)
         self.obj_changed.emit(selected_mag)
     
+    def change_optovar(self):
+        ''' Change the optovar to the one listed in the combo box '''
+        # Get string from combo box
+        selected_opto = self.opto_selector.currentText()
+        # Selected optovar string is position: mag, so get pos by split on :
+        selected_pos = int(selected_opto.split(':')[0])
+        selected_mag = float(selected_opto.split(':')[1].strip().strip('x'))
+        self.zen.goto_opto_pos(selected_pos)
+        self.opto_changed.emit(selected_mag)
+
+    def change_reflector(self):
+        ''' Change the reflector to the one listed in the combo box '''
+        # Get string from combo box
+        selected_ref = self.ref_selector.currentText()
+        # Selected refelector string is position: name, so get pos by split on :
+        selected_pos = int(selected_ref.split(':')[0])
+        selected_name = str(selected_ref.split(':')[1].strip())
+        self.zen.goto_ref_pos(selected_pos)
+        self.ref_changed.emit(selected_name)
+
     def _populate_obj_box(self):
         """
         Populate the objective selector combo box with active objectives. Also,
@@ -157,6 +203,47 @@ class ZenGroup(QGroupBox):
         cur_combo_str = f"{cur_pos}: {cur_mag}x"
         if cur_combo_str in combo_vals:
             self.obj_selector.setCurrentText(cur_combo_str)
+
+    def _populate_opto_box(self):
+        """
+        Populate the optovar selector combo box with active optovars. Also,
+        set the combo box to the current position if it is an active optovar.
+        """
+        # List of values to set in combo box
+        combo_vals = []
+        # Add all active optovars
+        positions = list(self.zen.optovars.index.values)
+        mags = list(self.zen.optovars['magnification'])
+        for k in range(len(positions)):
+            combo_str = f"{positions[k]}: {mags[k]}x"
+            combo_vals.append(combo_str)
+        self.opto_selector.insertItems(0, combo_vals)
+        # Add current positoin (if not in active optovar positoin)
+        cur_pos = self.zen.get_opto_info('position')
+        cur_mag = self.zen.get_opto_info('magnification')
+        cur_combo_str = f"{cur_pos}: {cur_mag}x"
+        if cur_combo_str in combo_vals:
+            self.opto_selector.setCurrentText(cur_combo_str)
+
+    def _populate_ref_box(self):
+        """
+        Populate the reflector selector combo box with active reflectors. Also,
+        set the combo box to the current position if it is an active reflector.
+        """
+        # List of values to set in combo box
+        combo_vals = []
+        # Add all active reflectors
+        positions = list(self.zen.reflectors.index.values)
+        names = list(self.zen.reflectors['name'])
+        for k in range(len(positions)):
+            combo_vals.append(f"{positions[k]}: {names[k]}")
+        self.ref_selector.insertItems(0, combo_vals)
+        # Add current positoin (if not in active reflector positoin)
+        cur_pos = self.zen.get_ref_info('position')
+        cur_name = self.zen.get_ref_info('name')
+        cur_combo_str = f"{cur_pos}: {cur_name}"
+        if cur_combo_str in combo_vals:
+            self.ref_selector.setCurrentText(cur_combo_str)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

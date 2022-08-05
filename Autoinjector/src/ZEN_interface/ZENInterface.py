@@ -18,6 +18,8 @@ class ZEN():
         self.focus_max_um = 10000
         self.focus_min_um = 0
         self.objectives = self._connected_objectives()
+        self.optovars = self._connected_optovars()
+        self.reflectors = self._connected_reflectors()
 
     def get_focus_um(self)->float:
         '''Returns position of focus in um (consistent w/ ZEN software)'''
@@ -156,6 +158,193 @@ class ZEN():
         self.zen.Devices.ObjectiveChanger.TargetPosition = pos
         self.zen.Devices.ObjectiveChanger.Apply()
 
+    def _connected_optovars(self):
+        '''
+        Returns dataframe of optovar name and magnification indexed by position.
+
+
+        DataFrame: index = "position", column1 = "name", column2 = "magnification"
+        '''
+        opto_dict = {}
+        for pos in range(10):
+            name = self.zen.Devices.Optovar.GetNameByPosition(pos)
+            mag = self.zen.Devices.Optovar.GetMagnificationByPosition(pos)
+            if name is not None:
+                opto_dict[pos] = {'name':name, 'position':pos, 'magnification':mag}
+        opto_df = pd.DataFrame(opto_dict).transpose()
+        return opto_df
+
+    def opto_pos_from_info(self, key:str, val) -> int:
+        """
+        Return an optovar's position from its info (name or magnification)
+
+        Arguments:
+            key (str): The info from which to get the position. Key must be in
+                ['name', 'magnification']
+            val: Value of the key for which to find the position
+
+        Usage:
+            opto_pos_from_info('magnification',1.25)
+            # returns position of 1.25x optovar
+            opto_pos_from_info('name', '1.6x Tubelens)
+            # returns position of 1.6x optovar
+        """
+        # Validate args
+        if key not in ['name', 'magnification']:
+            raise KeyError(f"Invalid optovar info key: {key}. Key must be in ['name', 'magnification']")
+        positions = list(self.optovars.index[self.optovars[key]==val].values)
+        if positions == []:
+            raise ValueError(f"Optovar {key} has no value: {val}.")
+        if len(positions) > 1:
+            raise ValueError(f"Optovar has multiple instances of {key} = {val}.")
+        return positions[0]
+        
+
+    def get_opto_info(self, key:str):
+        '''
+        Returns info about current optovar
+
+        Arguments:
+            key (str): Info to return. key must be in ['position', 'name', 'magnification']
+        
+        Returns queried optovar info
+        '''
+        # Validate correct argument
+        if key not in ['position', 'name', 'magnification']:
+            raise KeyError(f"Invalid optovar info key: {key}. Key must be in ['position', 'name', 'magnification']")
+        # Return requested info
+        if key == 'position':
+            return self.zen.Devices.Optovar.ActualPosition
+        if key == 'name':
+            return self.zen.Devices.Optovar.ActualPositionName
+        if key == 'magnification':
+            return self.zen.Devices.Optovar.Magnification
+
+    def goto_opto_mag(self, mag:float) -> None:
+        '''
+        Changes optovar to the specified magnification
+        
+        Arugments:
+            mag (float): Magnification of desried optovar (must be
+                in optovars 'magnification' column)
+        '''
+        if mag not in list(self.optovars['magnification']):
+            raise KeyError(f'Desired magnification {mag} not in optovar magnifications.')
+        des_opto_pos = self.opto_pos_from_info('magnification', mag)
+        self.goto_opto_pos(des_opto_pos)
+
+    def goto_opto_name(self, name:str) -> None:
+        '''
+        Changes optovar to the specified name
+        
+        Arugments:
+            name (str): Name of desried optovar (must be in optovars
+                'name' column)
+        '''
+        if name not in list(self.optovars['name']):
+            raise KeyError(f'Desired name {name} not in optovar names.')
+        des_opto_pos = self.opto_pos_from_info('name', name)
+        self.goto_opto_pos(des_opto_pos)
+
+    def goto_opto_pos(self, pos:int) -> None:
+        '''
+        Change optovar to specified position
+
+        Arguments:
+            pos (int): Desired optovar position
+        '''
+        if pos not in list(self.optovars.index.values):
+            raise ValueError(f'Requested invalid optovar position: {pos}. No optovar in position: {pos}')
+        # Goto new position
+        self.zen.Devices.Optovar.TargetPosition = pos
+        self.zen.Devices.Optovar.Apply()
+
+    def _connected_reflectors(self):
+        '''
+        Returns dataframe of reflector name and position
+
+        DataFrame: index = "position", column1 = "name"
+        '''
+        ref_dict = {}
+        for pos in range(1,7):
+            name = self.zen.Devices.Reflector.GetNameByPosition(pos)
+            if name is None:
+                name = f"Pos. {round(pos)}"
+            ref_dict[pos] = {'name':name, 'position':pos}
+        ref_df = pd.DataFrame(ref_dict).transpose()
+        return ref_df
+
+    def _rename_reflector(self, pos:float):
+        '''
+        Renames reflector for given position
+
+        Returns string as "Pos. x" where x is the positoin'''
+
+
+    def ref_pos_from_name(self, val:str) -> int:
+        """
+        Return an reflector's position from its name
+
+        Arguments:
+            val (str): Reflector name
+        """
+        # Validate args
+        positions = list(self.reflectors.index[self.reflectors['name']==val].values)
+        if positions == []:
+            raise ValueError(f"Relector 'name' has no value: {val}.")
+        if len(positions) > 1:
+            raise ValueError(f"Relector has multiple instances of 'name' = {val}.")
+        return positions[0]
+        
+
+    def get_ref_info(self, key:str):
+        '''
+        Returns info about current reflector
+
+        Arguments:
+            key (str): Info to return. key must be in ['position', 'name']
+        
+        Returns queried reflector info
+        '''
+        # Validate correct argument
+        if key not in ['position', 'name']:
+            raise KeyError(f"Invalid reflector info key: {key}. Key must be in ['position', 'name']")
+        # Return requested info
+        if key == 'position':
+            return self.zen.Devices.Reflector.ActualPosition
+        if key == 'name':
+            ref_name = self.zen.Devices.Reflector.ActualPositionName
+            if ref_name is None or ref_name == '':
+                pos = self.zen.Devices.Reflector.ActualPosition
+                ref_name = f"Pos. {round(pos)}"
+            return ref_name
+
+    def goto_ref_name(self, name:str) -> None:
+        '''
+        Changes reflector to the specified name
+        
+        Arugments:
+            name (str): Name of desried reflector (must be in reflectors
+                'name' column)
+        '''
+        if name not in list(self.reflectors['name']):
+            raise KeyError(f'Desired name {name} not in reflector names.')
+        des_ref_pos = self.ref_pos_from_name(name)
+        self.goto_ref_pos(des_ref_pos)
+
+    def goto_ref_pos(self, pos:int) -> None:
+        '''
+        Change reflector to specified position
+
+        Arguments:
+            pos (int): Desired reflector position
+        '''
+        if pos not in list(self.reflectors.index.values):
+            raise ValueError(f'Requested invalid reflector position: {pos}. No reflector in position: {pos}')
+        # Goto new position
+        self.zen.Devices.Reflector.TargetPosition = pos
+        self.zen.Devices.Reflector.Apply()
+
 class _ZEN_focus_move_request():
     ''' Handles move requests for ZEN focus '''
     def __init__(self, zen:ZEN, des_foc_um:float):
@@ -210,16 +399,42 @@ def focus_test(z):
 def objective_test(z):
     print(z.objectives)
     cur_mag = z.get_obj_info('magnification')
-    print(f'Current mag: {cur_mag}')
+    print(f'Current OBJECTIVE mag: {cur_mag}')
     if cur_mag <= 10.0:
         des_mag = 20.0
     else:
         des_mag = 10.0
     z.goto_obj_mag(des_mag)
     new_mag = z.get_obj_info('magnification')
-    print(f'New mag: {new_mag}')
+    print(f'New OBJECTIVE mag: {new_mag}')
+
+def optovar_test(z):
+    print(z.optovars)
+    cur_mag = z.get_opto_info('magnification')
+    print(f'Current OPTOVAR mag: {cur_mag}')
+    if cur_mag <= 1.25:
+        des_mag = 1.6
+    else:
+        des_mag = 1.0
+    z.goto_opto_mag(des_mag)
+    new_mag = z.get_opto_info('magnification')
+    print(f'New OPTOVAR mag: {new_mag}')
+
+def reflector_test(z):
+    print(z.reflectors)
+    cur_name = z.get_ref_info('name')
+    print(f'Current REFLECTOR name: {cur_name}')
+    if cur_name == "Pos. 6":
+        des_name = "43 HE DsRed"
+    else:
+        des_name = "Pos. 6"
+    z.goto_ref_name(des_name)
+    new_name = z.get_ref_info('name')
+    print(f'New REFLECTOR name: {new_name}')
 
 if __name__ == "__main__":
     z = ZEN()
     # focus_test(z)
-    objective_test(z)
+    # objective_test(z)
+    # optovar_test(z)
+    # reflector_test(z)

@@ -94,6 +94,8 @@ class ControlWindow(QMainWindow):
         self.data_generator_widgets()
         self.zen_group = ZenGroup()
         self.zen_group.obj_changed.connect(self.obj_changed)
+        self.zen_group.opto_changed.connect(self.opto_changed)
+        self.zen_group.ref_changed.connect(self.ref_changed)
         self.GUIsetup()
         self.init_from_ZEN()
 
@@ -101,6 +103,14 @@ class ControlWindow(QMainWindow):
         if mag_level in list(self.zen_group.zen.objectives['magnification']):
             self.motorcalibdist = self.fourtyxmag*(40/mag_level)
             self.response_monitor_window.append(">> Magnification set to " +str(mag_level))
+
+    def opto_changed(self, mag_level:float):
+        if mag_level in list(self.zen_group.zen.optovars['magnification']):
+            self.response_monitor_window.append(">> Optovar set to " +str(mag_level))
+
+    def ref_changed(self, ref_name:str):
+        if ref_name in list(self.zen_group.zen.reflectors['name']):
+            self.response_monitor_window.append(">> Reflector set to " +str(ref_name))
     
     def get_gui_cfg(self):
         ''' Loads the configuration values for the GUI '''
@@ -132,11 +142,17 @@ class ControlWindow(QMainWindow):
         self.data_gen_group.setLayout(data_gen_layout)
 
     def init_from_ZEN(self):
-        # Set magnification
+        # Set magnification of objective
         mag_level = self.zen_group.zen.get_obj_info('magnification')
         if mag_level in list(self.zen_group.zen.objectives['magnification']):
             self.motorcalibdist = self.fourtyxmag*(40/mag_level)
             self.response_monitor_window.append(">> Magnification set to " +str(mag_level))
+        # Set magnificaiton of optovar
+        opto_mag_level = self.zen_group.zen.get_opto_info('magnification')
+        self.response_monitor_window.append(">> Optovar set to " +str(opto_mag_level))
+        # Set name of reflector
+        ref_name = self.zen_group.zen.get_ref_info('name')
+        self.response_monitor_window.append(">> Reflector set to " +str(ref_name))
 
     def GUIsetup(self):
         #Create widgets for image display

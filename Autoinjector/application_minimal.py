@@ -162,10 +162,6 @@ class ControlWindow(QMainWindow):
         groupbox_image_analysis_window= QGroupBox('Microscope Video Stream')
         groupbox_image_analysis_window.setLayout(self.image_analysis_window_box)
 
-        #motor calibration controls
-        # magnification = QPushButton("Magnification")
-        # magnification.clicked.connect(self.setmag)
-        # instruct0 = QLabel("Step 0")
         instruct1 = QLabel("Step 1")
         instruct2 = QLabel("Pipette \n Angle")
         motorcalib_window_calibutton = QPushButton("Step 1.1", self)
@@ -176,8 +172,6 @@ class ControlWindow(QMainWindow):
         motorcalib_window_pipetteangle_button = QPushButton("Set Angle", self)
         motorcalib_window_pipetteangle_button.clicked.connect(self.setpipetteangle)
         motorcalib_window = QGridLayout()
-        # motorcalib_window.addWidget(instruct0,0,0)
-        # motorcalib_window.addWidget(magnification,0,1,1,2)
         motorcalib_window.addWidget(instruct1,2,0)
         motorcalib_window.addWidget(motorcalib_window_calibutton,2,1)
         motorcalib_window.addWidget(motorcalib_window_calibutton2,2,2)
@@ -499,24 +493,6 @@ class ControlWindow(QMainWindow):
     ----------Calibration Controls -----------------------------------------------------------------
     These functions control the calibration of the manipulators to the camera axes
     """
-
-    def setmag(self):
-        items = ("4x", "10x", "20x","40x")
-        
-        item, ok = QInputDialog.getItem(self, "Select Magnification", 
-            "Select Magnification (Assuming 10x objective lens)", items, 0, False)
-        self.response_monitor_window.append(">> Magnification set to " +str(item))
-
-        if ok and item:
-            if item == "4x":
-                self.motorcalibdist = self.fourtyxmag*10
-            elif item == "10x":
-                self.motorcalibdist = self.fourtyxmag*4
-            elif item == "20x":
-                self.motorcalibdist = self.fourtyxmag*2
-            elif item == "40x":
-                self.motorcalibdist = self.fourtyxmag
-
     def showdialog(self):
         #calibrates motors 
         msg = QMessageBox()

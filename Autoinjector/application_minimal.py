@@ -10,7 +10,7 @@ import serial
 import numpy as np
 from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
-from PyQt6.QtGui import QIcon
+from PyQt6.QtGui import QIcon, QPalette, QColor
 import pandas as pd
 from src.imageprocessing.videocontrolsThread import vidcontrols as vc
 from src.imageprocessing.draw import drawobj
@@ -21,7 +21,9 @@ from src.pythonarduino.injectioncontrolmod import injection
 from src.resolutiontest.gotoposition import GetPos
 from src.cfg_mgmt.cfg_mngr import CfgManager
 from src.miscellaneous.standard_logger import StandardLogger as logr
+from src.miscellaneous import validify as val
 from src.data_generation.data_generators import PipTipData, TissueEdgeData
+from src.sensapex_utils.sensapex_utils import SensapexDevice
 from src.ZEN_interface.ZEN_App import ZenGroup
 
 
@@ -91,6 +93,7 @@ class ControlWindow(QMainWindow):
         ''' Function for initializing the GUI '''
         # Load the configuration values
         self.get_gui_cfg()
+        self.pipette_calibrator_widgets()
         self.data_generator_widgets()
         self.zen_group = ZenGroup()
         self.zen_group.obj_changed.connect(self.obj_changed)
@@ -98,6 +101,8 @@ class ControlWindow(QMainWindow):
         self.zen_group.ref_changed.connect(self.ref_changed)
         self.GUIsetup()
         self.init_from_ZEN()
+        self.stateify_pipette_calibrator_widgets()
+        self.stateify_data_generator_widgets()
 
     def obj_changed(self, mag_level:float):
         if mag_level in list(self.zen_group.zen.objectives['magnification']):
@@ -117,6 +122,44 @@ class ControlWindow(QMainWindow):
         self.cfg = CfgManager()
         self.cfg.cfg_from_pointer()
 
+    def pipette_calibrator_widgets(self):
+        ''' Creates widgets for pipette calibration '''
+        # Buttons for calibration steps
+        step1_label = QLabel("Step 1")
+        calibration_button1 = QPushButton("Step 1.1", self)
+        calibration_button2 = QPushButton("Step 1.2", self)
+        h_layout1 = QHBoxLayout()
+        h_layout1.addWidget(step1_label)
+        h_layout1.addWidget(calibration_button1)
+        h_layout1.addWidget(calibration_button2)
+        # Pipette angle
+        angle_label = QLabel("Pipette \n Angle", parent=self)
+        self.angle_mode_box = QComboBox(parent=self)
+        self.angle_mode_box.setPlaceholderText('Angle Mode') # Connect currentTextChanged to set angle
+        self.angle_entry = QLineEdit(self)
+        self.set_angle_button = QPushButton("Set", self)
+        grid_layout1 = QGridLayout()
+        grid_layout1.addWidget(angle_label, 0, 0, 2, 1)
+        grid_layout1.addWidget(self.angle_mode_box, 0, 1, 1, 2)
+        grid_layout1.addWidget(self.angle_entry, 1, 1, 1, 1)
+        grid_layout1.addWidget(self.set_angle_button, 1, 2, 1, 1)
+        # Groupbox and master layout
+        pip_cal_layout = QVBoxLayout()
+        pip_cal_layout.addLayout(h_layout1)
+        pip_cal_layout.addLayout(grid_layout1)
+        self.pip_cal_group = QGroupBox('Pipette Calibration')
+        self.pip_cal_group.setLayout(pip_cal_layout)
+        # Set connections
+        calibration_button1.clicked.connect(self.showdialog)
+        calibration_button2.clicked.connect(self.motorcalib_step2)
+        self.angle_mode_box.currentTextChanged.connect(self.set_angle_mode)
+        self.set_angle_button.clicked.connect(self.set_pipette_angle)
+
+    def stateify_pipette_calibrator_widgets(self):
+        ''' Set initial states for the pipette calirbator widgets '''
+        self.angle_mode_box.insertItems(0, ['Automatic','Manual','Load'])
+        self.angle_mode_box.setCurrentText('Automatic')
+
     def data_generator_widgets(self):
         ''' 
         Creates widgets for data generation 
@@ -132,14 +175,17 @@ class ControlWindow(QMainWindow):
         masterlayout.addWidget(groupbox)
         '''
         self.save_tip_annot = QCheckBox("Save tip annotation")
-        self.save_tip_annot.setChecked(True)
         self.save_tiss_annot = QCheckBox("Save tissue annotation")
-        self.save_tiss_annot.setChecked(True)
         data_gen_layout = QVBoxLayout()
         data_gen_layout.addWidget(self.save_tip_annot)
         data_gen_layout.addWidget(self.save_tiss_annot)
         self.data_gen_group = QGroupBox('GUI Data Acquisition')
         self.data_gen_group.setLayout(data_gen_layout)
+
+    def stateify_data_generator_widgets(self):
+        ''' Set initial states for data generator widgets '''
+        self.save_tip_annot.setChecked(True)
+        self.save_tiss_annot.setChecked(True)
 
     def init_from_ZEN(self):
         # Set magnification of objective
@@ -162,24 +208,6 @@ class ControlWindow(QMainWindow):
         groupbox_image_analysis_window= QGroupBox('Microscope Video Stream')
         groupbox_image_analysis_window.setLayout(self.image_analysis_window_box)
 
-        instruct1 = QLabel("Step 1")
-        instruct2 = QLabel("Pipette \n Angle")
-        motorcalib_window_calibutton = QPushButton("Step 1.1", self)
-        motorcalib_window_calibutton.clicked.connect(self.showdialog)
-        motorcalib_window_calibutton2 = QPushButton("Step 1.2", self)
-        motorcalib_window_calibutton2.clicked.connect(self.motorcalib_step2)
-        self.motorcalib_window_pipetteangle = QLineEdit(self)
-        motorcalib_window_pipetteangle_button = QPushButton("Set Angle", self)
-        motorcalib_window_pipetteangle_button.clicked.connect(self.setpipetteangle)
-        motorcalib_window = QGridLayout()
-        motorcalib_window.addWidget(instruct1,2,0)
-        motorcalib_window.addWidget(motorcalib_window_calibutton,2,1)
-        motorcalib_window.addWidget(motorcalib_window_calibutton2,2,2)
-        motorcalib_window.addWidget(instruct2,3,0)
-        motorcalib_window.addWidget(self.motorcalib_window_pipetteangle,3,1)
-        motorcalib_window.addWidget(motorcalib_window_pipetteangle_button,3,2)
-        groupbox_motorcalib_window = QGroupBox('Manipulator Calibration')
-        groupbox_motorcalib_window.setLayout(motorcalib_window)
 
         #manual image processing controls
         image_processing_windowmanual_detectedge = QPushButton("Draw Edge")
@@ -350,7 +378,7 @@ class ControlWindow(QMainWindow):
         #organize main window
         self.mastergrid = QGridLayout()
         self.leftside=QVBoxLayout()
-        self.leftside.addWidget(groupbox_motorcalib_window)
+        self.leftside.addWidget(self.pip_cal_group)
         self.leftside.addWidget(groupbox_image_processing_windowmanual)
         self.leftside.addWidget(groupbox_misc)
         self.leftside.addWidget(self.data_gen_group)
@@ -448,11 +476,76 @@ class ControlWindow(QMainWindow):
         else:
             self.response_monitor_window.append(">> Camera detected and working.")
 
-    def setpipetteangle(self):
-        self.pipette_angle = self.motorcalib_window_pipetteangle.text()
-        self.pipette_angle = float(self.pipette_angle)
-        self.thetaz = np.deg2rad(self.pipette_angle)
-        print(self.thetaz)
+    def set_angle_mode(self):
+        '''
+        Sets the mode for querying the pipette angle.
+        Called when pipette angle combo box changes.
+
+        Activity
+            if automatic:
+                angle entry box to readonly and dark gray
+                Disable set button
+                query sensapex for angle, insert in combobox and set thetaz
+            if manual:
+                clear thetaz
+                enable entry box and make white
+                enable set button
+            if load:
+                raise error message box
+                default to manual
+        '''
+        # Get the selected mode
+        angle_mode = self.angle_mode_box.currentText()
+        # Handle different angle mode selections
+        if angle_mode == 'Automatic':
+            # Read only and gray out angle entry box
+            palette = QPalette()
+            palette.setColor(QPalette.ColorRole.Base, QColor('lightGray'))
+            self.angle_entry.setReadOnly(True)
+            self.angle_entry.setPalette(palette)
+            # Disable set button
+            self.set_angle_button.setEnabled(False)
+            # Get angle
+            dev = SensapexDevice(1)
+            ang = dev.get_axis_angle()
+            # Display in box
+            self.angle_entry.clear()
+            self.angle_entry.insert(str(ang))
+            # Set the angle
+            self.set_pipette_angle()
+        if angle_mode == 'Manual':
+            # Enable angle entry and set to default white
+            palette = QPalette()
+            palette.setColor(QPalette.ColorRole.Base, QColor('white'))
+            self.angle_entry.setReadOnly(False)
+            self.angle_entry.setPalette(palette)
+            # Enable set button
+            self.set_angle_button.setEnabled(True)
+            # Clear the box and reset thetaz
+            self.angle_entry.clear()
+            # FIXME poor practice (will be fixed when change trajecotry)
+            if 'thetaz' in self.__dict__.keys():
+                del self.thetaz
+        if angle_mode == 'Load':
+            try:
+                raise NotImplementedError("The 'Load' pipette angle functionality hasn't been implimented yet")
+            except NotImplementedError:
+                self.logger.exception("Cant load pipette angle")
+                self.error_msg.setText("'Load' pipette angle hasn't been implimented yet. Defaulting to 'Manual'.")
+                self.error_msg.exec()
+            finally:
+                self.angle_mode_box.setCurrentText('Manual')
+            
+    def set_pipette_angle(self):
+        ''' Sets pipette angle from entry box '''
+        angle_str = self.angle_entry.text()
+        if val.is_valid_number(angle_str) is False:
+            self.logger.warning(f'Invalid angle: {angle_str}. Angle must be a valid number.')
+            self.error_msg.setText(f'Invalid angle: {angle_str}. Angle must be a valid number.')
+            self.error_msg.exec()
+        else:
+            self.thetaz = np.deg2rad(float(angle_str))
+            self.response_monitor_window.append(f">> Pipette angle set as {angle_str}")
 
     def valuechange(self):
         self.pressureslidervalue= self.sl.value()

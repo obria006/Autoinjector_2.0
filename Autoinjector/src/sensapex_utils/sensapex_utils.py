@@ -70,7 +70,7 @@ class UMP(sensapex.UMP):
             d-axis angle in degrees of sensapex device with device number
         '''
         # ump_get_axis_angle returns angle in degrees*10
-        return ump.call("ump_get_axis_angle",c_int(self.dev_id),
+        return self.call("ump_get_axis_angle",c_int(self.dev_id),
                         byref(c_float()))/10
 
 class SensapexDevice(sensapex.SensapexDevice):
@@ -124,6 +124,6 @@ class SensapexDevice(sensapex.SensapexDevice):
     def get_axis_angle(self) -> float:
         ''' Returns d-axis angle in degrees of selected uMp device '''
         # ump_get_axis_angle returns angle in degrees*10
-        return ump.call("ump_get_axis_angle",c_int(self.dev_id),
+        return self.ump.call("ump_get_axis_angle",c_int(self.dev_id),
                         byref(c_float()))/10
     

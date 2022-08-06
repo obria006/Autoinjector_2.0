@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import win32com.client
 from src.miscellaneous import numerify
+from src.miscellaneous import validify as val
 
 class ZEN():
     """Interface for ZEN application"""
@@ -57,19 +58,26 @@ class ZEN():
             raise ValueError(f'Invalid goto_focus_rel_um position: {delta_foc_um}um. Current + relative ({cur_foc_um} + {delta_foc_um} = {des_foc_um}um) must be {self.focus_min_um}um to {self.focus_max_um}um.')
         self.goto_focus_abs_um(des_foc_um)
 
-    def _connected_objectives(self) -> pd.DataFrame:
+    def _connected_objectives(self,start_pos:int=1, end_pos:int=6) -> pd.DataFrame:
         '''
-        Returns dataframe of objective name and magnification indexed by position
+        Returns dataframe of objective name and magnification indexed by position in
+        objective positions ranging from start_pos to end_pos.
 
+        Arguments:
+            start_pos (int): Starting position in Zeiss software to start listing objectives
+            end_pos (int): Ending positoin in Zeiss software to stop listing objectives
 
-        DataFrame: index = "position", column1 = "name", column2 = "magnification"
+        DataFrame: index = "position", column1 = "name", column2 = 'position', column3 = "magnification"
         '''
+        if not val.is_of_types(start_pos,[int,float]):
+            raise ValueError(f"Objective start position must be a number type. {type(start_pos)} is invalid.")
+        if not val.is_of_types(end_pos,[int,float]):
+            raise ValueError(f"Objective start position must be a number type. {type(start_pos)} is invalid.")
         obj_dict = {}
-        for pos in range(10):
+        for pos in range(start_pos, end_pos+1):
             name = self.zen.Devices.ObjectiveChanger.GetNameByPosition(pos)
             mag = self.zen.Devices.ObjectiveChanger.GetMagnificationByPosition(pos)
-            if name is not None:
-                obj_dict[pos] = {'name':name, 'position':pos, 'magnification':mag}
+            obj_dict[pos] = {'name':name, 'position':pos, 'magnification':mag}
         obj_df = pd.DataFrame(obj_dict).transpose()
         return obj_df
 
@@ -158,19 +166,27 @@ class ZEN():
         self.zen.Devices.ObjectiveChanger.TargetPosition = pos
         self.zen.Devices.ObjectiveChanger.Apply()
 
-    def _connected_optovars(self):
+    def _connected_optovars(self, start_pos:int=1, end_pos:int=3)->pd.DataFrame:
         '''
-        Returns dataframe of optovar name and magnification indexed by position.
+        Returns dataframe of optovar name and magnification indexed by position with
+        positions ranging from start_pos to end pos.
+
+        Arguments:
+            start_pos (int): Starting position in Zeiss software to start listing optovars
+            end_pos (int): Ending positoin in Zeiss software to stop listing optovars
 
 
-        DataFrame: index = "position", column1 = "name", column2 = "magnification"
+        DataFrame: index = "position", column1 = "name", column2 = "position", column3 = "magnification"
         '''
+        if not val.is_of_types(start_pos,[int,float]):
+            raise ValueError(f"Optovar start position must be a number type. {type(start_pos)} is invalid.")
+        if not val.is_of_types(end_pos,[int,float]):
+            raise ValueError(f"Optovar start position must be a number type. {type(start_pos)} is invalid.")
         opto_dict = {}
-        for pos in range(10):
+        for pos in range(start_pos, end_pos+1):
             name = self.zen.Devices.Optovar.GetNameByPosition(pos)
             mag = self.zen.Devices.Optovar.GetMagnificationByPosition(pos)
-            if name is not None:
-                opto_dict[pos] = {'name':name, 'position':pos, 'magnification':mag}
+            opto_dict[pos] = {'name':name, 'position':pos, 'magnification':mag}
         opto_df = pd.DataFrame(opto_dict).transpose()
         return opto_df
 
@@ -259,27 +275,29 @@ class ZEN():
         self.zen.Devices.Optovar.TargetPosition = pos
         self.zen.Devices.Optovar.Apply()
 
-    def _connected_reflectors(self):
+    def _connected_reflectors(self, start_pos:int=1, end_pos:int=6)->pd.DataFrame():
         '''
-        Returns dataframe of reflector name and position
+        Returns dataframe of reflector name and position with positions ranging
+        from start_pos to end_pos.
 
-        DataFrame: index = "position", column1 = "name"
+        Arguments:
+            start_pos (int): Starting position in Zeiss software to start listing reflectors
+            end_pos (int): Ending positoin in Zeiss software to stop listing reflectors
+
+        DataFrame: index = "position", column1 = "name", column2 = "position"
         '''
+        if not val.is_of_types(start_pos,[int,float]):
+            raise ValueError(f"Reflector start position must be a number type. {type(start_pos)} is invalid.")
+        if not val.is_of_types(end_pos,[int,float]):
+            raise ValueError(f"Reflector start position must be a number type. {type(start_pos)} is invalid.")
         ref_dict = {}
-        for pos in range(1,7):
+        for pos in range(start_pos, end_pos+1):
             name = self.zen.Devices.Reflector.GetNameByPosition(pos)
             if name is None:
                 name = f"Pos. {round(pos)}"
             ref_dict[pos] = {'name':name, 'position':pos}
         ref_df = pd.DataFrame(ref_dict).transpose()
         return ref_df
-
-    def _rename_reflector(self, pos:float):
-        '''
-        Renames reflector for given position
-
-        Returns string as "Pos. x" where x is the positoin'''
-
 
     def ref_pos_from_name(self, val:str) -> int:
         """
@@ -432,9 +450,25 @@ def reflector_test(z):
     new_name = z.get_ref_info('name')
     print(f'New REFLECTOR name: {new_name}')
 
+def timed_get_positions(z):
+    t0 = time.time()
+    f_pos = z.get_focus_um()
+    t1 = time.time()
+    obj_pos = z.get_obj_info('position')
+    t2 = time.time()
+    opto_pos = z.get_opto_info('position')
+    t3 = time.time()
+    ref_pos = z.get_ref_info('position')
+    t4 = time.time()
+    print(f'Focus pos: {f_pos}.\tTime:{t1-t0}')
+    print(f'Obj pos: {obj_pos}.\tTime:{t2-t1}')
+    print(f'Opto pos: {opto_pos}.\tTime:{t3-t2}')
+    print(f'Ref pos: {ref_pos}.\tTime:{t4-t3}')
+    
 if __name__ == "__main__":
     z = ZEN()
     # focus_test(z)
     # objective_test(z)
     # optovar_test(z)
     # reflector_test(z)
+    # timed_get_positions(z)

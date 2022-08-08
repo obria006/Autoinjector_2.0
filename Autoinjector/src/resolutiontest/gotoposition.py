@@ -2,7 +2,7 @@
 from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
 import os, sys, time
-from src.sensapex_utils.sensapex_utils import SensapexDevice, UMP
+from src.manipulator_control.sensapex_utils import SensapexDevice, UMP
 import numpy as np
 
 class GetPos(QThread):

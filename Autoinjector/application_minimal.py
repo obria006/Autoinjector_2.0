@@ -23,7 +23,7 @@ from src.cfg_mgmt.cfg_mngr import CfgManager
 from src.miscellaneous.standard_logger import StandardLogger as logr
 from src.miscellaneous import validify as val
 from src.data_generation.data_generators import PipTipData, TissueEdgeData
-from src.sensapex_utils.sensapex_utils import SensapexDevice
+from src.manipulator_control.sensapex_utils import SensapexDevice
 from src.ZEN_interface.ZEN_App import ZenGroup
 
 

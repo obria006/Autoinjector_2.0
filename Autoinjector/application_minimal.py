@@ -185,7 +185,7 @@ class ControlWindow(QMainWindow):
     def stateify_data_generator_widgets(self):
         ''' Set initial states for data generator widgets '''
         self.save_tip_annot.setChecked(True)
-        self.save_tiss_annot.setChecked(True)
+        self.save_tiss_annot.setChecked(False)
 
     def init_from_ZEN(self):
         # Set magnification of objective

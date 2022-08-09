@@ -1,20 +1,11 @@
 import sys
-import time
 import win32com.client
-from functools import partial
-from PyQt6.QtCore import (Qt,
-                          QObject,
-                          QThread,
-                          QTimer,
-                          pyqtSignal,
-                          pyqtBoundSignal)
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (QApplication,
-                            QMainWindow,
                             QLabel,
                             QPushButton,
                             QVBoxLayout,
                             QHBoxLayout,
-                            QWidget,
                             QGroupBox,
                             QComboBox,
                             QLineEdit,)
@@ -78,7 +69,6 @@ class ZenGroup(QGroupBox):
         h_layout4.addWidget(obj_selector_label)
         h_layout4.addWidget(self.obj_selector)
         v_layout.addLayout(h_layout4)
-        self.setLayout(v_layout)
 
         # Optovar widgets
         opto_selector_label = QLabel('Optovar:', parent=self)
@@ -89,7 +79,6 @@ class ZenGroup(QGroupBox):
         h_layout5.addWidget(opto_selector_label)
         h_layout5.addWidget(self.opto_selector)
         v_layout.addLayout(h_layout5)
-        self.setLayout(v_layout)
 
         # Reflector widgets
         ref_selector_label = QLabel('Reflector:', parent=self)

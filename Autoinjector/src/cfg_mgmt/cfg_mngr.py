@@ -124,7 +124,8 @@ class CfgGUI():
     def default_cfg(self):
         ''' Set config values to the default values '''
         self.values = {
-            'data directory':'C:/Users/Public/Documents/envs/Autoinjector_2/Autoinjector/data'
+            'data directory':'C:/Users/Public/Documents/envs/Autoinjector_2/Autoinjector/data',
+            'micromanager path':'C:/Program Files/Micro-Manager-2.0',
         }
         self.logger.info('Set config values to defaults')
     

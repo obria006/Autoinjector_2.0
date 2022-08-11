@@ -9,11 +9,12 @@ from src.imageprocessing.restestgrid import ResTest
 import os
 import sys
 from skimage.util import img_as_ubyte
+import traceback
 
 
 class vidcontrols(QThread):
     #vidout = pyqtSignal()
-
+    clicked_pos = pyqtSignal([float, float])
     def __init__(self,cam,brand,val,bins,rot,imagevals,scalefactor,restest):
         #defines camera settings
         self.cam = cam
@@ -40,6 +41,7 @@ class vidcontrols(QThread):
         self.vidnum = 0 #count number of recordings
         self.gotopos = False
         self.hideshapecommand = False
+        self.display_tip_pos = False
 
     # ---------------------- Camera Setup ------------------------------------------
     def CAMsetup(self):
@@ -127,6 +129,15 @@ class vidcontrols(QThread):
             	except:
                     s = 1
 
+            if self.display_tip_pos == True:
+                try:
+                    x_img = int(self.tip_x)
+                    y_img = int(self.tip_y)
+                    cv2.circle(self.frame, (x_img, y_img), 3, 0, -1)
+                except:
+                    print(traceback.format_exc())
+
+
             #video display
             if self.startcap == 1:
                 self.out.write(self.frame)
@@ -153,6 +164,7 @@ class vidcontrols(QThread):
         y = self.tipcircle.y()
         self.positionnow = (x,y)
         print(self.positionnow)
+        self.clicked_pos.emit(x,y)
 
     def showshapes(self):
         self.hideshapecommand = False
@@ -169,6 +181,10 @@ class vidcontrols(QThread):
 
     def edgearraypointer(self,edgearray):
         self.edgearray = edgearray
+
+    def show_tip_pos(self, x, y):
+        self.tip_x = x
+        self.tip_y = y
 
     def displaytip(self,tipx,tipy):
         #draws coordinates output from tipdetector

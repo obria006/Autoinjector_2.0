@@ -23,7 +23,9 @@ from src.cfg_mgmt.cfg_mngr import CfgManager
 from src.miscellaneous.standard_logger import StandardLogger as logr
 from src.miscellaneous import validify as val
 from src.data_generation.data_generators import PipTipData, TissueEdgeData
+from src.manipulator_control.calibration import Calibrator
 from src.manipulator_control.sensapex_utils import SensapexDevice
+from src.manipulator_control.injection_trajectory import SurfaceLineTrajectory3D
 from src.ZEN_interface.ZEN_App import ZenGroup
 
 
@@ -90,17 +92,29 @@ class ControlWindow(QMainWindow):
     
     # ---------- Initialize GUI -------------------------------------------------------
     def setup_gui(self):
-        ''' Function for initializing the GUI '''
+        '''
+        Function for initializing the GUI
+        
+        General order of
+        get config
+        initialze variables
+        do imports
+        make widgets
+        make connections
+        set widget states
+        '''
         # Load the configuration values
         self.get_gui_cfg()
         self.pipette_calibrator_widgets()
         self.data_generator_widgets()
         self.zen_group = ZenGroup()
+        self.pip_cal = Calibrator()
         self.zen_group.obj_changed.connect(self.obj_changed)
         self.zen_group.opto_changed.connect(self.opto_changed)
         self.zen_group.ref_changed.connect(self.ref_changed)
         self.GUIsetup()
         self.init_from_ZEN()
+        self.vidctrl.clicked_pos.connect(self.add_cal_positions)
         self.stateify_pipette_calibrator_widgets()
         self.stateify_data_generator_widgets()
 
@@ -124,14 +138,6 @@ class ControlWindow(QMainWindow):
 
     def pipette_calibrator_widgets(self):
         ''' Creates widgets for pipette calibration '''
-        # Buttons for calibration steps
-        step1_label = QLabel("Step 1")
-        calibration_button1 = QPushButton("Step 1.1", self)
-        calibration_button2 = QPushButton("Step 1.2", self)
-        h_layout1 = QHBoxLayout()
-        h_layout1.addWidget(step1_label)
-        h_layout1.addWidget(calibration_button1)
-        h_layout1.addWidget(calibration_button2)
         # Pipette angle
         angle_label = QLabel("Pipette \n Angle", parent=self)
         self.angle_mode_box = QComboBox(parent=self)
@@ -143,15 +149,21 @@ class ControlWindow(QMainWindow):
         grid_layout1.addWidget(self.angle_mode_box, 0, 1, 1, 2)
         grid_layout1.addWidget(self.angle_entry, 1, 1, 1, 1)
         grid_layout1.addWidget(self.set_angle_button, 1, 2, 1, 1)
+        # My calibration buttons
+        self.conduct_calibration_but = QCheckBox("Calibrate")
+        self.display_calibration_but = QCheckBox("Display")
+        h_layout1 = QHBoxLayout()
+        h_layout1.addWidget(self.conduct_calibration_but)
+        h_layout1.addWidget(self.display_calibration_but)
         # Groupbox and master layout
         pip_cal_layout = QVBoxLayout()
-        pip_cal_layout.addLayout(h_layout1)
         pip_cal_layout.addLayout(grid_layout1)
+        pip_cal_layout.addLayout(h_layout1)
         self.pip_cal_group = QGroupBox('Pipette Calibration')
         self.pip_cal_group.setLayout(pip_cal_layout)
         # Set connections
-        calibration_button1.clicked.connect(self.showdialog)
-        calibration_button2.clicked.connect(self.motorcalib_step2)
+        self.conduct_calibration_but.clicked.connect(self.compute_calibration)
+        self.display_calibration_but.clicked.connect(self.display_calibration)
         self.angle_mode_box.currentTextChanged.connect(self.set_angle_mode)
         self.set_angle_button.clicked.connect(self.set_pipette_angle)
 
@@ -159,6 +171,9 @@ class ControlWindow(QMainWindow):
         ''' Set initial states for the pipette calirbator widgets '''
         self.angle_mode_box.insertItems(0, ['Automatic','Manual','Load'])
         self.angle_mode_box.setCurrentText('Automatic')
+        self.pip_disp_timer = QTimer()
+        self.pip_disp_timer.timeout.connect(self.display_calibration)
+        self.pip_disp_timeout = 25
 
     def data_generator_widgets(self):
         ''' 
@@ -586,24 +601,53 @@ class ControlWindow(QMainWindow):
     ----------Calibration Controls -----------------------------------------------------------------
     These functions control the calibration of the manipulators to the camera axes
     """
-    def showdialog(self):
-        #calibrates motors 
-        msg = QMessageBox()
-        msg.setWindowIcon(QIcon('favicon.png'))
-        msg.setIcon(QMessageBox.Icon.Information)
-        msg.setWindowTitle("Motor Calibration")
 
-        try:
-            s = self.motorcalibdist
-            msg.setText("Bring the tip into focus and select the tip using Select tip button.")
-            msg.setInformativeText("Press OK when complete.")
-            msg.buttonClicked.connect(self.motorcalib_step1)
-            retval = msg.exec()
+    def add_cal_positions(self,x_click:float, y_click:float):
+        ''' Adds clicked calibration positions to calibration data '''
+        if self.conduct_calibration_but.isChecked():
+            z_scope = self.zen_group.zen.get_focus_um()
+            ex_pos = [x_click, y_click, z_scope]
+            dev = SensapexDevice(1)
+            man_pos = dev.get_pos()
+            self.pip_cal.data.add_cal_position(ex=ex_pos, man=man_pos)
+            print(self.pip_cal.data.data_df)
+            if self.save_tip_annot.isChecked():
+                self.tipposition1 = self.vidctrl.tipcircle
+                tip_dict = {'x':self.tipposition1.x(), 'y':self.tipposition1.y()}
+                self.save_pip_cal_data(tip_dict)
 
-        except:
-            self.error_msg.setText("Please select magnification in Calibration window. \n Python error = \n" + str(sys.exc_info()[1]))
-            self.error_msg.exec()
-            self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
+    def compute_calibration(self):
+        ''' Computes calibration from calibration data '''
+        if self.conduct_calibration_but.isChecked() is False:
+            try:
+                self.pip_cal.compute(z_polarity=-1, pip_angle=self.thetaz)
+            except:
+                print(traceback.format_exc())
+            finally:
+                self.logger.info('Calibration unchecked. Deleting calibration points.')
+                self.pip_cal.data.rm_all()
+    
+    def display_calibration(self):
+        if self.display_calibration_but.isChecked():
+            if self.pip_cal.model.is_calibrated is True:
+                if self.pip_disp_timer.isActive() is False:
+                    self.pip_disp_timer.start(self.pip_disp_timeout)
+                    self.vidctrl.display_tip_pos = True
+                dev = SensapexDevice(1)
+                pos = dev.get_pos()
+                ex = self.pip_cal.model.forward(man=pos)
+                self.vidctrl.show_tip_pos(ex[0], ex[1])
+        else:
+            self.vidctrl.display_tip_pos = False
+            self.pip_disp_timer.stop()
+
+    def update_calibration(self):
+        ''' Updates calibration by setting new reference position '''
+        pass
+
+    def load_calibration(self):
+        ''' Loads the most recent calibration '''
+        pass
     
     def save_pip_cal_data(self, tip_dict:dict):
         '''
@@ -620,66 +664,6 @@ class ControlWindow(QMainWindow):
         pip_data_saver = PipTipData(pip_data_dir=pip_data_dir)
         image = np.copy(self.vidctrl.unmod_frame)
         pip_data_saver.save_data(image=image, tip_position=tip_dict)
-
-    def motorcalib_step1(self):
-        try:
-            # gets position of tip if tip is selected. commands motors to move only in y direction
-            self.tipposition1 = self.vidctrl.tipcircle
-            if self.save_tip_annot.isChecked():
-                tip_dict = {'x':self.tipposition1.x(), 'y':self.tipposition1.y()}
-                self.save_pip_cal_data(tip_dict)
-            movey = delmotor('y', 'increase', self.motorcalibdist, 1000,'relative',0)
-            movey.start()
-        except:
-            print(traceback.format_exc())
-            self.error_msg.setText("Please click on the tip first and press step 1.1 calibration again. \n Python error = \n" + str(sys.exc_info()[1]))
-            self.error_msg.exec()
-            self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
-            
-    def motorcalib_step2(self):
-        try:
-            self.tipposition2 = self.vidctrl.tipcircle
-            # gets position of tip if tip is selected. commands motors to move only in y direction
-            if self.save_tip_annot.isChecked():
-                tip_dict = {'x':self.tipposition2.x(), 'y':self.tipposition2.y()}
-                self.save_pip_cal_data(tip_dict)
-            if self.tipposition2 == self.tipposition1:
-                s = l
-            y1 = self.tipposition1.y()
-            y2 = self.tipposition2.y()
-            x1 = self.tipposition1.x()
-            x2 = self.tipposition2.x()
-            ycameraline = abs(y2 - y1)
-            xcameraline = abs(x2 - x1)
-            self.calculatetheta(xcameraline,ycameraline)
-        except:
-            self.error_msg.setText("Please click on the tip now and press step 1.2 calibration again. \n Python error = \n" + str(sys.exc_info()[1]))
-            self.error_msg.exec()
-            self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
-
-    def calculatetheta(self,xcameraline,ycameraline):
-        try:
-            #solves for the xy theta offset by drawing two lines parellel to camera axes
-            ymotorline = np.sqrt((np.square(ycameraline) + np.square(xcameraline)))
-            self.ymotortheta = np.arctan(float(xcameraline)/ycameraline)
-            self.ymotorthetadeg =np.rad2deg(self.ymotortheta)
-            print('angle',self.ymotortheta, self.ymotorthetadeg)
-            self.yscale = self.motorcalibdist/ymotorline
-
-            #calculate total FOV of microscope in micromenters
-            self.videoheightpixel = int(self.vidctrl.frame.shape[0])
-            self.videowidthpixel = int(self.vidctrl.frame.shape[1])
-            self.videoheightdist = (self.videoheightpixel)*(self.yscale/1000)
-            self.videowidthdist = (self.videowidthpixel)*(self.yscale/1000)
-            print("ysclae (nm per pixel" + str(self.yscale))
-
-            self.pixelsize = self.yscale/1000
-            print("pixel size = " +str(self.pixelsize))
-            
-        except:
-            self.error_msg.setText("Error calculating angle. \n Python error = \n" + str(sys.exc_info()[1]))
-            self.error_msg.exec()
-            self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
 
     """
     ----------Desired Trajectory Control -----------------------------------------------------------------
@@ -866,9 +850,8 @@ class ControlWindow(QMainWindow):
         try:
             self.compensationpressureval = self.pressureslidervalue
             self.compensationpressureval =str(self.compensationpressureval)
-            self.ncell= 200
             self.approachdist = self.trajectoryplan_approach.text()
-            self.deptintissue = self.trajectoryplan_injectiondepth.text()
+            self.depthintissue = self.trajectoryplan_injectiondepth.text()
             self.stepsize = self.trajectoryplan_spacingbtwn.text()
             self.motorspeed = self.trajectoryplan_speed.text()
             self.injectpressurevoltage = self.compensationpressureval
@@ -881,32 +864,36 @@ class ControlWindow(QMainWindow):
             self.error_msg.exec()
             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
         
-    def runalongedgetrajectory(self):
+    def run_3D_trajectory(self):
         try:
             #get values from GUI
-            currentpos = self.vidctrl.positionnow 
-            approach = (int(float(self.approachdist)*1000)) #convert microns to nm
-            depth = (int(float(self.trajectoryplan_injectiondepth.text()))*1000)
-            depthintissue = depth
-            space = int(float(self.trajectoryplan_spacingbtwn.text()))
-            self.speed = (int((self.trajectoryplan_speed.text()))*10)
-            spacing = space
-
-            self.trajimplement = trajectoryimplementor(self.ymotortheta, self.thetaz, currentpos, self.pixelsize, approach, depthintissue, spacing, self.d.drawedgecoord1, self.ncell, self.speed)
-            self.trajimplement.start()
-            self.trajimplement.finished.connect(self.updateresponse)
-
+            um2nm = 1000
+            approach_nm = int(float(self.approachdist)*um2nm)
+            depth_nm = int(float(self.depthintissue)*um2nm)
+            spacing_nm = int(float(self.stepsize)*um2nm)
+            speed_ums = int((self.motorspeed))
+            dev = SensapexDevice(1)
+            cal = self.pip_cal
+            edge = self.d.drawedgecoord1
+            z_scope = self.zen_group.zen.get_focus_um()
+            edge_arr = np.array(edge)
+            z_arr = z_scope*np.ones((edge_arr.shape[0],1))
+            edge_3D = np.concatenate((edge_arr,z_arr),axis=1).tolist()
+            self.inj_trajectory = SurfaceLineTrajectory3D(dev, cal, edge_3D, approach_nm, depth_nm, spacing_nm, speed_ums)
+            self.inj_trajectory.start()
+            self.inj_trajectory.finished.connect(self.show_n_injected)
         except:
+            print(traceback.format_exc())
             self.error_msg.setText("Please complete calibration, enter all parameters, and select tip of pipette.\nPython error = \n" + str(sys.exc_info()[1]))
             self.error_msg.exec()
             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
 
-    def updateresponse(self):
-        self.response_monitor_window.append(">> Number of injections =" + str(self.trajimplement.statusnumber))
+    def show_n_injected(self):
+        self.response_monitor_window.append(">> Number of injections =" + str(self.inj_trajectory.n_injected))
 
     def stoptrajectory(self):
         try:
-            self.trajimplement.stopprocess()
+            self.inj_trajectory.stop()
         except:
             self.error_msg.setText("You have to start the trajectory in order to be able to stop it...\nPython error = \n" + str(sys.exc_info()[1]))
             self.error_msg.exec()

@@ -107,6 +107,7 @@ class ControlWindow(QMainWindow):
         self.get_gui_cfg()
         self.pipette_calibrator_widgets()
         self.data_generator_widgets()
+        self.injection_parameter_widgets()
         self.zen_group = ZenGroup()
         self.pip_cal = Calibrator()
         self.zen_group.obj_changed.connect(self.obj_changed)
@@ -117,6 +118,7 @@ class ControlWindow(QMainWindow):
         self.vidctrl.clicked_pos.connect(self.add_cal_positions)
         self.stateify_pipette_calibrator_widgets()
         self.stateify_data_generator_widgets()
+        self.stateify_injection_parameter_widgets()
 
     def obj_changed(self, mag_level:float):
         if mag_level in list(self.zen_group.zen.objectives['magnification']):
@@ -202,6 +204,77 @@ class ControlWindow(QMainWindow):
         self.save_tip_annot.setChecked(True)
         self.save_tiss_annot.setChecked(False)
 
+    def injection_parameter_widgets(self):
+        ''' Creates widgets for injection parameters '''
+        mu = "µ"
+        approach_label = QLabel("Approach Distance ("+ mu +"m)")
+        depth_label = QLabel("Depth ("+ mu +"m)")
+        spacing_label = QLabel("Spacing ("+ mu +"m)")
+        speed_label = QLabel("Speed (%)")
+        self.approach_entry = QLineEdit(self)
+        self.depth_entry= QLineEdit(self)
+        self.spacing_entry = QLineEdit(self)
+        self.speed_entry = QLineEdit(self)
+        self.run_button = QPushButton("Run Trajectory")
+        self.run_button.clicked.connect(self.run_3D_trajectory)
+        self.stop_button = QPushButton("Stop Process")
+        self.stop_button.clicked.connect(self.stoptrajectory)
+        self.pressure_slider = QSlider(Qt.Orientation.Horizontal)
+        self.pressure_slider = QSlider(Qt.Orientation.Horizontal)
+        self.pressure_slider.setMinimum(10)
+        self.pressure_slider.setMaximum(255)
+        self.pressure_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.pressure_slider.setTickInterval(30)
+        self.pressure_slider.valueChanged.connect(self.valuechange)
+        pressure_label = QLabel("Pressure")
+        self.pressure_display = QLineEdit(self)
+        self.set_values_button = QPushButton("Set Values")
+        self.set_values_button.clicked.connect(self.setautomatedparameters)
+        h_layout1 = QHBoxLayout()
+        h_layout1.addWidget(approach_label)
+        h_layout1.addWidget(self.approach_entry)
+        h_layout2 = QHBoxLayout()
+        h_layout2.addWidget(depth_label)
+        h_layout2.addWidget(self.depth_entry)
+        h_layout3 = QHBoxLayout()
+        h_layout3.addWidget(spacing_label)
+        h_layout3.addWidget(self.spacing_entry)
+        h_layout4 = QHBoxLayout()       
+        h_layout4.addWidget(speed_label)
+        h_layout4.addWidget(self.speed_entry)
+        v_layout1 = QVBoxLayout()
+        v_layout1.addWidget(self.pressure_slider)
+        v_layout2 = QVBoxLayout()
+        v_layout2.addWidget(self.pressure_display)
+        h_layout5 = QHBoxLayout()
+        h_layout5.addLayout(v_layout1)
+        h_layout5.addLayout(v_layout2)
+        v_layout3 = QVBoxLayout()
+        v_layout3.addWidget(pressure_label)
+        v_layout3.addLayout(h_layout5)
+        v_layout4 = QVBoxLayout()
+        v_layout4.addWidget(self.set_values_button)
+        v_layout4.addWidget(self.run_button)
+        v_layout4.addWidget(self.stop_button)
+        v_layout3.addLayout(v_layout4)
+        inj_param_layout = QVBoxLayout()
+        inj_param_layout.addLayout(h_layout1)
+        inj_param_layout.addLayout(h_layout2)
+        inj_param_layout.addLayout(h_layout3)
+        inj_param_layout.addLayout(h_layout4)
+        inj_param_layout.addLayout(v_layout3)
+        self.inj_parameter_group = QGroupBox('Automated Microinjection Controls')
+        self.inj_parameter_group.setLayout(inj_param_layout)
+    
+    def stateify_injection_parameter_widgets(self):
+        ''' set initial states for injection parameters'''
+        self.approach_entry.insert('100')
+        self.depth_entry.insert('20')
+        self.spacing_entry.insert('50')
+        self.speed_entry.insert('1000')
+        self.pressure_slider.setValue(20)
+
+
     def init_from_ZEN(self):
         # Set magnification of objective
         mag_level = self.zen_group.zen.get_obj_info('magnification')
@@ -253,68 +326,6 @@ class ControlWindow(QMainWindow):
         groupbox_misc = QGroupBox('Display Settings')
         groupbox_misc.setLayout(misc)
         
-        #automated injection controls
-        # -*- coding: utf-8 -*-
-        self.mu = "µ"
-        self.trajectoryplan = QVBoxLayout()
-        self.trajectoryplan_labelaproachdist = QLabel("Approach Distance ("+  self.mu +"m)   ")
-        self.trajectoryplan_labeldepth = QLabel("Depth ("+  self.mu +"m)                      ")
-        self.trajectoryplan_labelspace = QLabel("Spacing ("+  self.mu +"m)                   ")
-        self.trajectoryplan_labelspeed = QLabel("Speed (%)                       ")
-        self.trajectoryplan_approach = QLineEdit(self)
-        self.trajectoryplan_injectiondepth= QLineEdit(self)
-        self.trajectoryplan_spacingbtwn = QLineEdit(self)
-        self.trajectoryplan_speed = QLineEdit(self)
-        self.trajectoryplan_runbutton = QPushButton("Run Trajectory")
-        self.trajectoryplan_runbutton.clicked.connect(self.runalongedgetrajectory)
-        self.trajectoryplan_stopbutton = QPushButton("Stop Process")
-        self.trajectoryplan_stopbutton.clicked.connect(self.stoptrajectory)
-        approach = QHBoxLayout()
-        depth = QHBoxLayout()
-        space = QHBoxLayout()
-        speed = QHBoxLayout()       
-        approach.addWidget(self.trajectoryplan_labelaproachdist)
-        approach.addWidget(self.trajectoryplan_approach)
-        depth.addWidget(self.trajectoryplan_labeldepth)
-        depth.addWidget(self.trajectoryplan_injectiondepth)
-        space.addWidget(self.trajectoryplan_labelspace)
-        space.addWidget(self.trajectoryplan_spacingbtwn)
-        speed.addWidget(self.trajectoryplan_labelspeed)
-        speed.addWidget(self.trajectoryplan_speed)
-        self.trajectoryplan.addLayout(approach)
-        self.trajectoryplan.addLayout(depth)
-        self.trajectoryplan.addLayout(space)
-        self.trajectoryplan.addLayout(speed)
-        self.sl = QSlider(Qt.Orientation.Horizontal)
-        self.sl.setMinimum(10)
-        self.sl.setMaximum(255)
-        self.sl.setValue(10)
-        self.sl.setTickPosition(QSlider.TickPosition.TicksBelow)
-        self.sl.setTickInterval(30)
-        self.sl.valueChanged.connect(self.valuechange)
-        self.automatedcontrol_window_left = QVBoxLayout()
-        self.automatedcontrol_window_right = QVBoxLayout()
-        self.automatedcontrol_window_controls = QHBoxLayout()
-        self.automatedcontrol_window_controls_merged = QVBoxLayout()
-        compensatpresslabel = QLabel("Pressure")
-        self.compensatpres = QLineEdit(self)
-        self.automatedcontrol_window_setvalues = QPushButton("Set Values")
-        self.automatedcontrol_window_setvalues.clicked.connect(self.setautomatedparameters)
-        self.automatedcontrol_window_left.addWidget(self.sl)
-        self.automatedcontrol_window_right.addWidget(self.compensatpres)
-        self.automatedcontrol_window_controls.addLayout(self.automatedcontrol_window_left)
-        self.automatedcontrol_window_controls.addLayout(self.automatedcontrol_window_right)
-        self.automatedcontrol_window_controls_merged.addWidget(compensatpresslabel)
-        self.automatedcontrol_window_controls_merged.addLayout(self.automatedcontrol_window_controls)
-        self.automatedcontrol_window_bottomwindow = QVBoxLayout()
-        self.automatedcontrol_window_bottomwindow.addWidget(self.automatedcontrol_window_setvalues)
-        self.automatedcontrol_window_bottomwindow.addWidget(self.trajectoryplan_runbutton)
-        self.automatedcontrol_window_bottomwindow.addWidget(self.trajectoryplan_stopbutton)
-        self.automatedcontrol_window_controls_merged.addLayout(self.automatedcontrol_window_bottomwindow)
-        self.trajectoryplan.addLayout(self.automatedcontrol_window_controls_merged)
-        groubox_trajectory = QGroupBox('Automated Microinjection Controls')
-        groubox_trajectory.setLayout(self.trajectoryplan)
-
         #Manipulator Status 
         # -*- coding: utf-8 -*-
         self.mu = "µ"
@@ -460,7 +471,7 @@ class ControlWindow(QMainWindow):
         self.rightside=QVBoxLayout()
         self.rightside.addWidget(groupbox_motorpanel_window)
         self.rightside.addWidget(self.zen_group)
-        self.rightside.addWidget(groubox_trajectory)
+        self.rightside.addWidget(self.inj_parameter_group)
         self.rightside.addStretch()
 
         #Main window details...
@@ -563,9 +574,9 @@ class ControlWindow(QMainWindow):
             self.response_monitor_window.append(f">> Pipette angle set as {angle_str}")
 
     def valuechange(self):
-        self.pressureslidervalue= self.sl.value()
+        self.pressureslidervalue= self.pressure_slider.value()
         self.displaypressure = int(self.pressureslidervalue/2.55)
-        self.compensatpres.setText('         '+str(self.displaypressure)+'%')
+        self.pressure_display.setText(str(self.displaypressure)+'%')
 
     def exposurevaluechange(self):
         self.exposureslidervalue = self.exposureslider.value()/3.33
@@ -850,10 +861,10 @@ class ControlWindow(QMainWindow):
         try:
             self.compensationpressureval = self.pressureslidervalue
             self.compensationpressureval =str(self.compensationpressureval)
-            self.approachdist = self.trajectoryplan_approach.text()
-            self.depthintissue = self.trajectoryplan_injectiondepth.text()
-            self.stepsize = self.trajectoryplan_spacingbtwn.text()
-            self.motorspeed = self.trajectoryplan_speed.text()
+            self.approachdist = self.approach_entry.text()
+            self.depthintissue = self.depth_entry.text()
+            self.stepsize = self.spacing_entry.text()
+            self.motorspeed = self.speed_entry.text()
             self.injectpressurevoltage = self.compensationpressureval
             self.response_monitor_window.append(">> Values set")
             self.injector_compensate = injection(arduino,self.compensationpressureval, 0,self.injectpressurevoltage,0,'bp')

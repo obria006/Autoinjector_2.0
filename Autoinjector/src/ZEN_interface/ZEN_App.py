@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (QApplication,
                             QComboBox,
                             QLineEdit,)
 from PyQt6.QtGui import QPalette, QColor
-
+from src.Qt_utils.gui_objects import QHLine
 from src.ZEN_interface.ZENInterface import ZEN
 from src.thread_manager.thread_manager import aQThreader, aQWorker
 from src.miscellaneous.standard_logger import StandardLogger as logr
@@ -59,6 +59,10 @@ class ZenGroup(QGroupBox):
         v_layout.addLayout(h_layout1)
         v_layout.addLayout(h_layout2)
         v_layout.addLayout(h_layout3)
+
+        # Separator between widgets
+        h_separator = QHLine()
+        v_layout.addWidget(h_separator)
 
         # Objective widgets
         obj_selector_label = QLabel('Objective:', parent=self)

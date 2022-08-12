@@ -175,6 +175,18 @@ When interfacing with the microscope and its accessories, the Autoinjector softw
 
 5. To run the program normally, click the file "launchapp.py" in the Autoinjector folder. This will launch the GUI and report any errors with hardware. For additional operating instructions see the user manual included with the publication.
 
+## TODO List
+  - [ ] First time setup to make folders (configs, logs)
+  - [ ] GUI to check whether necessary folders exist (configs, logs, data, etc)
+  - [ ] Improve hardware check to not error out when not detected
+  - [ ] Get threading to work with the Zeiss software (at least for goto focus so doesn't block execution)
+  - [ ] Catch error when ZEN is not open
+  - [ ] Give warning and ask to continue when large focus request
+  - [ ] Update ZEN portion of GUI to reflect manual user changes
+  - [ ] Rectify GUI ZEN display before injection because user could have manually changed it (if relies on display for functioning)
+  - [ ] set z polarity by user in GUI
+
+
 
 ## License
 This work is lisenced under the MIT lisence. See LISENCE.txt for additional information.  

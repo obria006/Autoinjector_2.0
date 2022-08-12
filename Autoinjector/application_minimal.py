@@ -105,6 +105,7 @@ class ControlWindow(QMainWindow):
         '''
         # Load the configuration values
         self.get_gui_cfg()
+        self.define_dirs()
         self.pipette_calibrator_widgets()
         self.data_generator_widgets()
         self.injection_parameter_widgets()
@@ -137,6 +138,34 @@ class ControlWindow(QMainWindow):
         ''' Loads the configuration values for the GUI '''
         self.cfg = CfgManager()
         self.cfg.cfg_from_pointer()
+    
+    def define_dirs(self):
+        ''' Set dirs (and create if necessary) for GUI '''
+        # General data directory
+        self.data_dir = self.cfg.cfg_gui.values['data directory'].replace('\\','/')
+        if os.path.isdir(self.data_dir) is False:
+            os.makedirs(self.data_dir)
+            self.logger.info(f'Created data directory: {self.data_dir}')
+        # For saving pipette images
+        self.pip_data_dir = f"{self.data_dir}/pipette/calibration_images"
+        if os.path.isdir(self.pip_data_dir) is False:
+            os.makedirs(self.pip_data_dir)
+            self.logger.info(f'Created pipette image data directory: {self.pip_data_dir}')
+        # For saving tissue images
+        self.tis_data_dir = f"{self.data_dir}/tissue/annotation_images"
+        if os.path.isdir(self.tis_data_dir) is False:
+            os.makedirs(self.tis_data_dir)
+            self.logger.info(f'Created tissue image data directory: {self.tis_data_dir}')
+        # For saving calibration data 
+        self.cal_data_dir = f"{self.data_dir}/calibration"
+        if os.path.isdir(self.cal_data_dir) is False:
+            os.makedirs(self.cal_data_dir)
+            self.logger.info(f'Created calibration data directory: {self.cal_data_dir}')
+        # For saving calibration arrays
+        self.cal_arr_dir = f"{self.data_dir}/calibration/ndarrays"
+        if os.path.isdir(self.cal_arr_dir) is False:
+            os.makedirs(self.cal_arr_dir)
+            self.logger.info(f'Created calibration array directory: {self.cal_arr_dir}')
 
     def pipette_calibrator_widgets(self):
         ''' Creates widgets for pipette calibration '''
@@ -667,12 +696,8 @@ class ControlWindow(QMainWindow):
         Arguments:
             tip_dict: {'x':x, 'y':y} x and y coordinates of tip annotation on image.
         '''
-        
-        # Directories for data
-        data_dir = self.cfg.cfg_gui.values['data directory'].replace('\\','/')
-        pip_data_dir = f"{data_dir}/pipette/calibration_images"
         # Instance of object to save data
-        pip_data_saver = PipTipData(pip_data_dir=pip_data_dir)
+        pip_data_saver = PipTipData(pip_data_dir=self.pip_data_dir)
         image = np.copy(self.vidctrl.unmod_frame)
         pip_data_saver.save_data(image=image, tip_position=tip_dict)
 
@@ -688,12 +713,8 @@ class ControlWindow(QMainWindow):
             raw_annot (np.ndarray): nx2 array of drawn annotation coord. nth row = [x_n, y_n]
             interpolate_annot (np.ndarray): nx2 array of interpolated annotation coord. nth row = [x_n, y_n]
         '''
-        
-        # Directories for data
-        data_dir = self.cfg.cfg_gui.values['data directory'].replace('\\','/')
-        tis_data_dir = f"{data_dir}/tissue/annotation_images"
         # Instance of object to save data
-        tis_data_saver = TissueEdgeData(tis_data_dir=tis_data_dir)
+        tis_data_saver = TissueEdgeData(tis_data_dir=self.tis_data_dir)
         image = np.copy(self.vidctrl.unmod_frame)
         tis_data_saver.save_data(image=image, raw_annot=raw_annot, interpolate_annot=interpolate_annot)
 

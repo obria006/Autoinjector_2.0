@@ -61,40 +61,29 @@ class PipTipData():
         ymd_hms = datetime.now().strftime("%Y%m%d_%H%M%S")
         ymd = datetime.now().strftime("%Y%m%d")
 
-        # Save the pipette image
+        # Save the data
         try:
+            # Pipette image
             img_path = f"{self.pip_tip_dir}/{ymd_hms}_pipette.jpeg"
             save_image(image, img_path)
-        except:
-            self.logger.exception(f'Failed to save pipette image.')
-            raise
-        else:
-            self.logger.info(f'Saved pipette image: {img_path}')
 
-        # Save the pipette data for individual image
-        try:
+            # Pipette coordinates
             tip_df = self._make_coord_df(img_path, image, tip_position)
             coord_path = f"{self.pip_tip_dir}/{ymd_hms}_coordinates.csv"
             tip_df.to_csv(coord_path)
-        except:
-            self.logger.exception(f'Failed to save pipette coordinates.')
-            raise
-        else:
-            self.logger.info(f'Saved pipette coords: {coord_path}')
 
-        # Save the pipette to master file (compilation of )
-        try:
-            tip_df = self._make_coord_df(img_path, image, tip_position)
+            # master file
+            ip_df = self._make_coord_df(img_path, image, tip_position)
             coord_path = f"{self.pip_tip_dir}/{ymd}_master_coordinates.csv"
             if os.path.exists(coord_path):
                 tip_df.to_csv(coord_path, mode='a', index=False, header=False)
             else:
                 tip_df.to_csv(coord_path, index=False)
         except:
-            self.logger.exception(f'Failed to save pipette coordinates.')
+            self.logger.exception(f'Error during saving pipette data.')
             raise
         else:
-            self.logger.info(f'Saved pipette coords: {coord_path}')
+            self.logger.info(f'Saved pipette data: {coord_path}')
 
     def _make_coord_df(self, img_path:str, image:np.ndarray, tip_position:dict):
         '''
@@ -184,37 +173,26 @@ class TissueEdgeData():
         ymd_hms = datetime.now().strftime("%Y%m%d_%H%M%S")
         ymd = datetime.now().strftime("%Y%m%d")
 
-        # Save the tissue image
+        # Tissue data
         try:
+            # Image
             img_path = f"{self.tis_anot_dir}/{ymd_hms}_tissue.jpeg"
             save_image(image, img_path)
-        except:
-            self.logger.exception(f'Failed to save tissue image.')
-            raise
-        else:
-            self.logger.info(f'Saved tissue image: {img_path}')
 
         # Save the tissue data for the raw edge annotation
-        try:
             tis_df = self._make_coord_df(img_path, image, raw_annot)
             coord_path = f"{self.tis_anot_dir}/{ymd_hms}_raw_annotation.csv"
             tis_df.to_csv(coord_path)
-        except:
-            self.logger.exception(f'Failed to save raw tissue coordinates.')
-            raise
-        else:
-            self.logger.info(f'Saved raw tissue coords: {coord_path}')
 
         # Save the tissue data for the interpolated edge annotation
-        try:
             tis_df = self._make_coord_df(img_path, image, interpolate_annot)
             coord_path = f"{self.tis_anot_dir}/{ymd_hms}_interpolate_annotation.csv"
             tis_df.to_csv(coord_path)
         except:
-            self.logger.exception(f'Failed to save interpolated tissue coordinates.')
+            self.logger.exception(f'Failed to save tissue data.')
             raise
         else:
-            self.logger.info(f'Saved interpolated tissue coords: {coord_path}')
+            self.logger.info(f'Saved tissue data: {coord_path}')
 
 
     def _make_coord_df(self, img_path:str, image:np.ndarray, annot:np.ndarray):

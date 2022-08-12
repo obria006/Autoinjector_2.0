@@ -1,5 +1,8 @@
 ''' Scripts for handling manipulator to coordinate system calibration '''
 import time
+import os
+from datetime import datetime
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import traceback
@@ -11,23 +14,28 @@ class Calibrator():
     Controls manipulator <-> external CSYS calibration processes
     
     Attributes:
-        data_path (str): Path to file containing calibration to load
         data (CalibrationData): Instance of CalibrationData class for storing data during
             calibration process.
         model (CalibrationModel): Instance of CalibrationModel class for computing transformation
             matrices and computing forward/inverse kinematics.
+        io (CalibrationIO): Instance of CalibrationIO class for writing and reading calibration
+            data to/from files.
+        _existing_models (dict): Stores existing calibration models and assocites with microscope
+            magnifications
         '''
 
-    def __init__(self, data_path:str=None):
+    def __init__(self, cal_data_dir:str):
         '''
         Arguments:
-            data_path (str): Path to file containing calibration to load
+            cal_data_dir (str): Directory to calibration data
         '''
-        self.data_path = data_path  
+        self._logger = StandardLogger(__name__)
         self.data = CalibrationData()
         self.model = CalibrationModel()
+        self._io = CalibrationIO(cal_data_dir=cal_data_dir)
+        self._existing_models = {}
 
-    def compute(self, z_polarity=-1, pip_angle=np.deg2rad(45)):
+    def compute(self, z_polarity=-1, pip_angle=np.deg2rad(45), obj_mag:float=None, opto_mag:float=None):
         '''
         Use CalibrationModel to compute the transformation matrices
         
@@ -38,28 +46,225 @@ class Calibrator():
                 horizontal = 0. Pointing straight down = +pi/2 (90 degrees)
         '''
         if self.data.data_df.shape[0] < 3:
-            raise CalibrationError('Calibration data must have at least 3 non-singular entries')
+            raise CalibrationDataError('Calibration data contain at least 3 calibration points.')
         else:
             data = self.data.data_df
             self.model.compute_transform_simplest(data, z_polarity, pip_angle)
-
-    def update(self, ex:list, man:list):
+            self._add_to_existing(obj_mag=obj_mag, opto_mag=opto_mag)
+    
+    def _mags_to_str(self, obj_mag:float, opto_mag:float)->str:
         '''
-        Update the calibration by setting a new reference position
+        Create string of f"{obj_mag},{opto_mag}" for indexing in existing_models
 
         Arguments:
-            ex (list): External position [x, y, z] associated with man
-            man (list): Manipulator positoin [x, y, z, d] associated with ez
+            obj_mag (float): Magnification of objective associate with model
+            opto_mag (float): Magnification of optovar associated with model
         '''
-        _val_positions(ex=ex, man=man)
-        new_x_0 = ex+man
-        self.model.set_x_0(x_0=new_x_0)
+        mag_str = f"{obj_mag},{opto_mag}"
+        return mag_str
 
-    def load(self):
+    def _mags_from_str(self, mag_str:str)->list:
         '''
-        Load the calibraiton from a file
+        Parses string of f"{obj_mag},{opto_mag}" to [obj_mag, opto_mag]
+
+        Arguments:
+            mag_str (str): magnifications as f"{obj_mag},{opto_mag}"
         '''
-        pass
+        mags = mag_str.split(',')
+        mags = [float(mag) for mag in mags]
+        return mags
+
+    def _add_to_existing(self, obj_mag:float, opto_mag:float):
+        '''
+        Add current calibration model to _existing_models attribute
+
+        Arguments:
+            obj_mag (float): Magnification of objective associate with model
+            opto_mag (float): Magnification of optovar associated with model
+        '''
+        mag_str = self._mags_to_str(obj_mag=obj_mag, opto_mag=opto_mag)
+        T1 = self.model.T_mxyzd_to_mxyz
+        T2 = self.model.T_mxyz_to_exxyz
+        x0 = self.model.x_0
+        cal_dict = {'T1':T1, 'T2':T2, 'x0':x0}
+        self._existing_models[mag_str] = cal_dict
+
+    def update(self):
+        '''
+        Update the calibration by setting a new reference position
+        '''
+        if self.data.data_df.shape[0] != 1:
+            raise CalibrationDataError('A single calibration point must be stored to update calibration.')
+        else:
+            data = self.data.data_df.iloc[[0]]
+            self.model.set_x_0(data)
+
+    def save_model(self, obj_mag:float, opto_mag:float):
+        '''
+        Save calibration model (tranformation matrices) to file.
+
+        Arguments:
+            obj_mag (float): Magnification of objective associate with model
+            opto_mag (float): Magnification of optovar associated with model
+        '''
+        try:
+            T1 = self.model.T_mxyzd_to_mxyz
+            T2 = self.model.T_mxyz_to_exxyz
+            x0 = self.model.x_0
+            self._io.save(obj_mag=obj_mag, opto_mag=opto_mag, T1=T1, T2=T2, x0=x0)
+        except:
+            raise
+
+    def load_model(self, obj_mag:float, opto_mag:float):
+        '''
+        Load calibration model (tranformation matrices) from file.
+
+        Arguments:
+            obj_mag (float): Magnification of objective associate with model
+            opto_mag (float): Magnification of optovar associated with model
+        '''
+        # Load the calibration model
+        try:
+            cal_data = self._io.load_latest(obj_mag=obj_mag, opto_mag=opto_mag)
+        except:
+            raise
+        # Parse the calirbation data
+        date_str = cal_data['Date']
+        time_str = cal_data['Time']
+        T1 = cal_data['T1']
+        T2 = cal_data['T2']
+        x0 = cal_data['x0']
+        # Set the calibration model
+        self.model.set_model(T_mxyzd_to_mxyz=T1, T_mxyz_to_exxyz=T2, x_0=x0)
+        self._add_to_existing(obj_mag=obj_mag, opto_mag=opto_mag)
+        
+
+    def use_existing_model(self, obj_mag:float, opto_mag:float):
+        '''
+        Uses a model saved in _existing_calibration (if it exists for the specified mags)
+
+        Arguments:
+            obj_mag (float): Magnification of objective associate with model
+            opto_mag (float): Magnification of optovar associated with model
+        '''
+        # Create magstring for indexing in exisiting models dictionary
+        mag_str = self._mags_to_str(obj_mag=obj_mag, opto_mag=opto_mag)
+        # Get the calibration data for a given magnifcation if it exists
+        try:
+            cal_dict = self._existing_models[mag_str]
+        except KeyError:
+            raise CalibrationDNEError(f'No calibration exists for objective={obj_mag} and optovar={opto_mag}.')
+        # Set calibration from model
+        T1 = cal_dict['T1']
+        T2 = cal_dict['T2']
+        x0 = cal_dict['x0']
+        self.model.set_model(T_mxyzd_to_mxyz=T1, T_mxyz_to_exxyz=T2, x_0=x0)
+        
+
+class CalibrationIO():
+    '''
+    Handles reading and writing calibration models to file
+    '''
+
+    def __init__(self, cal_data_dir:str):
+        '''
+        Initialize calibration IO with data directory
+        '''
+        self._logger = StandardLogger(__name__)
+        self.cal_data_dir = cal_data_dir
+        self.cal_data_path = f"{self.cal_data_dir}/calibration_models.csv"
+        self.arr_dir = f"{self.cal_data_dir}/ndarrays"
+        if os.path.isdir(self.arr_dir) is False:
+            os.makedirs(self.arr_dir)
+            self._logger.info(f'Created calibration directory: {self.arr_dir}')
+    
+    def save(self, obj_mag:float, opto_mag:float, T1:np.ndarray, T2:np.ndarray, x0:np.ndarray):
+        '''
+        Saves calibration to file
+
+        Arguments:
+            obj_mag (float): Magnification of objective associate with model
+            opto_mag (float): Magnification of optovar associated with model
+            T1 (np.ndarray): Transformation matrix from m_xyzd to m_xyz
+            T2 (np.ndarray): Transformation matrix from m_xyz to ex_xyz
+            x0 (np.ndarray): Reference initial positions
+        '''
+        # Date indexed directory for saving calibration
+        now = datetime.now()
+        arr_date_dir = f"{self.arr_dir}/{now.strftime('%Y%m%d')}"
+        if os.path.isdir(arr_date_dir) is False:
+            os.makedirs(arr_date_dir)
+            self._logger.info(f'Created calibration array directory: {arr_date_dir}')
+        # Filepaths for arrays
+        T1_basename = f"{now.strftime('%Y%m%d_%H%M%S')}_T1.txt"
+        T2_basename = f"{now.strftime('%Y%m%d_%H%M%S')}_T2.txt"
+        x0_basename = f"{now.strftime('%Y%m%d_%H%M%S')}_x0.txt"
+        T1_path = f"{arr_date_dir}/{T1_basename}"
+        T2_path = f"{arr_date_dir}/{T2_basename}"
+        x0_path = f"{arr_date_dir}/{x0_basename}"
+        # Data to save
+        cal_dict = {'Date':[now.strftime('%Y-%m-%d')],
+                    'Time':[now.strftime('%H:%M:%S')],
+                    'Objective':[obj_mag],
+                    'Optovar':[opto_mag],
+                    'T1 path':[T1_path],
+                    'T2 path':[T2_path],
+                    'x0 path':[x0_path]}
+        cal_df = pd.DataFrame(cal_dict)
+        # Save data
+        if os.path.exists(self.cal_data_path) is False:
+            header = True
+            mode = 'w'
+        else:
+            header = False
+            mode = 'a'
+        np.savetxt(T1_path, T1)
+        np.savetxt(T2_path, T2)
+        np.savetxt(x0_path, x0)
+        cal_df.to_csv(self.cal_data_path, mode=mode, header= header)
+        self._logger.info(f'Saved calibration info with objective = {obj_mag} and optovar = {opto_mag}.')
+  
+
+    def load_latest(self, obj_mag:float, opto_mag:float):
+        '''
+        Load the latest (most recent calibration) with that matches the passed
+        objective and optovar magnification
+
+        Arguments:
+            obj_mag (float): Magnification of objective associate with model
+            opto_mag (float): Magnification of optovar associated with model
+        '''
+        # Read the calibration file to dataframe
+        if os.path.exists(self.cal_data_path) is False:
+            raise CalibrationFileError(f'Calibration data file does not exist at {self.cal_data_path}')
+        df = pd.read_csv(self.cal_data_path)
+        # Find calibrations that match objective and optovar mag
+        matched_rows = (df['Objective'] == obj_mag) & (df['Optovar'] == opto_mag)
+        matched_df = df.loc[matched_rows]
+        if matched_df.shape[0] == 0:
+            raise CalibrationDNEError(f'Cannot load calbration with objective = {obj_mag} and optovar = {opto_mag}. No saved calibrations match these parameters.') 
+        date_str = matched_df.iloc[-1]['Date']
+        time_str = matched_df.iloc[-1]['Time']
+        T1_path = matched_df.iloc[-1]['T1 path']
+        T2_path = matched_df.iloc[-1]['T2 path']
+        x0_path = matched_df.iloc[-1]['x0 path']
+        # Load matrices and return cal data
+        T1, T2, x0 = self._load_matrices(T1_path, T2_path, x0_path)
+        cal_data = {'Date':date_str, 'Time':time_str,'T1':T1,'T2':T2,'x0':x0}
+        return cal_data
+
+    def _load_matrices(self, T1_path:str, T2_path:str, x0_path:str):
+        '''
+        Load the calibration matrices from their paths
+        '''
+        try:
+            T1 = np.loadtxt(T1_path)
+            T2 = np.loadtxt(T2_path)
+            x0 = np.loadtxt(x0_path)
+            return T1, T2, x0
+        except:
+            raise
+
 
 class CalibrationData():
     '''
@@ -363,44 +568,24 @@ class CalibrationModel():
 
         # Transformation from manipulator x, y, z, d to manipulator x, y, z
         self.T_mxyzd_to_mxyz = np.array([[1, 0, 0, np.cos(pip_angle)],
-                                    [0, 1, 0, 0],
-                                    [0, 0, 1, np.sin(pip_angle)]])
+                                         [0, 1, 0, 0],
+                                         [0, 0, 1, np.sin(pip_angle)]]).astype(np.float64)
         self.T_mxyz_to_exxyz = np.array([[T_xy[0,0], T_xy[0,1], 0],
-                                   [T_xy[1,0], T_xy[1,1], 0],
-                                   [0, 0, T_z]])
+                                         [T_xy[1,0], T_xy[1,1], 0],
+                                         [0, 0, T_z]]).astype(np.float64)
 
-        # Construct system matrices
-        n_ex = 3 # number of external states [x, y, z]
-        n_m = 4 # number of manipulator states [x, y, z, d]
-        n_h = 1 # number of homo
-        A11 = np.eye(n_ex)
-        A12 = np.zeros((n_ex,n_m))
-        A21 = np.zeros((n_m,n_ex))
-        A22 = np.eye(n_m)
-        self.A = np.eye(n_ex+n_m)
-        B11 = np.matmul(self.T_mxyz_to_exxyz,self.T_mxyzd_to_mxyz)
-        B21 = np.eye(n_m)
-        self.B = np.concatenate([B11,B21],axis=0)
-        self.C = np.eye(n_ex+n_m)
-        self.D = np.zeros((n_ex+n_m, n_m))
+        # Define initial (reference) state as last calibration position
+        x_0 = data[['ex_x',
+                    'ex_y',
+                    'ex_z',
+                    'm_x',
+                    'm_y',
+                    'm_z',
+                    'm_d']].to_numpy().T[:,-1].reshape(-1,1).astype(np.float64)
 
-        # Compute pixel size
-        self.pixel_size_nm = self._compute_pixel_size(self.B[0,0],
-                                                      self.B[0,1],
-                                                      self.B[1,0],
-                                                      self.B[1,1])
-        
-        # Set initial state as last calibration position
-        self.x_0 = data[['ex_x',
-                        'ex_y',
-                        'ex_z',
-                        'm_x',
-                        'm_y',
-                        'm_z',
-                        'm_d']].to_numpy().T[:,-1].reshape(-1,1)
+        # Set the system model
+        self.set_model(self.T_mxyzd_to_mxyz, self.T_mxyz_to_exxyz, x_0)
 
-        # Set calibration boolean
-        self.is_calibrated = True
 
     def _compute_pixel_size(self,B_xx, B_xy, B_yx, B_yy):
         '''
@@ -420,20 +605,68 @@ class CalibrationModel():
         pix_size_nm = 1/pix_per_nm
         return pix_size_nm
 
-    def set_x_0(self, x_0:list):
+    def set_x_0(self, data:pd.DataFrame):
         '''
-        Sets the reference state, x_0, from which new positions are referenced.
+        Sets the reference state, x_0, from which new positions are referenced. Sets x_0
+        as the last entry in the dataframe
 
         Arguments:
-            x_0 (list): New reference state in form of 
+            x_0 (pd.DataFrame): Dataframe with at least 1 entry and columns of:
                 ['ex_x', 'ex_y', 'ex_z', 'm_x', 'm_y', 'm_z', 'm_d']. Where 'ex'
                 is external and 'm' is manipulator position
         '''
-        if not val.is_of_types(x_0, ['list', 'tuple']):
-            raise TypeError(f'Desired updated reference state {x_0} must be a list or tuple')
-        if len(x_0) != 7:
-            raise ValueError(f"Desired updated reference state {x_0} must have 7 entries according to ['ex_x', 'ex_y', 'ex_z', 'm_x', 'm_y', 'm_z', 'm_d']")
-        self.x_0 = np.array(x_0).reshape(7,1)
+        try:
+            self.x_0 = data[['ex_x',
+                        'ex_y',
+                        'ex_z',
+                        'm_x',
+                        'm_y',
+                        'm_z',
+                        'm_d']].to_numpy().T[:,-1].reshape(-1,1).astype(np.float64)
+        except:
+            raise
+
+    def set_model(self, T_mxyzd_to_mxyz:np.ndarray, T_mxyz_to_exxyz:np.ndarray, x_0:np.ndarray):
+        '''
+        Set/define the dynamic model matrices for the system.
+
+        Assumes
+        x = Ax + Bu
+        y = Cx + Du
+
+        T_mxyzd_to_mxyz (np.ndarray): Transformation matrix from m_xyzd to m_xyz (3x4)
+        T_mxyz_to_exxyz (np.ndarray): Transformation matrix from m_xyz to ex_xyz (3x3)
+        x_0 (np.ndarray): Reference initial positions (7x1)
+        '''
+        # Validate matrix size
+        if T_mxyzd_to_mxyz.shape != (3,4):
+            raise ValueError("T_mxyzd_to_mxyz must be a 3x4 matrix")
+        if T_mxyz_to_exxyz.shape != (3,3):
+            raise ValueError("T_mxyz_to_exxyz must be a 3x3 matrix")
+        if x_0.shape not in [(7,), (7,1), (1,7)]:
+            raise ValueError("x_0 must be a 7x1 vector")
+        # Set T and x0 arrays
+        self.T_mxyzd_to_mxyz = T_mxyzd_to_mxyz
+        self.T_mxyz_to_exxyz = T_mxyz_to_exxyz
+        self.x_0 = x_0.reshape(7,1)
+        # Construct system matrices
+        n_ex = 3 # number of external states [x, y, z]
+        n_m = 4 # number of manipulator states [x, y, z, d]
+        n_h = 1 # number of homo
+        self.A = np.eye(n_ex+n_m)
+        B11 = np.matmul(self.T_mxyz_to_exxyz,self.T_mxyzd_to_mxyz)
+        B21 = np.eye(n_m)
+        self.B = np.concatenate([B11,B21],axis=0)
+        self.C = np.eye(n_ex+n_m)
+        self.D = np.zeros((n_ex+n_m, n_m))
+        # Compute pixel size
+        self.pixel_size_nm = self._compute_pixel_size(self.B[0,0],
+                                                      self.B[0,1],
+                                                      self.B[1,0],
+                                                      self.B[1,1])
+        # Set calibration boolean
+        self.is_calibrated = True
+
 
     def forward(self, man:list)->list:
         '''
@@ -563,9 +796,42 @@ class CalibrationError(Exception):
     Exception raised for errors with calibration process
 
     Attributes:
-        msg (str): Explanation of errror
+        msg (str): Explanation of error
     '''
     def __init__(self, msg="Calibration error occured"):
+        self.msg = msg
+        super().__init__(self.msg)
+
+class CalibrationDataError(Exception):
+    '''
+    Exception raised for errors with calibration data
+
+    Attributes:
+        msg (str): Explanation of error
+    '''
+    def __init__(self, msg="Error occured with calibration data"):
+        self.msg = msg
+        super().__init__(self.msg)
+
+class CalibrationDNEError(Exception):
+    '''
+    Exception raised for errors when calibration doesn't exist
+
+    Attributes:
+        msg (str): Explanation of error
+    '''
+    def __init__(self, msg="Calibration doesn't exist"):
+        self.msg = msg
+        super().__init__(self.msg)
+
+class CalibrationFileError(Exception):
+    '''
+    Exception raised for errors when calibration file doesn't exist
+
+    Attributes:
+        msg (str): Explanation of error
+    '''
+    def __init__(self, msg="Calibration doesn't exist"):
         self.msg = msg
         super().__init__(self.msg)
 
@@ -590,7 +856,8 @@ def _val_positions(ex:list=None, man:list=None):
             raise ValueError(f'Manipulator position ({man}) must have 4 entries [x,y,z,d]')
 
 if __name__ == "__main__":
-    cal = Calibrator()
+    cal_dir = "C:/Users/Public/Documents/envs/Autoinjector_2/Autoinjector/data/calibration"
+    cal = Calibrator(cal_dir)
     cal.data.add_cal_position([788.0, 711.0, 98.4], [13673885, 7824242, 16301830, 14980624])
     cal.data.add_cal_position([780.0, 267.0, 98.4], [13673866, 8394526, 16301826, 14980624])
     cal.data.add_cal_position([294.0, 272.0, 98.4], [14291597, 8394509, 16301837, 14980624])

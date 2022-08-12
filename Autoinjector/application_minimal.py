@@ -4,6 +4,7 @@ import time
 import os
 import sys
 import traceback
+from datetime import datetime
 from functools import partial
 import cv2
 import serial
@@ -20,10 +21,11 @@ from src.motorcontrol.trajectorythread_minimal import trajectoryimplementor
 from src.pythonarduino.injectioncontrolmod import injection
 from src.resolutiontest.gotoposition import GetPos
 from src.cfg_mgmt.cfg_mngr import CfgManager
+from src.Qt_utils.gui_objects import QHLine
 from src.miscellaneous.standard_logger import StandardLogger as logr
 from src.miscellaneous import validify as val
 from src.data_generation.data_generators import PipTipData, TissueEdgeData
-from src.manipulator_control.calibration import Calibrator
+from src.manipulator_control.calibration import Calibrator, CalibrationError, CalibrationDNEError, CalibrationFileError, CalibrationDataError
 from src.manipulator_control.sensapex_utils import SensapexDevice
 from src.manipulator_control.injection_trajectory import SurfaceLineTrajectory3D
 from src.ZEN_interface.ZEN_App import ZenGroup
@@ -48,6 +50,9 @@ class ControlWindow(QMainWindow):
         self.error_msg = QMessageBox()
         self.error_msg.setIcon(QMessageBox.Icon.Critical)
         self.error_msg.setWindowTitle("Error")
+        self.warn_msg = QMessageBox()
+        self.warn_msg.setIcon(QMessageBox.Icon.Warning)
+        self.warn_msg.setWindowTitle("Warning")
         self.fourtyxmag = fourtyxcalibdist #distance manipulators move for calibration based on camera FOV and mag
 
         # initiate thread to poll position of motors and report error if they are not found
@@ -110,8 +115,10 @@ class ControlWindow(QMainWindow):
         self.data_generator_widgets()
         self.injection_parameter_widgets()
         self.zen_group = ZenGroup()
-        self.pip_cal = Calibrator()
+        self.pip_cal = Calibrator(cal_data_dir=self.cal_data_dir)
         self.zen_group.obj_changed.connect(self.obj_changed)
+        self.zen_group.obj_changed.connect(self.zeiss_change_calibration)
+        self.zen_group.opto_changed.connect(self.zeiss_change_calibration)
         self.zen_group.opto_changed.connect(self.opto_changed)
         self.zen_group.ref_changed.connect(self.ref_changed)
         self.GUIsetup()
@@ -172,7 +179,7 @@ class ControlWindow(QMainWindow):
         # Pipette angle
         angle_label = QLabel("Pipette \n Angle", parent=self)
         self.angle_mode_box = QComboBox(parent=self)
-        self.angle_mode_box.setPlaceholderText('Angle Mode') # Connect currentTextChanged to set angle
+        self.angle_mode_box.setPlaceholderText('Angle Mode')
         self.angle_entry = QLineEdit(self)
         self.set_angle_button = QPushButton("Set", self)
         grid_layout1 = QGridLayout()
@@ -180,28 +187,52 @@ class ControlWindow(QMainWindow):
         grid_layout1.addWidget(self.angle_mode_box, 0, 1, 1, 2)
         grid_layout1.addWidget(self.angle_entry, 1, 1, 1, 1)
         grid_layout1.addWidget(self.set_angle_button, 1, 2, 1, 1)
-        # My calibration buttons
+        # Separator
+        h_sep1 = QHLine()
+        # Calibration mode
+        cal_mode_label = QLabel("Calibration:")
+        self.cal_mode_box = QComboBox(parent=self)
+        self.cal_mode_box.setPlaceholderText('Mode')
+        h_layout_mode = QHBoxLayout()
+        h_layout_mode.addWidget(cal_mode_label)
+        h_layout_mode.addWidget(self.cal_mode_box)
+        # New laod and save
         self.conduct_calibration_but = QCheckBox("Calibrate")
+        self.update_calibration_but = QCheckBox("Update")
+        self.load_calibration_but = QPushButton("Load", self)
+        self.save_calibration_but = QPushButton("Save", self)
         self.display_calibration_but = QCheckBox("Display")
-        h_layout1 = QHBoxLayout()
-        h_layout1.addWidget(self.conduct_calibration_but)
-        h_layout1.addWidget(self.display_calibration_but)
+        h_layout2 = QHBoxLayout()
+        h_layout2.addWidget(self.load_calibration_but)
+        h_layout2.addWidget(self.save_calibration_but)
+        v_layout1 = QVBoxLayout()
+        v_layout1.addWidget(self.conduct_calibration_but)
+        v_layout1.addWidget(self.update_calibration_but)
+        v_layout1.addLayout(h_layout2)
+        v_layout1.addWidget(self.display_calibration_but)
         # Groupbox and master layout
         pip_cal_layout = QVBoxLayout()
         pip_cal_layout.addLayout(grid_layout1)
-        pip_cal_layout.addLayout(h_layout1)
+        pip_cal_layout.addWidget(h_sep1)
+        pip_cal_layout.addLayout(h_layout_mode)
+        pip_cal_layout.addLayout(v_layout1)
         self.pip_cal_group = QGroupBox('Pipette Calibration')
         self.pip_cal_group.setLayout(pip_cal_layout)
         # Set connections
         self.conduct_calibration_but.clicked.connect(self.compute_calibration)
+        self.update_calibration_but.clicked.connect(self.update_calibration)
+        self.save_calibration_but.clicked.connect(self.save_calibration)
+        self.load_calibration_but.clicked.connect(self.load_calibration)
         self.display_calibration_but.clicked.connect(self.display_calibration)
         self.angle_mode_box.currentTextChanged.connect(self.set_angle_mode)
+        self.cal_mode_box.currentTextChanged.connect(self.set_cal_mode)
         self.set_angle_button.clicked.connect(self.set_pipette_angle)
 
     def stateify_pipette_calibrator_widgets(self):
         ''' Set initial states for the pipette calirbator widgets '''
         self.angle_mode_box.insertItems(0, ['Automatic','Manual','Load'])
         self.angle_mode_box.setCurrentText('Automatic')
+        self.cal_mode_box.insertItems(0,['Manual','Semi-Auto.','Automatic'])
         self.pip_disp_timer = QTimer()
         self.pip_disp_timer.timeout.connect(self.display_calibration)
         self.pip_disp_timeout = 25
@@ -358,13 +389,13 @@ class ControlWindow(QMainWindow):
         #Manipulator Status 
         # -*- coding: utf-8 -*-
         self.mu = "µ"
-        self.motorchangeincrementtext = QLabel("Increment (" + self.mu + "m)    ")
-        self.motorchangespeedtext = QLabel("    Speed (%)       ")
+        self.motorchangeincrementtext = QLabel("Increment (" + self.mu + "m)")
+        self.motorchangespeedtext = QLabel("Speed (%)")
         self.motorchangeincrement = QLineEdit(self)
         self.motorchangespeed = QLineEdit(self)
-        self.motorxpositiontext = QLabel("   X Position     ")
-        self.motorypositiontext = QLabel("   Y Position     ")
-        self.motorzpositiontext = QLabel("   Z Position     ")
+        self.motorxpositiontext = QLabel("X Position")
+        self.motorypositiontext = QLabel("Y Position")
+        self.motorzpositiontext = QLabel("Z Position")
         self.motorxposition = QLineEdit(self)
         self.motoryposition = QLineEdit(self)
         self.motorzposition = QLineEdit(self)
@@ -531,6 +562,46 @@ class ControlWindow(QMainWindow):
         else:
             self.response_monitor_window.append(">> Camera detected and working.")
 
+    def valuechange(self):
+        self.pressureslidervalue= self.pressure_slider.value()
+        self.displaypressure = int(self.pressureslidervalue/2.55)
+        self.pressure_display.setText(str(self.displaypressure)+'%')
+
+    def exposurevaluechange(self):
+        self.exposureslidervalue = self.exposureslider.value()/3.33
+        self.displayexposure = float(self.exposureslidervalue)
+        self.vidctrl.changeexposure(self.displayexposure)
+
+    def updateoverride(self,text):
+        self.overrideon = str(text)
+        self.response_monitor_window.append(">> Override calibrated settings for resolution test set to ON.")
+    
+    """
+    ------------------------ Data Generation Controls -------------------------
+    Functions control saving images from data
+    """
+    def acquire_tip_data(self, tip_position):
+        '''
+        Queries whether checkbox selected to save tip data, and saves data if checked
+        '''
+        if self.save_tip_annot.isChecked():
+            tip_dict = {'x':tip_position.x(), 'y':tip_position.y()}
+            self.save_pip_cal_data(tip_dict)
+
+    def acquire_tissue_data(self, raw_edge_coord, inter_edge_cood):
+        '''
+        Queries whether checkbox selected to save tissue data, and saves data if checked
+        '''
+        if self.save_tiss_annot.isChecked():
+            raw = np.asarray(raw_edge_coord)
+            inter = np.asarray(inter_edge_coord)
+            self.save_tiss_anot_data(raw_annot=raw, interpolate_annot=inter)
+
+    """
+    ----------Calibration Controls -----------------------------------------------------------------
+    These functions control the calibration of the manipulators to the camera axes
+    """
+
     def set_angle_mode(self):
         '''
         Sets the mode for querying the pipette angle.
@@ -602,45 +673,12 @@ class ControlWindow(QMainWindow):
             self.thetaz = np.deg2rad(float(angle_str))
             self.response_monitor_window.append(f">> Pipette angle set as {angle_str}")
 
-    def valuechange(self):
-        self.pressureslidervalue= self.pressure_slider.value()
-        self.displaypressure = int(self.pressureslidervalue/2.55)
-        self.pressure_display.setText(str(self.displaypressure)+'%')
-
-    def exposurevaluechange(self):
-        self.exposureslidervalue = self.exposureslider.value()/3.33
-        self.displayexposure = float(self.exposureslidervalue)
-        self.vidctrl.changeexposure(self.displayexposure)
-
-    def updateoverride(self,text):
-        self.overrideon = str(text)
-        self.response_monitor_window.append(">> Override calibrated settings for resolution test set to ON.")
-    
-    """
-    ------------------------ Data Generation Controls -------------------------
-    Functions control saving images from data
-    """
-    def acquire_tip_data(self, tip_position):
-        '''
-        Queries whether checkbox selected to save tip data, and saves data if checked
-        '''
-        if self.save_tip_annot.isChecked():
-            tip_dict = {'x':tip_position.x(), 'y':tip_position.y()}
-            self.save_pip_cal_data(tip_dict)
-
-    def acquire_tissue_data(self, raw_edge_coord, inter_edge_cood):
-        '''
-        Queries whether checkbox selected to save tissue data, and saves data if checked
-        '''
-        if self.save_tiss_annot.isChecked():
-            raw = np.asarray(raw_edge_coord)
-            inter = np.asarray(inter_edge_coord)
-            self.save_tiss_anot_data(raw_annot=raw, interpolate_annot=inter)
-
-    """
-    ----------Calibration Controls -----------------------------------------------------------------
-    These functions control the calibration of the manipulators to the camera axes
-    """
+    def set_cal_mode(self):
+        ''' Sets the mode for conducting calibration. Called when cal_mode_box
+        changes. '''
+        # Get selected mode
+        cal_mode = self.cal_mode_box.currentText()
+        self.logger.debug(f'Calibration mode changed: {cal_mode}')
 
     def add_cal_positions(self,x_click:float, y_click:float):
         ''' Adds clicked calibration positions to calibration data '''
@@ -650,44 +688,143 @@ class ControlWindow(QMainWindow):
             dev = SensapexDevice(1)
             man_pos = dev.get_pos()
             self.pip_cal.data.add_cal_position(ex=ex_pos, man=man_pos)
-            print(self.pip_cal.data.data_df)
             if self.save_tip_annot.isChecked():
                 self.tipposition1 = self.vidctrl.tipcircle
                 tip_dict = {'x':self.tipposition1.x(), 'y':self.tipposition1.y()}
                 self.save_pip_cal_data(tip_dict)
+        if self.update_calibration_but.isChecked():
+            self.pip_cal.data.rm_all()
+            z_scope = self.zen_group.zen.get_focus_um()
+            ex_pos = [x_click, y_click, z_scope]
+            dev = SensapexDevice(1)
+            man_pos = dev.get_pos()
+            self.pip_cal.data.add_cal_position(ex=ex_pos, man=man_pos)
 
     def compute_calibration(self):
         ''' Computes calibration from calibration data '''
         if self.conduct_calibration_but.isChecked() is False:
             try:
-                self.pip_cal.compute(z_polarity=-1, pip_angle=self.thetaz)
-            except:
-                print(traceback.format_exc())
+                _, obj_mag = self.zen_group.parse_combobox('objective')
+                _, opto_mag = self.zen_group.parse_combobox('optovar')
+                self.pip_cal.compute(z_polarity=-1, pip_angle=self.thetaz, obj_mag=obj_mag, opto_mag=opto_mag)
+            except CalibrationDataError as e:
+                self.logger.warning(e)
+                self.warn_msg.setText(f"Calibration not completed. Error: {e}\n\nMake sure you click on the tip to register at least 3 points (that don't lie on a line) before unchecking 'Calibrate'.")
+                self.warn_msg.exec()
+            except Exception as e:
+                self.logger.exception("Error while computing calibration")
+                self.error_msg.setText(f"Error: {e}\n\nSee logs for more information.")
+                self.error_msg.exec()
             finally:
                 self.logger.info('Calibration unchecked. Deleting calibration points.')
                 self.pip_cal.data.rm_all()
     
     def display_calibration(self):
+        ''' Send computed tip positoin (in camera) to video to be displayed.
+        Calls itself on timer to update tip position in video'''
         if self.display_calibration_but.isChecked():
+            if self.pip_disp_timer.isActive() is False:
+                self.pip_disp_timer.start(self.pip_disp_timeout)
             if self.pip_cal.model.is_calibrated is True:
-                if self.pip_disp_timer.isActive() is False:
-                    self.pip_disp_timer.start(self.pip_disp_timeout)
-                    self.vidctrl.display_tip_pos = True
+                self.vidctrl.display_tip_pos = True
                 dev = SensapexDevice(1)
                 pos = dev.get_pos()
                 ex = self.pip_cal.model.forward(man=pos)
                 self.vidctrl.show_tip_pos(ex[0], ex[1])
+            else:
+                self.vidctrl.display_tip_pos = False
         else:
             self.vidctrl.display_tip_pos = False
             self.pip_disp_timer.stop()
 
     def update_calibration(self):
         ''' Updates calibration by setting new reference position '''
-        pass
+        if self.update_calibration_but.isChecked():
+            if self.pip_cal.model.is_calibrated is False:
+                self.update_calibration_but.setChecked(False)
+                e = "System is not calibrated. Can not update non-existent calibration."
+                self.logger.warning(e)
+                self.warn_msg.setText(f"Error: {e}\n\nConduct a new calibration or load an exsisting calibration before updating.")
+                self.warn_msg.exec()
+        else:
+            try:
+                self.pip_cal.update()
+            except CalibrationDataError as e:
+                self.logger.warning(e)
+                self.warn_msg.setText(f"Calibration not updated. Error: {e}\n\nMake sure you click on the tip to register the calibration point before unchecking 'Update'.")
+                self.warn_msg.exec()
+            except Exception as e:
+                self.logger.exception("Error while updating calibration")
+                self.error_msg.setText(f"Error: {e}\n\nSee logs for more information.")
+                self.error_msg.exec()
+            finally:
+                self.logger.info('Calibration unchecked. Deleting calibration points.')
+                self.pip_cal.data.rm_all()
+
+    def save_calibration(self):
+        ''' Saves calibration to a file '''
+        if self.pip_cal.model.is_calibrated is False:
+            e = "System is not calibrated. Can not save non-existent calibration."
+            self.logger.warning(e)
+            self.warn_msg.setText(f"Error: {e}\n\nConduct a new calibration or load and update an existing calibration before saving.")
+            self.warn_msg.exec()
+        else:
+            try:
+                _, obj_mag = self.zen_group.parse_combobox('objective')
+                _, opto_mag = self.zen_group.parse_combobox('optovar')
+                self.pip_cal.save_model(obj_mag=obj_mag, opto_mag=opto_mag)
+            except Exception as e:
+                self.logger.exception("Error while saving calibration")
+                self.error_msg.setText(f"Error while saving calibration: {e}")
+                self.error_msg.exec()
 
     def load_calibration(self):
         ''' Loads the most recent calibration '''
-        pass
+        # Ask if user wants to overwrite an existing calibration
+        if self.pip_cal.model.is_calibrated is True:
+            qm = QMessageBox()
+            ret = qm.question(self,'Load calibration?','System is already calibrated. Do you still want to load the most recent calibration?')
+            if ret == QMessageBox.StandardButton.No:
+                return None
+        try:
+            _, obj_mag = self.zen_group.parse_combobox('objective')
+            _, opto_mag = self.zen_group.parse_combobox('optovar')
+            self.pip_cal.load_model(obj_mag, opto_mag)
+        except CalibrationFileError as e:
+            self.logger.warning(str(e))
+            self.warn_msg.setText(f"Error: {e}.\n\nYou must save a calibration file before it can be loaded.")
+            self.warn_msg.exec()
+        except CalibrationDNEError as e:
+            self.logger.warning(str(e))
+            self.warn_msg.setText(f"Error: {e}.\n\nYou must save a calibration with this microscope configuration before it can be loaded.")
+            self.warn_msg.exec()
+        except Exception as e:
+            self.logger.exception('Error while loading calibration')
+            self.error_msg.setText(f"Error: {e}. Check logs for traceback.")
+            self.error_msg.exec()            
+
+    def zeiss_change_calibration(self):
+        ''' Changes the calibration if the microscope changes'''
+        # Set new calibraiton model if it exists or warn user
+        _, obj_mag = self.zen_group.parse_combobox('objective')
+        _, opto_mag = self.zen_group.parse_combobox('optovar')
+        # Use an existing calibration for this config or show warning if was already calibrated and now its not
+        if self.pip_cal.model.is_calibrated is True:
+            try:
+                self.pip_cal.use_existing_model(obj_mag=obj_mag, opto_mag=opto_mag)
+            except CalibrationDNEError as e:
+                self.pip_cal.model.reset_calibration()
+                self.logger.warning(str(e))
+                self.warn_msg.setText(f"You switched the microscope configuration, but '{e}'.\n\nYour previous calibration is invalid. Either switch to the previous microscope configuration or conduct/load a calibration for this microscope configuration.")
+                self.warn_msg.exec()
+        # Load calibration or no warning if not exist
+        else:
+            try:
+                self.pip_cal.use_existing_model(obj_mag=obj_mag, opto_mag=opto_mag)
+            except CalibrationDNEError as e:
+                pass
+
+
     
     def save_pip_cal_data(self, tip_dict:dict):
         '''

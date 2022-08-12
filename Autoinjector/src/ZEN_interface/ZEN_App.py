@@ -207,8 +207,8 @@ class ZenGroup(QGroupBox):
         obj_pos = self.zen.get_obj_info("position")
         # Get currently displayed position
         combo_pos, combo_mag = self.parse_combobox('objective')
-        # Update position if changed
-        if obj_pos != combo_pos:
+        # Update position if changed. Sometimes while switch says pos is 0 (impossible, so dont handle 0 pos)
+        if obj_pos != combo_pos and obj_pos != 0:
             # Set new combobox value
             if obj_pos in list(self.zen.objectives['position']):
                 obj_mag = self.zen.objectives.at[obj_pos, 'magnification']
@@ -226,8 +226,8 @@ class ZenGroup(QGroupBox):
         opto_pos = self.zen.get_opto_info("position")
         # Get currently displayed position
         combo_pos, combo_mag = self.parse_combobox('optovar')
-        # Update position if changed
-        if opto_pos != combo_pos:
+        # Update position if changed. Sometimes while switch says pos is 0 (impossible, so dont handle 0 pos)
+        if opto_pos != combo_pos and opto_pos != 0:
             # Set new combobox value
             if opto_pos in list(self.zen.optovars['position']):
                 opto_mag = self.zen.optovars.at[opto_pos, 'magnification']
@@ -244,8 +244,8 @@ class ZenGroup(QGroupBox):
         ref_pos = self.zen.get_ref_info("position")
         # Get currently displayed position
         combo_pos, combo_name = self.parse_combobox('reflector')
-        # Update position if changed
-        if ref_pos != combo_pos:
+        # Update position if changed. Sometimes while switch says pos is 0 (impossible, so dont handle 0 pos)
+        if ref_pos != combo_pos and ref_pos != 0:
             # If already in the listed optovars (had a valid name) then don't ask zen for the mag (to prevent zen block eventloop)
             if ref_pos in list(self.zen.reflectors['position']):
                 ref_name = self.zen.reflectors.at[ref_pos, 'name']

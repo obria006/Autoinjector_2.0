@@ -611,6 +611,25 @@ class ControlWindow(QMainWindow):
     These functions control the calibration of the manipulators to the camera axes
     """
 
+    def ask_continue_change_angle(self):
+        '''
+        If the system is currently calibrated with an angle, ask user if want to continue
+        which will invalidate the current calibraiton
+
+        If user clicks no (or not calibrated), nothing happens
+        If user clicks yes, resets calibration
+        '''
+        if self.pip_cal.model.is_calibrated is True:
+            qm = QMessageBox()
+            ret = qm.question(self,'New angle?','Calibration is complete, and changing the angle will invalidate the current calibration. Do you still want to change the angle ?')
+            if ret == QMessageBox.StandardButton.No:
+                return False
+            else:
+                self.pip_cal.model.reset_calibration()
+                return True
+        else:
+            return True
+
     def set_angle_mode(self):
         '''
         Sets the mode for querying the pipette angle.
@@ -626,7 +645,21 @@ class ControlWindow(QMainWindow):
                 enable entry box and make white
                 enable set button
         '''
-        # Get the selected mode
+        # Ask user if wants to change angle mode since will effect calibration
+        change_ang = self.ask_continue_change_angle()
+        if change_ang is False:
+            angle_mode = self.angle_mode_box.currentIndex()
+            # Change back to other state if user doesn't want to effect calibration
+            if angle_mode == 1:
+                tmp_block = QSignalBlocker(self.angle_mode_box)
+                self.angle_mode_box.setCurrentIndex(0)
+                tmp_block.unblock()
+            else:
+                tmp_block = QSignalBlocker(self.angle_mode_box)
+                self.angle_mode_box.setCurrentIndex(1)
+                tmp_block.unblock()
+            return None
+
         angle_mode = self.angle_mode_box.currentText()
         # Handle different angle mode selections
         if angle_mode == 'Automatic':
@@ -664,6 +697,12 @@ class ControlWindow(QMainWindow):
             
     def set_pipette_angle(self):
         ''' Sets pipette angle from entry box '''
+        # Ask user if they want to change angle since will effect calibration.
+        change_ang = self.ask_continue_change_angle()
+        if change_ang is False:
+            # Break function (dont set angle)
+            return None
+
         angle_str = self.angle_entry.text()
         if val.is_valid_number(angle_str) is False:
             self.logger.warning(f'Invalid angle: {angle_str}. Angle must be a valid number.')
@@ -692,11 +731,18 @@ class ControlWindow(QMainWindow):
 
     def load_pipette_angle(self):
         ''' Loads pipette angle from file '''
+        # Ask user if they want to change angle since will effect calibration.
+        change_ang = self.ask_continue_change_angle()
+        if change_ang is False:
+            # Break function (dont set angle)
+            return None
+        # Ask if want to change angle if already set
         if 'pip_angle' in self.__dict__.keys():
             qm = QMessageBox()
             ret = qm.question(self,'Load angle?','Angle is already set. Do you still want to load the most recently saved angle?')
             if ret == QMessageBox.StandardButton.No:
                 return None
+        # Load the angle
         try:
             ang_data = self.angle_io.load_latest()
             ang_rad = ang_data['Angle']
@@ -711,7 +757,7 @@ class ControlWindow(QMainWindow):
             self.logger.exception('Error while loading pipette error')
             self.error_msg.setText(f"Error: {e}. Check logs for traceback.")
             self.error_msg.exec()
-        finally:
+        else:
             self.logger.info(f"Pipette angle loaded as {round(ang_deg,1)} degrees from {ang_date} {ang_time}.")
             self.response_monitor_window.append(f">> Most recent pipette angle loaded as {round(ang_deg,1)} degrees from {ang_date} {ang_time}.")
             self.angle_entry.clear()
@@ -801,7 +847,9 @@ class ControlWindow(QMainWindow):
                 self.warn_msg.exec()
         else:
             try:
-                self.pip_cal.update()
+                _, obj_mag = self.zen_group.parse_combobox('objective')
+                _, opto_mag = self.zen_group.parse_combobox('optovar')
+                self.pip_cal.update(obj_mag=obj_mag, opto_mag=opto_mag, pip_angle=self.pip_angle)
             except CalibrationDataError as e:
                 self.logger.warning(e)
                 self.warn_msg.setText(f"Calibration not updated. Error: {e}\n\nMake sure you click on the tip to register the calibration point before unchecking 'Update'.")
@@ -825,7 +873,7 @@ class ControlWindow(QMainWindow):
             try:
                 _, obj_mag = self.zen_group.parse_combobox('objective')
                 _, opto_mag = self.zen_group.parse_combobox('optovar')
-                self.pip_cal.save_model(obj_mag=obj_mag, opto_mag=opto_mag)
+                self.pip_cal.save_model(obj_mag=obj_mag, opto_mag=opto_mag, ang_deg=np.rad2deg(self.pip_angle))
             except Exception as e:
                 self.logger.exception("Error while saving calibration")
                 self.error_msg.setText(f"Error while saving calibration: {e}")
@@ -842,7 +890,7 @@ class ControlWindow(QMainWindow):
         try:
             _, obj_mag = self.zen_group.parse_combobox('objective')
             _, opto_mag = self.zen_group.parse_combobox('optovar')
-            self.pip_cal.load_model(obj_mag, opto_mag)
+            self.pip_cal.load_model(obj_mag=obj_mag, opto_mag=opto_mag, ang_deg=np.rad2deg(self.pip_angle))
         except CalibrationFileError as e:
             self.logger.warning(str(e))
             self.warn_msg.setText(f"Error: {e}.\n\nYou must save a calibration file before it can be loaded.")
@@ -864,7 +912,7 @@ class ControlWindow(QMainWindow):
         # Use an existing calibration for this config or show warning if was already calibrated and now its not
         if self.pip_cal.model.is_calibrated is True:
             try:
-                self.pip_cal.use_existing_model(obj_mag=obj_mag, opto_mag=opto_mag)
+                self.pip_cal.use_existing_model(obj_mag=obj_mag, opto_mag=opto_mag, ang_deg=np.rad2deg(self.pip_angle))
             except CalibrationDNEError as e:
                 self.pip_cal.model.reset_calibration()
                 self.logger.warning(str(e))
@@ -873,7 +921,7 @@ class ControlWindow(QMainWindow):
         # Load calibration or no warning if not exist
         else:
             try:
-                self.pip_cal.use_existing_model(obj_mag=obj_mag, opto_mag=opto_mag)
+                self.pip_cal.use_existing_model(obj_mag=obj_mag, opto_mag=opto_mag, ang_deg=np.rad2deg(self.pip_angle))
             except CalibrationDNEError as e:
                 pass
 

@@ -20,22 +20,26 @@ class Calibrator():
             matrices and computing forward/inverse kinematics.
         io (CalibrationIO): Instance of CalibrationIO class for writing and reading calibration
             data to/from files.
-        _existing_models (dict): Stores existing calibration models and assocites with microscope
-            magnifications
+        tmp_storage (dict): Stores existing calibration models and assocites with microscope
+            magnifications and injection axis angles
         '''
 
-    def __init__(self, cal_data_dir:str):
+    def __init__(self, cal_data_dir:str,ang_tol_deg:float=1.25):
         '''
         Arguments:
             cal_data_dir (str): Directory to calibration data
+            Arguments:
+            ang_tol_deg (float): Alloted deviation in angle (degrees) to still be considered match
+                Match if within plus or minus ang_tol_deg
         '''
         self._logger = StandardLogger(__name__)
         self.data = CalibrationData()
         self.model = CalibrationModel()
         self._io = CalibrationIO(cal_data_dir=cal_data_dir)
-        self._existing_models = {}
+        self._ang_tol_deg = ang_tol_deg
+        self.tmp_storage = ModelStorage(ang_tol_deg=self._ang_tol_deg)
 
-    def compute(self, z_polarity=-1, pip_angle=np.deg2rad(45), obj_mag:float=None, opto_mag:float=None):
+    def compute(self, z_polarity=-1, pip_angle:float=np.deg2rad(45), obj_mag:float=None, opto_mag:float=None):
         '''
         Use CalibrationModel to compute the transformation matrices
         
@@ -50,46 +54,12 @@ class Calibrator():
         else:
             data = self.data.data_df
             self.model.compute_transform_simplest(data, z_polarity, pip_angle)
-            self._add_to_existing(obj_mag=obj_mag, opto_mag=opto_mag)
-    
-    def _mags_to_str(self, obj_mag:float, opto_mag:float)->str:
-        '''
-        Create string of f"{obj_mag},{opto_mag}" for indexing in existing_models
+            T_mxyzd_to_mxyz = self.model.T_mxyzd_to_mxyz
+            T_mxyz_to_exxyz = self.model.T_mxyz_to_exxyz
+            x_0 = self.model.x_0
+            self.tmp_storage.save(obj_mag=obj_mag, opto_mag=opto_mag, ang_deg = np.rad2deg(pip_angle),T_mxyzd_to_mxyz=T_mxyzd_to_mxyz,T_mxyz_to_exxyz=T_mxyz_to_exxyz,x_0=x_0)
 
-        Arguments:
-            obj_mag (float): Magnification of objective associate with model
-            opto_mag (float): Magnification of optovar associated with model
-        '''
-        mag_str = f"{obj_mag},{opto_mag}"
-        return mag_str
-
-    def _mags_from_str(self, mag_str:str)->list:
-        '''
-        Parses string of f"{obj_mag},{opto_mag}" to [obj_mag, opto_mag]
-
-        Arguments:
-            mag_str (str): magnifications as f"{obj_mag},{opto_mag}"
-        '''
-        mags = mag_str.split(',')
-        mags = [float(mag) for mag in mags]
-        return mags
-
-    def _add_to_existing(self, obj_mag:float, opto_mag:float):
-        '''
-        Add current calibration model to _existing_models attribute
-
-        Arguments:
-            obj_mag (float): Magnification of objective associate with model
-            opto_mag (float): Magnification of optovar associated with model
-        '''
-        mag_str = self._mags_to_str(obj_mag=obj_mag, opto_mag=opto_mag)
-        T1 = self.model.T_mxyzd_to_mxyz
-        T2 = self.model.T_mxyz_to_exxyz
-        x0 = self.model.x_0
-        cal_dict = {'T1':T1, 'T2':T2, 'x0':x0}
-        self._existing_models[mag_str] = cal_dict
-
-    def update(self):
+    def update(self,pip_angle:float, obj_mag:float, opto_mag:float):
         '''
         Update the calibration by setting a new reference position
         '''
@@ -98,34 +68,40 @@ class Calibrator():
         else:
             data = self.data.data_df.iloc[[0]]
             self.model.set_x_0(data)
+            T_mxyzd_to_mxyz = self.model.T_mxyzd_to_mxyz
+            T_mxyz_to_exxyz = self.model.T_mxyz_to_exxyz
+            x_0 = self.model.x_0
+            self.tmp_storage.save(obj_mag=obj_mag, opto_mag=opto_mag, ang_deg = np.rad2deg(pip_angle),T_mxyzd_to_mxyz=T_mxyzd_to_mxyz,T_mxyz_to_exxyz=T_mxyz_to_exxyz,x_0=x_0)
 
-    def save_model(self, obj_mag:float, opto_mag:float):
+    def save_model(self, obj_mag:float, opto_mag:float, ang_deg:float):
         '''
         Save calibration model (tranformation matrices) to file.
 
         Arguments:
             obj_mag (float): Magnification of objective associate with model
             opto_mag (float): Magnification of optovar associated with model
+            ang_deg (float): Injection axis angle in degrees
         '''
         try:
             T1 = self.model.T_mxyzd_to_mxyz
             T2 = self.model.T_mxyz_to_exxyz
             x0 = self.model.x_0
-            self._io.save(obj_mag=obj_mag, opto_mag=opto_mag, T1=T1, T2=T2, x0=x0)
+            self._io.save(obj_mag=obj_mag, opto_mag=opto_mag, ang_deg=ang_deg, T1=T1, T2=T2, x0=x0)
         except:
             raise
 
-    def load_model(self, obj_mag:float, opto_mag:float):
+    def load_model(self, obj_mag:float, opto_mag:float, ang_deg:float):
         '''
         Load calibration model (tranformation matrices) from file.
 
         Arguments:
             obj_mag (float): Magnification of objective associate with model
             opto_mag (float): Magnification of optovar associated with model
+            ang_deg (float): Injection axis angle in degrees
         '''
         # Load the calibration model
         try:
-            cal_data = self._io.load_latest(obj_mag=obj_mag, opto_mag=opto_mag)
+            cal_data = self._io.load_latest(obj_mag=obj_mag, opto_mag=opto_mag, ang_deg=ang_deg, ang_tol_deg=self._ang_tol_deg)
         except:
             raise
         # Parse the calirbation data
@@ -136,29 +112,206 @@ class Calibrator():
         x0 = cal_data['x0']
         # Set the calibration model
         self.model.set_model(T_mxyzd_to_mxyz=T1, T_mxyz_to_exxyz=T2, x_0=x0)
-        self._add_to_existing(obj_mag=obj_mag, opto_mag=opto_mag)
+        self.tmp_storage.save(obj_mag=obj_mag, opto_mag=opto_mag, ang_deg=ang_deg,T_mxyzd_to_mxyz=T1,T_mxyz_to_exxyz=T2,x_0=x0)
         
 
-    def use_existing_model(self, obj_mag:float, opto_mag:float):
+    def use_existing_model(self, obj_mag:float, opto_mag:float, ang_deg:float):
         '''
         Uses a model saved in _existing_calibration (if it exists for the specified mags)
 
         Arguments:
             obj_mag (float): Magnification of objective associate with model
             opto_mag (float): Magnification of optovar associated with model
+            ang_deg (float): Injection axis angle in degrees
         '''
-        # Create magstring for indexing in exisiting models dictionary
-        mag_str = self._mags_to_str(obj_mag=obj_mag, opto_mag=opto_mag)
-        # Get the calibration data for a given magnifcation if it exists
+        # Might raise CalibrationDNEError or KeyError
         try:
-            cal_dict = self._existing_models[mag_str]
-        except KeyError:
-            raise CalibrationDNEError(f'No calibration exists for objective={obj_mag} and optovar={opto_mag}.')
+            cal_dict = self.tmp_storage.load(obj_mag=obj_mag, opto_mag=opto_mag, ang_deg=ang_deg)
+        except:
+            raise
         # Set calibration from model
-        T1 = cal_dict['T1']
-        T2 = cal_dict['T2']
-        x0 = cal_dict['x0']
-        self.model.set_model(T_mxyzd_to_mxyz=T1, T_mxyz_to_exxyz=T2, x_0=x0)
+        T_mxyzd_to_mxyz = cal_dict['T_mxyzd_to_mxyz']
+        T_mxyz_to_exxyz = cal_dict['T_mxyz_to_exxyz']
+        x_0 = cal_dict['x_0']
+        self.model.set_model(T_mxyzd_to_mxyz=T_mxyzd_to_mxyz, T_mxyz_to_exxyz=T_mxyz_to_exxyz, x_0=x_0)
+
+class ModelStorage():
+    ''' Handles storing models for calibrator '''
+
+    def __init__(self, ang_tol_deg:float=1.25):
+        '''
+        Arguments:
+            ang_tol_deg (float): Alloted deviation in angle (degrees) to still be considered match
+                Match if within plus or minus ang_tol_deg
+        '''
+        self._logger = StandardLogger(__name__)
+        self.ang_tol_deg = ang_tol_deg
+        self._existing_models = {}
+        self._current_state = None
+
+    def clear(self):
+        ''' Clear storage of existing models '''
+        self._existing_models = {}
+        self._current_state = None
+
+    def save(self, obj_mag:float, opto_mag:float, ang_deg:float, T_mxyzd_to_mxyz:np.ndarray, T_mxyz_to_exxyz:np.ndarray, x_0:np.ndarray):
+        '''
+        Save current calibration model to _existing_models attribute
+
+        Arguments:
+            obj_mag (float): Magnification of objective associate with model
+            opto_mag (float): Magnification of optovar associated with model
+            ang_deg (float): Injection axis angle in degrees
+            T_mxyzd_to_mxyz (np.ndarray): delta 4-axis man. pos. to delta 3-axis man. pos. matrix
+            T_mxyz_to_exxyz (np.ndarray): delta 3-axis man. pos. to delta 3-axis ext. pos matrix
+            x_0 (np.ndarray): Reference state matrix
+        '''
+        cfg_str = self._cfg_to_str(obj_mag=obj_mag, opto_mag=opto_mag, ang_deg=ang_deg)
+        cal_dict = {'T_mxyzd_to_mxyz':T_mxyzd_to_mxyz, 'T_mxyz_to_exxyz':T_mxyz_to_exxyz, 'x_0':x_0}
+        self._existing_models[cfg_str] = cal_dict
+        self._logger.info(f"New temp model saved for {cfg_str}.")
+    
+    def load(self, obj_mag:float, opto_mag:float, ang_deg:float)->dict:
+        '''
+        Load calibration model from _exisitng_models_attribute
+
+        Arguments:
+            obj_mag (float): Magnification of objective associate with model
+            opto_mag (float): Magnification of optovar associated with model
+            ang_deg (float): Injection axis angle in degrees
+
+        Returns dictionary of {'T_mxyzd_to_mxyz':T_mxyzd_to_mxyz,
+                               'T_mxyz_to_exxyz':T_mxyz_to_exxyz,
+                               'x_0':x_0}
+        '''
+        # List of cfg keys that match the parameters
+        matched_cfgs = self._match_all(obj_mag=obj_mag, opto_mag=opto_mag, ang_deg=ang_deg)
+        if len(matched_cfgs) == 0:
+            raise CalibrationDNEError(f'No calibration exists for objective={obj_mag}, optovar={opto_mag}, and angle={ang_deg}+/-{self.ang_tol_deg}.')
+        if len(matched_cfgs) > 1:
+            raise CalibrationDNEError(f'Multiple calibrations exists for objective={obj_mag}, optovar={opto_mag}, and angle={ang_deg}+/-{self.ang_tol_deg}. Uncertain which to load')
+        matched_cfg = matched_cfgs[0]
+        # Get the model that matches the parameters
+        try:
+            cal_dict = self._existing_models[matched_cfg]
+        except KeyError:
+            raise CalibrationDNEError(f'No calibration exists for {matched_cfg}.')
+        self._logger.info(f'Loading temp model for {matched_cfg}')
+        return cal_dict
+    
+    def _cfg_to_str(self, obj_mag:float, opto_mag:float, ang_deg:float)->str:
+        '''
+        Create string of f"Objective:{obj_mag},Optovar:{opto_mag},Angle:{ang_deg}" for indexing
+        in the existing modls
+
+        Arguments:
+            obj_mag (float): Magnification of objective associate with model
+            opto_mag (float): Magnification of optovar associated with model
+            ang_deg (float): Injection axis angle in degrees
+
+        Returns:
+            string of f"Objective:{obj_mag},Optovar:{opto_mag},Angle:{ang_deg}"
+        '''
+        cfg_str = f"Objective:{obj_mag},Optovar:{opto_mag},Angle:{ang_deg}"
+        return cfg_str
+
+    def _cfg_from_str(self, cfg_str:str)->dict:
+        '''
+        Parses string of f"Objective:{obj_mag},Optovar:{opto_mag},Angle:{ang_deg}" to dict
+
+        Arguments:
+            cfg_str (str): configuration as f"Objective:{obj_mag},Optovar:{opto_mag},Angle:{ang_deg}"
+
+        Returns:
+            dict of {'Objective':obj_mag, 'Optovar':opto_mag, 'Angle':ang_deg}
+        '''
+        cfg = {}
+        cfg_list = cfg_str.split(',')
+        for ele in cfg_list:
+            name_val_pair = ele.split(':')
+            cfg[name_val_pair[0]] = float(name_val_pair[1])
+        return cfg
+
+    def _match_angle(self, ang_deg:float, model_keys:list)->list:
+        '''
+        Return _existing_model keys that match the angle (with tolerance)
+
+        Arguments:
+            ang_deg (float): Injection axis angle in degrees
+            model_keys (list): List of model keys (str) to analyze
+
+        Returns list of existing model keys that match the angle (with tolerance)
+        '''
+        # Make list of keys where angle is within tolerance
+        matched_keys = []
+        for model_key in model_keys:
+            cfg_dict = self._cfg_from_str(model_key)
+            if abs(ang_deg - cfg_dict['Angle']) < self.ang_tol_deg:
+                matched_keys.append(model_key)
+        return matched_keys
+
+    def _match_obj(self, obj_mag:float, model_keys:list)->list:
+        '''
+        Return _existing_model keys that match the objective magnification
+
+        Arguments:
+            obj_mag (float): Objective magnification
+            model_keys (list): List of model keys (str) to analyze
+
+        Returns list of existing model keys that match the objective magnifcation
+        '''
+        # Make list of keys where angle is within tolerance
+        matched_keys = []
+        for model_key in model_keys:
+            cfg_dict = self._cfg_from_str(model_key)
+            if obj_mag == cfg_dict['Objective']:
+                matched_keys.append(model_key)
+        return matched_keys
+
+    def _match_opto(self, opto_mag:float, model_keys:list)->list:
+        '''
+        Return _existing_model keys that match the optovar magnification
+
+        Arguments:
+            opto_mag (float): Optovar magnification
+            model_keys (list): List of model keys (str) to analyze
+
+        Returns list of existing model keys that match the optovar magnifcation
+        '''
+        # Make list of keys where angle is within tolerance
+        matched_keys = []
+        for model_key in model_keys:
+            cfg_dict = self._cfg_from_str(model_key)
+            if opto_mag == cfg_dict['Optovar']:
+                matched_keys.append(model_key)
+        return matched_keys
+
+    def _match_all(self, obj_mag:float, opto_mag:float, ang_deg:float)->list:
+        '''
+        Find existing models that match all parameters
+
+        Arguments:
+            obj_mag (float): Magnification of objective associate with model
+            opto_mag (float): Magnification of optovar associated with model
+            ang_deg (float): Injection axis angle in degrees
+
+        Returns list of model keys (str) that match all parameters
+        '''
+        # Current model keys
+        model_keys = list(self._existing_models.keys())
+        if model_keys == []:
+            return []
+        # Match parameters to model keys
+        obj_keys = self._match_obj(obj_mag=obj_mag, model_keys=model_keys)
+        opto_keys = self._match_opto(opto_mag=opto_mag, model_keys=model_keys)
+        ang_keys = self._match_angle(ang_deg=ang_deg, model_keys=model_keys)
+        matched_keys = self._intersect(ang_keys,obj_keys)
+        matched_keys = self._intersect(matched_keys, opto_keys)
+        return matched_keys
+
+    def _intersect(self, list_1:list, list_2:list)->list:
+        ''' Performs intersection between two lists '''
+        return [ele for ele in list_1 if ele in list_2]
         
 class AngleIO():
     '''
@@ -235,13 +388,14 @@ class CalibrationIO():
             os.makedirs(self.arr_dir)
             self._logger.info(f'Created calibration directory: {self.arr_dir}')
     
-    def save(self, obj_mag:float, opto_mag:float, T1:np.ndarray, T2:np.ndarray, x0:np.ndarray):
+    def save(self, obj_mag:float, opto_mag:float, ang_deg:float, T1:np.ndarray, T2:np.ndarray, x0:np.ndarray):
         '''
         Saves calibration to file
 
         Arguments:
             obj_mag (float): Magnification of objective associate with model
             opto_mag (float): Magnification of optovar associated with model
+            ang_deg (float): Injection axis angle in degrees
             T1 (np.ndarray): Transformation matrix from m_xyzd to m_xyz
             T2 (np.ndarray): Transformation matrix from m_xyz to ex_xyz
             x0 (np.ndarray): Reference initial positions
@@ -264,6 +418,7 @@ class CalibrationIO():
                     'Time':[now.strftime('%H:%M:%S')],
                     'Objective':[obj_mag],
                     'Optovar':[opto_mag],
+                    'Angle':[ang_deg],
                     'T1 path':[T1_path],
                     'T2 path':[T2_path],
                     'x0 path':[x0_path]}
@@ -279,10 +434,10 @@ class CalibrationIO():
         np.savetxt(T2_path, T2)
         np.savetxt(x0_path, x0)
         cal_df.to_csv(self.cal_data_path, mode=mode, header= header)
-        self._logger.info(f'Saved calibration info with objective = {obj_mag} and optovar = {opto_mag}.')
+        self._logger.info(f'Saved calibration info with objective = {obj_mag}, optovar = {opto_mag}, and angle = {ang_deg}.')
   
 
-    def load_latest(self, obj_mag:float, opto_mag:float):
+    def load_latest(self, obj_mag:float, opto_mag:float, ang_deg:float, ang_tol_deg:float)->dict:
         '''
         Load the latest (most recent calibration) with that matches the passed
         objective and optovar magnification
@@ -290,16 +445,20 @@ class CalibrationIO():
         Arguments:
             obj_mag (float): Magnification of objective associate with model
             opto_mag (float): Magnification of optovar associated with model
+            ang_deg (float): Injection axis angle in degrees
+            ang_tol (float): Tolerance in angle deviation to be considered match.
+                Is match if ang_deg - ang_tol < angle < ang_deg + ang_tol
         '''
         # Read the calibration file to dataframe
         if os.path.exists(self.cal_data_path) is False:
             raise CalibrationFileError(f'Calibration data file does not exist at {self.cal_data_path}')
         df = pd.read_csv(self.cal_data_path)
         # Find calibrations that match objective and optovar mag
-        matched_rows = (df['Objective'] == obj_mag) & (df['Optovar'] == opto_mag)
+        angle_rows = (df['Angle'] > (ang_deg - ang_tol_deg)) & (df['Angle'] < (ang_deg + ang_tol_deg))
+        matched_rows = (df['Objective'] == obj_mag) & (df['Optovar'] == opto_mag) & angle_rows
         matched_df = df.loc[matched_rows]
         if matched_df.shape[0] == 0:
-            raise CalibrationDNEError(f'Cannot load calbration with objective = {obj_mag} and optovar = {opto_mag}. No saved calibrations match these parameters.') 
+            raise CalibrationDNEError(f'Cannot load calbration with objective = {obj_mag}, optovar = {opto_mag}, and angle = {ang_deg} +/- {ang_tol_deg}. No saved calibrations match these parameters.') 
         date_str = matched_df.iloc[-1]['Date']
         time_str = matched_df.iloc[-1]['Time']
         T1_path = matched_df.iloc[-1]['T1 path']

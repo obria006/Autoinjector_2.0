@@ -40,7 +40,11 @@ class ControlWindow(QMainWindow):
     - video streaming and acquisition 
     Calling this class will initiate all functions and also present user with GUI (hence bioler plate at bottom of file)
     """
-
+    _scope_complete = pyqtSignal(bool)
+    _angle_complete = pyqtSignal(bool)
+    _calibration_complete = pyqtSignal(bool)
+    _annotation_complete = pyqtSignal(bool)
+    _parameter_complete = pyqtSignal(bool)
     def __init__(self,cam,brand,val,bins,rot,imagevals,scale,restest,com,fourtyxcalibdist, parent=None):
         super().__init__(parent)
         self.logger = logr(__name__)
@@ -114,17 +118,19 @@ class ControlWindow(QMainWindow):
         self.pipette_calibrator_widgets()
         self.data_generator_widgets()
         self.injection_parameter_widgets()
+        self.workflow_widgets()
         self.zen_group = ZenGroup()
         self.pip_cal = Calibrator(cal_data_dir=self.cal_data_dir)
         self.angle_io = AngleIO(ang_data_dir=self.cal_data_dir)
         self.zen_group.obj_changed.connect(self.obj_changed)
-        self.zen_group.obj_changed.connect(self.zeiss_change_calibration)
-        self.zen_group.opto_changed.connect(self.zeiss_change_calibration)
+        self.zen_group.obj_changed.connect(self.calibration_inputs_changed)
+        self.zen_group.opto_changed.connect(self.calibration_inputs_changed)
         self.zen_group.opto_changed.connect(self.opto_changed)
         self.zen_group.ref_changed.connect(self.ref_changed)
         self.GUIsetup()
         self.init_from_ZEN()
         self.vidctrl.clicked_pos.connect(self.add_cal_positions)
+        self.workflow_connections()
         self.stateify_pipette_calibrator_widgets()
         self.stateify_data_generator_widgets()
         self.stateify_injection_parameter_widgets()
@@ -196,33 +202,32 @@ class ControlWindow(QMainWindow):
         # Separator
         h_sep1 = QHLine()
         # Calibration mode
-        cal_mode_label = QLabel("Calibration:")
+        cal_mode_label = QLabel("Calibration Mode:")
         self.cal_mode_box = QComboBox(parent=self)
         self.cal_mode_box.setPlaceholderText('Mode')
-        h_layout_mode = QHBoxLayout()
-        h_layout_mode.addWidget(cal_mode_label)
-        h_layout_mode.addWidget(self.cal_mode_box)
-        # New laod and save
-        self.conduct_calibration_but = QCheckBox("Calibrate")
-        self.update_calibration_but = QCheckBox("Update")
-        self.load_calibration_but = QPushButton("Load", self)
-        self.save_calibration_but = QPushButton("Save", self)
-        self.display_calibration_but = QCheckBox("Display")
+        new_cal_label = QLabel('New Calibration:')
+        upd_cal_label = QLabel('Update Calibration:')
+        show_cal_label = QLabel('Show Calibration:')
+        self.conduct_calibration_but = QCheckBox("")
+        self.update_calibration_but = QCheckBox("")
+        self.save_calibration_but = QPushButton("Save Calibration", self)
+        self.load_calibration_but = QPushButton("Load Calibration", self)
+        self.display_calibration_but = QCheckBox("")
+        form = QFormLayout()
+        form.addRow(cal_mode_label,self.cal_mode_box)
+        form.addRow(new_cal_label,self.conduct_calibration_but)
+        form.addRow(upd_cal_label,self.update_calibration_but)
+        form.addRow(show_cal_label,self.display_calibration_but)
         h_layout2 = QHBoxLayout()
         h_layout2.addWidget(self.save_calibration_but)
         h_layout2.addWidget(self.load_calibration_but)
-        v_layout1 = QVBoxLayout()
-        v_layout1.addWidget(self.conduct_calibration_but)
-        v_layout1.addWidget(self.update_calibration_but)
-        v_layout1.addLayout(h_layout2)
-        v_layout1.addWidget(self.display_calibration_but)
         # Groupbox and master layout
         pip_cal_layout = QVBoxLayout()
         pip_cal_layout.addLayout(grid_layout1)
         pip_cal_layout.addLayout(h_layout_angio)
         pip_cal_layout.addWidget(h_sep1)
-        pip_cal_layout.addLayout(h_layout_mode)
-        pip_cal_layout.addLayout(v_layout1)
+        pip_cal_layout.addLayout(form)
+        pip_cal_layout.addLayout(h_layout2)
         self.pip_cal_group = QGroupBox('Pipette Calibration')
         self.pip_cal_group.setLayout(pip_cal_layout)
         # Set connections
@@ -272,6 +277,36 @@ class ControlWindow(QMainWindow):
         ''' Set initial states for data generator widgets '''
         self.save_tip_annot.setChecked(True)
         self.save_tiss_annot.setChecked(False)
+
+    def workflow_widgets(self):
+        '''
+        Creates widgets for showing status of injection workflow
+        '''
+        angle = QLabel('Set pipette angle')
+        self.angle_indicator = QLabel()
+        self._set_incomplete(self.angle_indicator)
+        calibration = QLabel('Conduct manipulator calibration')
+        self.calibration_indicator = QLabel()
+        self._set_incomplete(self.calibration_indicator)
+        annotation = QLabel('Annotate injection target')
+        self.annotation_indicator = QLabel()
+        self._set_incomplete(self.annotation_indicator)
+        parameter = QLabel('Set injection parameters')
+        self.parameter_indicator = QLabel()
+        self._set_incomplete(self.parameter_indicator)
+        form = QFormLayout()
+        form.addRow(self.angle_indicator,angle)
+        form.addRow(self.calibration_indicator,calibration)
+        form.addRow(self.annotation_indicator,annotation)
+        form.addRow(self.parameter_indicator,parameter)
+        self.workflow_group = QGroupBox('Pre-injection Workflow')
+        self.workflow_group.setLayout(form)
+
+    def workflow_connections(self):
+        self._angle_complete.connect(self._set_angle_ind)
+        self._calibration_complete.connect(self._set_calibration_ind)
+        self._annotation_complete.connect(self._set_annotation_ind)
+        self._parameter_complete.connect(self._set_parameter_ind)
 
     def injection_parameter_widgets(self):
         ''' Creates widgets for injection parameters '''
@@ -477,6 +512,7 @@ class ControlWindow(QMainWindow):
         self.leftside.addWidget(groupbox_image_processing_windowmanual)
         self.leftside.addWidget(groupbox_misc)
         self.leftside.addWidget(self.data_gen_group)
+        self.leftside.addWidget(self.workflow_group)
 
         if self.restest == "On":
             #resolution test
@@ -626,6 +662,7 @@ class ControlWindow(QMainWindow):
                 return False
             else:
                 self.pip_cal.model.reset_calibration()
+                self._calibration_complete.emit(False)
                 return True
         else:
             return True
@@ -692,6 +729,7 @@ class ControlWindow(QMainWindow):
             self.angle_entry.clear()
             # FIXME poor practice (will be fixed when change trajecotry)
             if 'pip_angle' in self.__dict__.keys():
+                self._angle_complete.emit(False)
                 del self.pip_angle
 
             
@@ -711,6 +749,8 @@ class ControlWindow(QMainWindow):
         else:
             self.pip_angle = np.deg2rad(float(angle_str))
             self.response_monitor_window.append(f">> Pipette angle set as {angle_str}")
+            self._angle_complete.emit(True)
+            self.calibration_inputs_changed()
 
     def save_pipette_angle(self):
         ''' Saves pipette angle to file '''
@@ -814,6 +854,8 @@ class ControlWindow(QMainWindow):
                 self.logger.exception("Error while computing calibration")
                 self.error_msg.setText(f"Error: {e}\n\nSee logs for more information.")
                 self.error_msg.exec()
+            else:
+                self._calibration_complete.emit(True)
             finally:
                 self.logger.info('Calibration unchecked. Deleting calibration points.')
                 self.pip_cal.data.rm_all()
@@ -902,9 +944,11 @@ class ControlWindow(QMainWindow):
         except Exception as e:
             self.logger.exception('Error while loading calibration')
             self.error_msg.setText(f"Error: {e}. Check logs for traceback.")
-            self.error_msg.exec()            
+            self.error_msg.exec()    
+        else:
+            self._calibration_complete.emit(True)        
 
-    def zeiss_change_calibration(self):
+    def calibration_inputs_changed(self):
         ''' Changes the calibration if the microscope changes'''
         # Set new calibraiton model if it exists or warn user
         _, obj_mag = self.zen_group.parse_combobox('objective')
@@ -913,8 +957,10 @@ class ControlWindow(QMainWindow):
         if self.pip_cal.model.is_calibrated is True:
             try:
                 self.pip_cal.use_existing_model(obj_mag=obj_mag, opto_mag=opto_mag, ang_deg=np.rad2deg(self.pip_angle))
+                self._calibration_complete.emit(True)
             except CalibrationDNEError as e:
                 self.pip_cal.model.reset_calibration()
+                self._calibration_complete.emit(False)
                 self.logger.warning(str(e))
                 self.warn_msg.setText(f"You switched the microscope configuration, but '{e}'.\n\nYour previous calibration is invalid. Either switch to the previous microscope configuration or conduct/load a calibration for this microscope configuration.")
                 self.warn_msg.exec()
@@ -922,6 +968,7 @@ class ControlWindow(QMainWindow):
         else:
             try:
                 self.pip_cal.use_existing_model(obj_mag=obj_mag, opto_mag=opto_mag, ang_deg=np.rad2deg(self.pip_angle))
+                self._calibration_complete.emit(True)
             except CalibrationDNEError as e:
                 pass
 
@@ -968,11 +1015,56 @@ class ControlWindow(QMainWindow):
                 raw = np.asarray(self.d.drawedgecoord)
                 inter = np.asarray(self.d.drawedgecoord1)
                 self.save_tiss_anot_data(raw_annot=raw, interpolate_annot=inter)
-            
         except:
+            self._annotation_complete.emit(False)
             self.error_msg.setText("CAM error, is camera plugged in? \nPython error = \n" + str(sys.exc_info()[1]))
             self.error_msg.exec()
             self.response_monitor_window.append(">> Camera error. \n>> Python error = " + str(sys.exc_info()))
+        else:
+            self._annotation_complete.emit(True)
+
+    """
+    -------------------------- Pre injection workflow controls   -----------------------------
+    These Functions control testing resolution error
+    """    
+    def _set_angle_ind(self,state:bool):
+        if state is True:
+            self._set_complete(self.angle_indicator)
+        else:
+            self._set_incomplete(self.angle_indicator)
+
+    def _set_calibration_ind(self,state:bool):
+        if state is True:
+            self._set_complete(self.calibration_indicator)
+        else:
+            self._set_incomplete(self.calibration_indicator)
+
+    def _set_annotation_ind(self,state:bool):
+        if state is True:
+            self._set_complete(self.annotation_indicator)
+        else:
+            self._set_incomplete(self.annotation_indicator)
+
+    def _set_parameter_ind(self,state:bool):
+        if state is True:
+            self._set_complete(self.parameter_indicator)
+        else:
+            self._set_incomplete(self.parameter_indicator)
+
+        
+    def _set_complete(self,label:QLabel):
+        ''' Set the widget with a complete icon '''
+        pixmapi = QStyle.StandardPixmap.SP_DialogYesButton
+        icon = self.style().standardIcon(pixmapi)
+        pixmap = icon.pixmap(QSize(18,18))
+        label.setPixmap(pixmap)
+
+    def _set_incomplete(self,label:QLabel):
+        ''' Set the widget with a incomplete icon '''
+        pixmapi = QStyle.StandardPixmap.SP_DialogNoButton
+        icon = self.style().standardIcon(pixmapi)
+        pixmap = icon.pixmap(QSize(18,18))
+        label.setPixmap(pixmap)
         
     """
     ---------- Resolution Test Controls   -----------------------------------------------------------------
@@ -1133,6 +1225,8 @@ class ControlWindow(QMainWindow):
             self.error_msg.setText("Error, did you enter all parameters? Is the arduino plugged in? \nPython error = \n" + str(sys.exc_info()[1]))
             self.error_msg.exec()
             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
+        else:
+            self._parameter_complete.emit(True)
         
     def run_3D_trajectory(self):
         try:

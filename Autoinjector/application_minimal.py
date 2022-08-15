@@ -25,7 +25,7 @@ from src.Qt_utils.gui_objects import QHLine
 from src.miscellaneous.standard_logger import StandardLogger as logr
 from src.miscellaneous import validify as val
 from src.data_generation.data_generators import PipTipData, TissueEdgeData
-from src.manipulator_control.calibration import Calibrator, CalibrationError, CalibrationDNEError, CalibrationFileError, CalibrationDataError
+from src.manipulator_control.calibration import Calibrator, AngleIO, CalibrationError, CalibrationDNEError, CalibrationFileError, CalibrationDataError, AngleFileError
 from src.manipulator_control.sensapex_utils import SensapexDevice
 from src.manipulator_control.injection_trajectory import SurfaceLineTrajectory3D
 from src.ZEN_interface.ZEN_App import ZenGroup
@@ -116,6 +116,7 @@ class ControlWindow(QMainWindow):
         self.injection_parameter_widgets()
         self.zen_group = ZenGroup()
         self.pip_cal = Calibrator(cal_data_dir=self.cal_data_dir)
+        self.angle_io = AngleIO(ang_data_dir=self.cal_data_dir)
         self.zen_group.obj_changed.connect(self.obj_changed)
         self.zen_group.obj_changed.connect(self.zeiss_change_calibration)
         self.zen_group.opto_changed.connect(self.zeiss_change_calibration)
@@ -182,11 +183,16 @@ class ControlWindow(QMainWindow):
         self.angle_mode_box.setPlaceholderText('Angle Mode')
         self.angle_entry = QLineEdit(self)
         self.set_angle_button = QPushButton("Set", self)
+        self.save_angle_button = QPushButton("Save Angle", self)
+        self.load_angle_button = QPushButton("Load Angle", self)
         grid_layout1 = QGridLayout()
         grid_layout1.addWidget(angle_label, 0, 0, 2, 1)
         grid_layout1.addWidget(self.angle_mode_box, 0, 1, 1, 2)
         grid_layout1.addWidget(self.angle_entry, 1, 1, 1, 1)
         grid_layout1.addWidget(self.set_angle_button, 1, 2, 1, 1)
+        h_layout_angio = QHBoxLayout()
+        h_layout_angio.addWidget(self.save_angle_button)
+        h_layout_angio.addWidget(self.load_angle_button)
         # Separator
         h_sep1 = QHLine()
         # Calibration mode
@@ -203,8 +209,8 @@ class ControlWindow(QMainWindow):
         self.save_calibration_but = QPushButton("Save", self)
         self.display_calibration_but = QCheckBox("Display")
         h_layout2 = QHBoxLayout()
-        h_layout2.addWidget(self.load_calibration_but)
         h_layout2.addWidget(self.save_calibration_but)
+        h_layout2.addWidget(self.load_calibration_but)
         v_layout1 = QVBoxLayout()
         v_layout1.addWidget(self.conduct_calibration_but)
         v_layout1.addWidget(self.update_calibration_but)
@@ -213,6 +219,7 @@ class ControlWindow(QMainWindow):
         # Groupbox and master layout
         pip_cal_layout = QVBoxLayout()
         pip_cal_layout.addLayout(grid_layout1)
+        pip_cal_layout.addLayout(h_layout_angio)
         pip_cal_layout.addWidget(h_sep1)
         pip_cal_layout.addLayout(h_layout_mode)
         pip_cal_layout.addLayout(v_layout1)
@@ -227,10 +234,12 @@ class ControlWindow(QMainWindow):
         self.angle_mode_box.currentTextChanged.connect(self.set_angle_mode)
         self.cal_mode_box.currentTextChanged.connect(self.set_cal_mode)
         self.set_angle_button.clicked.connect(self.set_pipette_angle)
+        self.save_angle_button.clicked.connect(self.save_pipette_angle)
+        self.load_angle_button.clicked.connect(self.load_pipette_angle)
 
     def stateify_pipette_calibrator_widgets(self):
         ''' Set initial states for the pipette calirbator widgets '''
-        self.angle_mode_box.insertItems(0, ['Automatic','Manual','Load'])
+        self.angle_mode_box.insertItems(0, ['Automatic','Manual'])
         self.angle_mode_box.setCurrentText('Automatic')
         self.cal_mode_box.insertItems(0,['Manual','Semi-Auto.','Automatic'])
         self.pip_disp_timer = QTimer()
@@ -611,14 +620,11 @@ class ControlWindow(QMainWindow):
             if automatic:
                 angle entry box to readonly and dark gray
                 Disable set button
-                query sensapex for angle, insert in combobox and set thetaz
+                query sensapex for angle, insert in combobox and set pip_angle
             if manual:
-                clear thetaz
+                clear pip_angle
                 enable entry box and make white
                 enable set button
-            if load:
-                raise error message box
-                default to manual
         '''
         # Get the selected mode
         angle_mode = self.angle_mode_box.currentText()
@@ -629,8 +635,9 @@ class ControlWindow(QMainWindow):
             palette.setColor(QPalette.ColorRole.Base, QColor('lightGray'))
             self.angle_entry.setReadOnly(True)
             self.angle_entry.setPalette(palette)
-            # Disable set button
+            # Disable set, and load buttons
             self.set_angle_button.setEnabled(False)
+            self.load_angle_button.setEnabled(False)
             # Get angle
             dev = SensapexDevice(1)
             ang = dev.get_axis_angle()
@@ -647,20 +654,13 @@ class ControlWindow(QMainWindow):
             self.angle_entry.setPalette(palette)
             # Enable set button
             self.set_angle_button.setEnabled(True)
-            # Clear the box and reset thetaz
+            self.load_angle_button.setEnabled(True)
+            # Clear the box and reset pip_angle
             self.angle_entry.clear()
             # FIXME poor practice (will be fixed when change trajecotry)
-            if 'thetaz' in self.__dict__.keys():
-                del self.thetaz
-        if angle_mode == 'Load':
-            try:
-                raise NotImplementedError("The 'Load' pipette angle functionality hasn't been implimented yet")
-            except NotImplementedError:
-                self.logger.exception("Cant load pipette angle")
-                self.error_msg.setText("'Load' pipette angle hasn't been implimented yet. Defaulting to 'Manual'.")
-                self.error_msg.exec()
-            finally:
-                self.angle_mode_box.setCurrentText('Manual')
+            if 'pip_angle' in self.__dict__.keys():
+                del self.pip_angle
+
             
     def set_pipette_angle(self):
         ''' Sets pipette angle from entry box '''
@@ -670,8 +670,55 @@ class ControlWindow(QMainWindow):
             self.error_msg.setText(f'Invalid angle: {angle_str}. Angle must be a valid number.')
             self.error_msg.exec()
         else:
-            self.thetaz = np.deg2rad(float(angle_str))
+            self.pip_angle = np.deg2rad(float(angle_str))
             self.response_monitor_window.append(f">> Pipette angle set as {angle_str}")
+
+    def save_pipette_angle(self):
+        ''' Saves pipette angle to file '''
+        if 'pip_angle' not in self.__dict__.keys():
+            self.logger.warning(f"Cannot save pipette angle because the angle is not set.")
+            self.error_msg.setText(f"Cannot save pipette angle because the angle is not set.")
+            self.error_msg.exec()
+        else:
+            try:
+                self.angle_io.save(pip_angle_rad=self.pip_angle)
+            except Exception as e:
+                self.logger.exception("Error while saving pipette angle")
+                self.error_msg.setText(f"Error: {e}\n\nSee logs for more information.")
+                self.error_msg.exec()
+            finally:
+                self.logger.info(f"Saved angle of {round(np.rad2deg(self.pip_angle),1)} to file.")
+                self.response_monitor_window.append(f">> Saved pipette angle of {round(np.rad2deg(self.pip_angle),1)} to file.")
+
+    def load_pipette_angle(self):
+        ''' Loads pipette angle from file '''
+        if 'pip_angle' in self.__dict__.keys():
+            qm = QMessageBox()
+            ret = qm.question(self,'Load angle?','Angle is already set. Do you still want to load the most recently saved angle?')
+            if ret == QMessageBox.StandardButton.No:
+                return None
+        try:
+            ang_data = self.angle_io.load_latest()
+            ang_rad = ang_data['Angle']
+            ang_date = ang_data['Date']
+            ang_time = ang_data['Time']
+            ang_deg = round(np.rad2deg(ang_rad),1)
+        except AngleFileError as e:
+            self.logger.warning(str(e))
+            self.warn_msg.setText(f"Error: {e}.\n\nYou must save the angle file before it can be loaded.")
+            self.warn_msg.exec()
+        except Exception as e:
+            self.logger.exception('Error while loading pipette error')
+            self.error_msg.setText(f"Error: {e}. Check logs for traceback.")
+            self.error_msg.exec()
+        finally:
+            self.logger.info(f"Pipette angle loaded as {round(ang_deg,1)} degrees from {ang_date} {ang_time}.")
+            self.response_monitor_window.append(f">> Most recent pipette angle loaded as {round(ang_deg,1)} degrees from {ang_date} {ang_time}.")
+            self.angle_entry.clear()
+            self.angle_entry.insert(str(ang_deg))
+            self.set_pipette_angle()
+            
+            
 
     def set_cal_mode(self):
         ''' Sets the mode for conducting calibration. Called when cal_mode_box
@@ -704,13 +751,19 @@ class ControlWindow(QMainWindow):
         ''' Computes calibration from calibration data '''
         if self.conduct_calibration_but.isChecked() is False:
             try:
+                if "pip_angle" not in list(self.__dict__.keys()):
+                    raise CalibrationError(f'Pipette angle not set. The pipette angle must be set before conducting a calibration.')
                 _, obj_mag = self.zen_group.parse_combobox('objective')
                 _, opto_mag = self.zen_group.parse_combobox('optovar')
-                self.pip_cal.compute(z_polarity=-1, pip_angle=self.thetaz, obj_mag=obj_mag, opto_mag=opto_mag)
+                self.pip_cal.compute(z_polarity=-1, pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
             except CalibrationDataError as e:
                 self.logger.warning(e)
                 self.warn_msg.setText(f"Calibration not completed. Error: {e}\n\nMake sure you click on the tip to register at least 3 points (that don't lie on a line) before unchecking 'Calibrate'.")
                 self.warn_msg.exec()
+            except CalibrationError as e:
+                self.logger.warning(e)
+                self.error_msg.setText(f"Calibration not completed. Error: {e}.")
+                self.error_msg.exec()
             except Exception as e:
                 self.logger.exception("Error while computing calibration")
                 self.error_msg.setText(f"Error: {e}\n\nSee logs for more information.")
@@ -899,7 +952,7 @@ class ControlWindow(QMainWindow):
             
             #generate commands to go from current point to restest point
             self.c0 = (self.vidctrl.height/2,self.vidctrl.width/2)
-            getpos = GetPos(self.c0,self.c2,self.m0,1000,self.ymotortheta,self.thetaz,self.pixelsize)
+            getpos = GetPos(self.c0,self.c2,self.m0,1000,self.ymotortheta,self.pip_angle,self.pixelsize)
             print('m1 instructed = ' +  str(getpos.futuremotor))
             self.m1 = getpos.futuremotor
 

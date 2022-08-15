@@ -160,6 +160,63 @@ class Calibrator():
         x0 = cal_dict['x0']
         self.model.set_model(T_mxyzd_to_mxyz=T1, T_mxyz_to_exxyz=T2, x_0=x0)
         
+class AngleIO():
+    '''
+    Handles reading and writing manipulator injection axis angle to file
+    '''
+
+    def __init__(self, ang_data_dir:str):
+        '''
+        Initialize angle IO with data directory
+        '''
+        self._logger = StandardLogger(__name__)
+        self.ang_data_dir = ang_data_dir
+        self.ang_data_path = f"{self.ang_data_dir}/manipulator_angles.csv"
+        if os.path.isdir(self.ang_data_dir) is False:
+            os.makedirs(self.ang_data_dir)
+            self._logger.info(f'Created angle/calibration directory: {self.ang_data_dir}')
+        
+    def save(self, pip_angle_rad:float):
+        '''
+        Saves pipette angle (in degrees) to file
+
+        Arugments:
+            pip_angle_rad (float): Pipette angle below horizontal axis in radians. 
+        '''
+        now = datetime.now()
+        # Data to save
+        ang_dict = {'Date':[now.strftime('%Y-%m-%d')],
+                    'Time':[now.strftime('%H:%M:%S')],
+                    'Angle':[pip_angle_rad]}
+        ang_df = pd.DataFrame(ang_dict)
+        # Save data
+        if os.path.exists(self.ang_data_path) is False:
+            header = True
+            mode = 'w'
+        else:
+            header = False
+            mode = 'a'
+        ang_df.to_csv(self.ang_data_path, mode=mode, header= header)
+        self._logger.info(f'Saved angle to file as angle = {pip_angle_rad}.')
+
+    def load_latest(self)->dict:
+        '''
+        Load the most recent calibration from the file
+
+        Returns:
+            dictionary of {'Date':date_str, 'Time':time_str, 'Angle':angle_in_radians}
+        '''
+        # Read the calibration file to dataframe
+        if os.path.exists(self.ang_data_path) is False:
+            raise AngleFileError(f'Angle data file does not exist at {self.ang_data_path}')
+        # Read the calibration data
+        df = pd.read_csv(self.ang_data_path)
+        df_dict = df.to_dict(orient='list')
+        # Parse to most recent (last row in data)
+        ang_data = {}
+        for key in df_dict.keys():
+            ang_data[key] = df_dict[key][-1]
+        return ang_data
 
 class CalibrationIO():
     '''
@@ -831,7 +888,18 @@ class CalibrationFileError(Exception):
     Attributes:
         msg (str): Explanation of error
     '''
-    def __init__(self, msg="Calibration doesn't exist"):
+    def __init__(self, msg="Calibration file doesn't exist"):
+        self.msg = msg
+        super().__init__(self.msg)
+
+class AngleFileError(Exception):
+    '''
+    Exception raised for errors when Angle file doesn't exist
+
+    Attributes:
+        msg (str): Explanation of error
+    '''
+    def __init__(self, msg="Angle file doesn't exist"):
         self.msg = msg
         super().__init__(self.msg)
 

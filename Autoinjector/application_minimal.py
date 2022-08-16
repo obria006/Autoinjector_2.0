@@ -28,6 +28,7 @@ from src.data_generation.data_generators import PipTipData, TissueEdgeData
 from src.manipulator_control.calibration import Calibrator, AngleIO, CalibrationError, CalibrationDNEError, CalibrationFileError, CalibrationDataError, AngleFileError
 from src.manipulator_control.sensapex_utils import SensapexDevice
 from src.manipulator_control.injection_trajectory import SurfaceLineTrajectory3D
+from src.manipulator_control.calibration_trajectory import SemiAutoCalibrationTrajectory
 from src.ZEN_interface.ZEN_App import ZenGroup
 
 
@@ -45,6 +46,7 @@ class ControlWindow(QMainWindow):
     _calibration_complete = pyqtSignal(bool)
     _annotation_complete = pyqtSignal(bool)
     _parameter_complete = pyqtSignal(bool)
+    cal_pos_added = pyqtSignal()
     def __init__(self,cam,brand,val,bins,rot,imagevals,scale,restest,com,fourtyxcalibdist, parent=None):
         super().__init__(parent)
         self.logger = logr(__name__)
@@ -231,11 +233,11 @@ class ControlWindow(QMainWindow):
         self.pip_cal_group = QGroupBox('Pipette Calibration')
         self.pip_cal_group.setLayout(pip_cal_layout)
         # Set connections
-        self.conduct_calibration_but.clicked.connect(self.compute_calibration)
-        self.update_calibration_but.clicked.connect(self.update_calibration)
+        self.conduct_calibration_but.stateChanged.connect(self.conduct_calibration)
+        self.update_calibration_but.stateChanged.connect(self.update_calibration)
         self.save_calibration_but.clicked.connect(self.save_calibration)
         self.load_calibration_but.clicked.connect(self.load_calibration)
-        self.display_calibration_but.clicked.connect(self.display_calibration)
+        self.display_calibration_but.stateChanged.connect(self.display_calibration)
         self.angle_mode_box.currentTextChanged.connect(self.set_angle_mode)
         self.cal_mode_box.currentTextChanged.connect(self.set_cal_mode)
         self.set_angle_button.clicked.connect(self.set_pipette_angle)
@@ -247,6 +249,7 @@ class ControlWindow(QMainWindow):
         self.angle_mode_box.insertItems(0, ['Automatic','Manual'])
         self.angle_mode_box.setCurrentText('Automatic')
         self.cal_mode_box.insertItems(0,['Manual','Semi-Auto.','Automatic'])
+        self.cal_mode_box.setCurrentText('Semi-Auto.')
         self.pip_disp_timer = QTimer()
         self.pip_disp_timer.timeout.connect(self.display_calibration)
         self.pip_disp_timeout = 25
@@ -804,14 +807,23 @@ class ControlWindow(QMainWindow):
             self.angle_entry.insert(str(ang_deg))
             self.set_pipette_angle()
             
-            
-
     def set_cal_mode(self):
         ''' Sets the mode for conducting calibration. Called when cal_mode_box
         changes. '''
         # Get selected mode
         cal_mode = self.cal_mode_box.currentText()
-        self.logger.debug(f'Calibration mode changed: {cal_mode}')
+        info_str = f"Calibration mode selected as {cal_mode}"
+        self.logger.info(info_str)
+        self.response_monitor_window.append(f">> {info_str}")
+        if cal_mode == "Automatic":
+            self.cal_mode_box.setCurrentText('Semi-Auto.')
+            self.logger.warning("Automatic calibration not yet implimented")
+            self.warn_msg.setText(f"Automatic calibration not yet implimented. Defaulting to 'Semi-Auto.' calibration mode.")
+            self.warn_msg.exec()
+        if cal_mode == "Semi-Auto.":
+            pass
+        if cal_mode == "Manual":
+            pass
 
     def add_cal_positions(self,x_click:float, y_click:float):
         ''' Adds clicked calibration positions to calibration data '''
@@ -821,6 +833,7 @@ class ControlWindow(QMainWindow):
             dev = SensapexDevice(1)
             man_pos = dev.get_pos()
             self.pip_cal.data.add_cal_position(ex=ex_pos, man=man_pos)
+            self.cal_pos_added.emit()
             if self.save_tip_annot.isChecked():
                 self.tipposition1 = self.vidctrl.tipcircle
                 tip_dict = {'x':self.tipposition1.x(), 'y':self.tipposition1.y()}
@@ -832,6 +845,62 @@ class ControlWindow(QMainWindow):
             dev = SensapexDevice(1)
             man_pos = dev.get_pos()
             self.pip_cal.data.add_cal_position(ex=ex_pos, man=man_pos)
+            self.cal_pos_added.emit()
+
+    def manual_calibration(self):
+        ''' Conducts manual calibration process '''
+        self.logger.debug('Doing manual calibration')
+
+    def semi_auto_calibration(self):
+        self.logger.debug('Doing Semi-Auto. calibration')
+        # Initalize for the calibration trajectory
+        dev = SensapexDevice(1)
+        vid_width = self.vidctrl.width
+        vid_height = self.vidctrl.height
+        z_scope = self.zen_group.zen.get_focus_um()
+        _, obj_mag = self.zen_group.parse_combobox('objective')
+        _, opto_mag = self.zen_group.parse_combobox('optovar')
+        self.cal_trajectory = SemiAutoCalibrationTrajectory(dev=dev, cal=self.pip_cal, img_w=vid_width, img_h=vid_height, ex_z=z_scope,z_polarity=-1,pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
+        self.cal_pos_added.connect(self.cal_trajectory.next_cal_position)
+        self.cal_trajectory.finished.connect(self.conduct_calibration_but.toggle)
+
+    def auto_calibration(self):
+        ''' Conducts automatic calibration process '''
+        tmp_block = QSignalBlocker(self.conduct_calibration_but)
+        self.conduct_calibration_but.setChecked(False)
+        tmp_block.unblock()
+        self.cal_mode_box.setCurrentText('Semi-Auto.')
+        self.logger.warning("Automatic calibration not yet implimented")
+        self.warn_msg.setText(f"Automatic calibration not yet implimented. Defaulting to 'Semi-Auto.' calibration mode.")
+        self.warn_msg.exec()
+
+    def conduct_calibration(self):
+        ''' Conducts calibration process '''
+        # If user activates checkbox, start calibration
+        if self.conduct_calibration_but.isChecked() is True:
+            if self.update_calibration_but.isChecked():
+                tmp_block = QSignalBlocker(self.conduct_calibration_but)
+                self.conduct_calibration_but.setChecked(False)
+                tmp_block.unblock()
+                self.logger.warning('Cannot conduct calibraiton while updating.')
+                self.warn_msg.setText('Cannot conduct calibraiton while updating. Complete update calibration process (and uncheck the box) before conducting a new calibration.')
+                self.warn_msg.exec()
+                return None
+            cal_mode = self.cal_mode_box.currentText()
+            if cal_mode == "Automatic":
+                self.auto_calibration()
+            elif cal_mode == 'Manual':
+                self.manual_calibration
+            elif cal_mode == 'Semi-Auto.':
+                self.semi_auto_calibration()
+            else:
+                self.logger.warning("No mode calibration mode selected")
+                self.warn_msg.setText(f"Select calibration mode before starting calibration.")
+                self.warn_msg.exec()
+
+        # If user deactivates checkbox, finish and compute calibration
+        if self.conduct_calibration_but.isChecked() is False:
+            self.compute_calibration()
 
     def compute_calibration(self):
         ''' Computes calibration from calibration data '''
@@ -841,6 +910,7 @@ class ControlWindow(QMainWindow):
                     raise CalibrationError(f'Pipette angle not set. The pipette angle must be set before conducting a calibration.')
                 _, obj_mag = self.zen_group.parse_combobox('objective')
                 _, opto_mag = self.zen_group.parse_combobox('optovar')
+                self.logger.info(f"Computing calibration with data\n{self.pip_cal.data.data_df}")
                 self.pip_cal.compute(z_polarity=-1, pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
             except CalibrationDataError as e:
                 self.logger.warning(e)
@@ -856,6 +926,7 @@ class ControlWindow(QMainWindow):
                 self.error_msg.exec()
             else:
                 self._calibration_complete.emit(True)
+                self.logger.info(f"Existing models:\n{self.pip_cal.tmp_storage._existing_models.keys()}")
             finally:
                 self.logger.info('Calibration unchecked. Deleting calibration points.')
                 self.pip_cal.data.rm_all()
@@ -882,10 +953,19 @@ class ControlWindow(QMainWindow):
         ''' Updates calibration by setting new reference position '''
         if self.update_calibration_but.isChecked():
             if self.pip_cal.model.is_calibrated is False:
+                tmp_block = QSignalBlocker(self.update_calibration_but)
                 self.update_calibration_but.setChecked(False)
+                tmp_block.unblock()
                 e = "System is not calibrated. Can not update non-existent calibration."
                 self.logger.warning(e)
                 self.warn_msg.setText(f"Error: {e}\n\nConduct a new calibration or load an exsisting calibration before updating.")
+                self.warn_msg.exec()
+            if self.conduct_calibration_but.isChecked():
+                tmp_block = QSignalBlocker(self.update_calibration_but)
+                self.update_calibration_but.setChecked(False)
+                tmp_block.unblock()
+                self.logger.warning('Cannot update calibration while already conducting calibration.')
+                self.warn_msg.setText('Cannot update calibration while already conducting calibration. Complete calibration process (and uncheck the box) before updating a calibration.')
                 self.warn_msg.exec()
         else:
             try:

@@ -1004,7 +1004,7 @@ class CalibrationModel():
             man_1 = man_0 + delta_man
             return man_1.reshape(-1).tolist()
         else:
-            raise CalibrationError('Cannot compute forward kinematics because calibration is incomplete')
+            raise CalibrationError('Cannot compute inverse kinematics because calibration is incomplete')
 
 
 class CalibrationError(Exception):

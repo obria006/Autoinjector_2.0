@@ -231,7 +231,7 @@ class ControlWindow(QMainWindow):
         self.pip_cal_group = QGroupBox('Pipette Calibration')
         self.pip_cal_group.setLayout(pip_cal_layout)
         # Set connections
-        self.conduct_calibration_but.stateChanged.connect(self.conduct_calibration)
+        self.conduct_calibration_but.clicked.connect(self.handle_calibration_button_clicked)
         self.update_calibration_but.stateChanged.connect(self.update_calibration)
         self.save_calibration_but.clicked.connect(self.save_calibration)
         self.load_calibration_but.clicked.connect(self.load_calibration)
@@ -844,11 +844,11 @@ class ControlWindow(QMainWindow):
             self.pip_cal.data.add_cal_position(ex=ex_pos, man=man_pos)
             self.cal_pos_added.emit()
 
-    def manual_calibration(self):
+    def conduct_manual_calibration(self):
         ''' Conducts manual calibration process '''
         self.logger.debug('Doing manual calibration')
 
-    def semi_auto_calibration(self):
+    def conduct_semi_auto_calibration(self):
         self.logger.debug('Doing Semi-Auto. calibration')
         # Initalize for the calibration trajectory
         dev = SensapexDevice(1)
@@ -860,73 +860,107 @@ class ControlWindow(QMainWindow):
         self.cal_trajectory = SemiAutoCalibrationTrajectory(dev=dev, cal=self.pip_cal, img_w=vid_width, img_h=vid_height, ex_z=z_scope,z_polarity=-1,pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
         self.cal_pos_added.connect(self.cal_trajectory.next_cal_position)
         self.cal_trajectory.finished.connect(self.conduct_calibration_but.toggle)
+        self.cal_trajectory.finished.connect(self.compute_calibration)
+        self.cal_trajectory.finished.connect(self.cal_trajectory.deleteLater)
+        self.conduct_calibration_but.clicked.connect(self.cal_trajectory.deleteLater)
 
-    def auto_calibration(self):
+    def conduct_auto_calibration(self):
         ''' Conducts automatic calibration process '''
-        tmp_block = QSignalBlocker(self.conduct_calibration_but)
         self.conduct_calibration_but.setChecked(False)
-        tmp_block.unblock()
         self.cal_mode_box.setCurrentText('Semi-Auto.')
         self.logger.warning("Automatic calibration not yet implimented")
         self.warn_msg.setText(f"Automatic calibration not yet implimented. Defaulting to 'Semi-Auto.' calibration mode.")
         self.warn_msg.exec()
 
-    def conduct_calibration(self):
-        ''' Conducts calibration process '''
-        # If user activates checkbox, start calibration
+    def handle_calibration_button_clicked(self):
+        """
+        Handles when the state of the calibration button clicked. When checked, starts
+        doing the calibration process. When unchecked, computes the calibration.
+        """
         if self.conduct_calibration_but.isChecked() is True:
-            if self.update_calibration_but.isChecked():
-                tmp_block = QSignalBlocker(self.conduct_calibration_but)
-                self.conduct_calibration_but.setChecked(False)
-                tmp_block.unblock()
-                self.logger.warning('Cannot conduct calibraiton while updating.')
-                self.warn_msg.setText('Cannot conduct calibraiton while updating. Complete update calibration process (and uncheck the box) before conducting a new calibration.')
-                self.warn_msg.exec()
-                return None
-            cal_mode = self.cal_mode_box.currentText()
-            if cal_mode == "Automatic":
-                self.auto_calibration()
-            elif cal_mode == 'Manual':
-                self.manual_calibration
-            elif cal_mode == 'Semi-Auto.':
-                self.semi_auto_calibration()
-            else:
-                self.logger.warning("No mode calibration mode selected")
-                self.warn_msg.setText(f"Select calibration mode before starting calibration.")
-                self.warn_msg.exec()
-
-        # If user deactivates checkbox, finish and compute calibration
-        if self.conduct_calibration_but.isChecked() is False:
+            self.start_calibration_process()
+        else:
             self.compute_calibration()
+
+    def start_calibration_process(self):
+        """
+        Starts the calibration process if proper conditions are met (update calibration 
+        must be unchecked and a calibration mode must be selected).
+        """
+        # Untoggles calibration button if update calibration is selected
+        if self.update_calibration_but.isChecked():
+            self.conduct_calibration_but.setChecked(False)
+            self.logger.warning('Cannot conduct calibration while updating.')
+            self.warn_msg.setText('Cannot conduct calibration while updating. Complete update calibration process (and uncheck the box) before conducting a new calibration.')
+            self.warn_msg.exec()
+            return None
+        # Asks user to if conditions valid for calibrating
+        else:
+            try:
+                cal_mode = self.cal_mode_box.currentText()
+                self._ask_to_calibrate(cal_mode=cal_mode)
+            except ValueError as e:
+                self.logger.error(e)
+                self.error_msg.setText(str(e))
+                self.error_msg.exec()
+            except Exception as e:
+                self.logger.exception("Error while calibrating.")
+                self.error_msg.setText(f"Error while calibrating. Error: {str(e)}. See logs for more info.")
+                self.error_msg.exec()
+
+    def _ask_to_calibrate(self, cal_mode:str):
+        """ Ask user if conditions for calibration are set before calibrating """
+        # Validate calibration mode
+        if cal_mode not in ["Automatic", "Manual", "Semi-Auto."]:
+            raise ValueError(f'Invalid calibration mode: {cal_mode}. Select valid calibration mode before calibrating.')
+
+        # Query user for correct calibraiton positions
+        if cal_mode == 'Manual':
+            qm = QMessageBox()
+            ret = qm.question(self,'Valid calibration conditions?','Confirm the following conditions:\n\n1. Is the pipette tip in-focus?')
+            proceed = ret == QMessageBox.StandardButton.Yes
+        if cal_mode == 'Semi-Auto.' or cal_mode == 'Automatic':
+            qm = QMessageBox()
+            ret = qm.question(self,'Valid calibration conditions?','Confirm the following conditions:\n\n1. Is the pipette tip in-focus?\n2. Is the pipette tip near the center of the FOV?\n3. The pipette will move to the edges of the FOV. Are the FOV edges clear of obstructions?')
+            proceed = ret == QMessageBox.StandardButton.Yes
+
+        # Conduct calibration 
+        if proceed is False:
+            self.conduct_calibration_but.setChecked(False)
+        elif proceed is True and cal_mode == "Automatic":
+            self.conduct_auto_calibration()
+        elif proceed is True and cal_mode == 'Manual':
+            self.conduct_manual_calibration()
+        elif proceed is True and cal_mode == 'Semi-Auto.':
+            self.conduct_semi_auto_calibration()
 
     def compute_calibration(self):
         ''' Computes calibration from calibration data '''
-        if self.conduct_calibration_but.isChecked() is False:
-            try:
-                if "pip_angle" not in list(self.__dict__.keys()):
-                    raise CalibrationError(f'Pipette angle not set. The pipette angle must be set before conducting a calibration.')
-                _, obj_mag = self.zen_group.parse_combobox('objective')
-                _, opto_mag = self.zen_group.parse_combobox('optovar')
-                self.logger.info(f"Computing calibration with data\n{self.pip_cal.data.data_df}")
-                self.pip_cal.compute(z_polarity=-1, pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
-            except CalibrationDataError as e:
-                self.logger.warning(e)
-                self.warn_msg.setText(f"Calibration not completed. Error: {e}\n\nMake sure you click on the tip to register at least 3 points (that don't lie on a line) before unchecking 'Calibrate'.")
-                self.warn_msg.exec()
-            except CalibrationError as e:
-                self.logger.warning(e)
-                self.error_msg.setText(f"Calibration not completed. Error: {e}.")
-                self.error_msg.exec()
-            except Exception as e:
-                self.logger.exception("Error while computing calibration")
-                self.error_msg.setText(f"Error: {e}\n\nSee logs for more information.")
-                self.error_msg.exec()
-            else:
-                self._calibration_complete.emit(True)
-                self.logger.info(f"Existing models:\n{self.pip_cal.tmp_storage._existing_models.keys()}")
-            finally:
-                self.logger.info('Calibration unchecked. Deleting calibration points.')
-                self.pip_cal.data.rm_all()
+        try:
+            if "pip_angle" not in list(self.__dict__.keys()):
+                raise CalibrationError(f'Pipette angle not set. The pipette angle must be set before conducting a calibration.')
+            _, obj_mag = self.zen_group.parse_combobox('objective')
+            _, opto_mag = self.zen_group.parse_combobox('optovar')
+            self.logger.info(f"Computing calibration with data\n{self.pip_cal.data.data_df}")
+            self.pip_cal.compute(z_polarity=-1, pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
+        except CalibrationDataError as e:
+            self.logger.warning(e)
+            self.warn_msg.setText(f"Calibration not completed. Error: {e}\n\nMake sure you click on the tip to register at least 3 points (that don't lie on a line) before unchecking 'Calibrate'.")
+            self.warn_msg.exec()
+        except CalibrationError as e:
+            self.logger.warning(e)
+            self.error_msg.setText(f"Calibration not completed. Error: {e}.")
+            self.error_msg.exec()
+        except Exception as e:
+            self.logger.exception("Error while computing calibration")
+            self.error_msg.setText(f"Error: {e}\n\nSee logs for more information.")
+            self.error_msg.exec()
+        else:
+            self._calibration_complete.emit(True)
+            self.logger.info(f"Existing models:\n{self.pip_cal.tmp_storage._existing_models.keys()}")
+        finally:
+            self.logger.info('Calibration unchecked. Deleting calibration points.')
+            self.pip_cal.data.rm_all()
     
     def display_calibration(self):
         ''' Send computed tip positoin (in camera) to video to be displayed.

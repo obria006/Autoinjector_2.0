@@ -67,8 +67,8 @@ class ControlWindow(QMainWindow):
             self.getposition.motorpos.connect(self.showmotorposition)
             self.motorfound = True
         except:
-            self.error_msg.setText("Manipulators not detected. Wait 2 minutes then relaunch the app. If this does not work, replug manipulators into computer.")
-            self.error_msg.exec()
+            msg = "Manipulators not detected. Wait 2 minutes then relaunch the app. If this does not work, replug manipulators into computer."
+            self.show_error_box(msg)
             print("Manipulators not detected")
             self.motorfound = False
 
@@ -80,8 +80,8 @@ class ControlWindow(QMainWindow):
             self.com = com
         except:
             arduino = None
-            self.error_msg.setText("Arduino not detected, make sure you selected the correct com port, plug in, and try again.")
-            self.error_msg.exec()
+            msg = "Arduino not detected, make sure you selected the correct com port, plug in, and try again."
+            self.show_error_box(msg)
             self.arduinofound = False
 
         #initiate video stream thread using camera settings
@@ -621,6 +621,31 @@ class ControlWindow(QMainWindow):
         self.overrideon = str(text)
         self.response_monitor_window.append(">> Override calibrated settings for resolution test set to ON.")
     
+    def show_warning_box(self, msg:str):
+        """
+        Show GUI warning box to user and write warning to logger.
+        """
+        self.logger.warning(str(msg).replace('\n',' '))
+        self.warn_msg.setText(str(msg))
+        self.warn_msg.exec()
+
+    def show_error_box(self, msg:str):
+        """
+        Show GUI error box to user and write error to logger.
+        """
+        self.logger.error(str(msg).replace('\n',' '))
+        self.error_msg.setText(str(msg))
+        self.error_msg.exec()
+
+    def show_exception_box(self, msg:str):
+        """
+        Show GUI error box to user and write exception to logger.
+        This includes whole traceback in the logger for more detail.
+        """
+        self.logger.exception(str(msg).replace('\n',' '))
+        self.error_msg.setText(str(msg))
+        self.error_msg.exec()
+
     """
     ------------------------ Data Generation Controls -------------------------
     Functions control saving images from data
@@ -743,9 +768,8 @@ class ControlWindow(QMainWindow):
 
         angle_str = self.angle_entry.text()
         if val.is_valid_number(angle_str) is False:
-            self.logger.warning(f'Invalid angle: {angle_str}. Angle must be a valid number.')
-            self.error_msg.setText(f'Invalid angle: {angle_str}. Angle must be a valid number.')
-            self.error_msg.exec()
+            msg = f'Invalid angle: {angle_str}. Angle must be a valid number.'
+            self.show_error_box(msg)
         else:
             self.pip_angle = np.deg2rad(float(angle_str))
             self.response_monitor_window.append(f">> Pipette angle set as {angle_str}")
@@ -755,16 +779,14 @@ class ControlWindow(QMainWindow):
     def save_pipette_angle(self):
         ''' Saves pipette angle to file '''
         if 'pip_angle' not in self.__dict__.keys():
-            self.logger.warning(f"Cannot save pipette angle because the angle is not set.")
-            self.error_msg.setText(f"Cannot save pipette angle because the angle is not set.")
-            self.error_msg.exec()
+            msg = f"Cannot save pipette angle because the angle is not set."
+            self.show_error_box(msg)
         else:
             try:
                 self.angle_io.save(pip_angle_rad=self.pip_angle)
             except Exception as e:
-                self.logger.exception("Error while saving pipette angle")
-                self.error_msg.setText(f"Error: {e}\n\nSee logs for more information.")
-                self.error_msg.exec()
+                msg = f"Error while saving pipette angle: {e}\n\nSee logs for more information."
+                self.show_exception_box(msg)
             finally:
                 self.logger.info(f"Saved angle of {round(np.rad2deg(self.pip_angle),1)} to file.")
                 self.response_monitor_window.append(f">> Saved pipette angle of {round(np.rad2deg(self.pip_angle),1)} to file.")
@@ -790,13 +812,11 @@ class ControlWindow(QMainWindow):
             ang_time = ang_data['Time']
             ang_deg = round(np.rad2deg(ang_rad),1)
         except AngleFileError as e:
-            self.logger.warning(str(e))
-            self.warn_msg.setText(f"Error: {e}.\n\nYou must save the angle file before it can be loaded.")
-            self.warn_msg.exec()
+            msg = f"Error: {e}.\n\nYou must save the angle file before it can be loaded."
+            self.show_warning_box(msg)
         except Exception as e:
-            self.logger.exception('Error while loading pipette error')
-            self.error_msg.setText(f"Error: {e}. Check logs for traceback.")
-            self.error_msg.exec()
+            msg = f"Error while loading pipette angle: {e}\n\nSee logs for more information."
+            self.show_exception_box(msg)
         else:
             self.logger.info(f"Pipette angle loaded as {round(ang_deg,1)} degrees from {ang_date} {ang_time}.")
             self.response_monitor_window.append(f">> Most recent pipette angle loaded as {round(ang_deg,1)} degrees from {ang_date} {ang_time}.")
@@ -814,9 +834,8 @@ class ControlWindow(QMainWindow):
         self.response_monitor_window.append(f">> {info_str}")
         if cal_mode == "Automatic":
             self.cal_mode_box.setCurrentText('Semi-Auto.')
-            self.logger.warning("Automatic calibration not yet implimented")
-            self.warn_msg.setText(f"Automatic calibration not yet implimented. Defaulting to 'Semi-Auto.' calibration mode.")
-            self.warn_msg.exec()
+            msg = f"Automatic calibration not yet implimented. Defaulting to 'Semi-Auto.' calibration mode."
+            self.show_warning_box(msg)
         if cal_mode == "Semi-Auto.":
             pass
         if cal_mode == "Manual":
@@ -868,9 +887,8 @@ class ControlWindow(QMainWindow):
         ''' Conducts automatic calibration process '''
         self.conduct_calibration_but.setChecked(False)
         self.cal_mode_box.setCurrentText('Semi-Auto.')
-        self.logger.warning("Automatic calibration not yet implimented")
-        self.warn_msg.setText(f"Automatic calibration not yet implimented. Defaulting to 'Semi-Auto.' calibration mode.")
-        self.warn_msg.exec()
+        msg = "Automatic calibration not yet implimented. Defaulting to 'Semi-Auto.' calibration mode."
+        self.show_warning_box(msg)
 
     def handle_calibration_button_clicked(self):
         """
@@ -890,8 +908,8 @@ class ControlWindow(QMainWindow):
         # Untoggles calibration button if update calibration is selected
         if self.update_calibration_but.isChecked():
             self.conduct_calibration_but.setChecked(False)
-            self.logger.warning('Cannot conduct calibration while updating.')
-            self.warn_msg.setText('Cannot conduct calibration while updating. Complete update calibration process (and uncheck the box) before conducting a new calibration.')
+            msg = 'Cannot conduct calibration while updating. Complete update calibration process (and uncheck the box) before conducting a new calibration.'
+            self.show_warning_box(msg)
             self.warn_msg.exec()
             return None
         # Asks user to if conditions valid for calibrating
@@ -900,19 +918,17 @@ class ControlWindow(QMainWindow):
                 cal_mode = self.cal_mode_box.currentText()
                 self._ask_to_calibrate(cal_mode=cal_mode)
             except ValueError as e:
-                self.logger.error(e)
-                self.error_msg.setText(str(e))
-                self.error_msg.exec()
+                msg = str(e)
+                self.show_error_box(msg)
             except Exception as e:
-                self.logger.exception("Error while calibrating.")
-                self.error_msg.setText(f"Error while calibrating. Error: {str(e)}. See logs for more info.")
-                self.error_msg.exec()
+                msg = f"Error while calibrating: {str(e)}.\n\nSee logs for more info."
+                self.show_exception_box(msg)
 
     def _ask_to_calibrate(self, cal_mode:str):
         """ Ask user if conditions for calibration are set before calibrating """
         # Validate calibration mode
         if cal_mode not in ["Automatic", "Manual", "Semi-Auto."]:
-            raise ValueError(f'Invalid calibration mode: {cal_mode}. Select valid calibration mode before calibrating.')
+            raise ValueError(f'Invalid calibration mode: {cal_mode}.\n\nSelect valid calibration mode before calibrating.')
 
         # Query user for correct calibraiton positions
         if cal_mode == 'Manual':
@@ -944,17 +960,14 @@ class ControlWindow(QMainWindow):
             self.logger.info(f"Computing calibration with data\n{self.pip_cal.data.data_df}")
             self.pip_cal.compute(z_polarity=-1, pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
         except CalibrationDataError as e:
-            self.logger.warning(e)
-            self.warn_msg.setText(f"Calibration not completed. Error: {e}\n\nMake sure you click on the tip to register at least 3 points (that don't lie on a line) before unchecking 'Calibrate'.")
-            self.warn_msg.exec()
+            msg = f"Calibration not completed. Error: {e}\n\nMake sure you click on the tip to register at least 3 points (that don't lie on a line) before unchecking 'Calibrate'."
+            self.show_warning_box(msg)
         except CalibrationError as e:
-            self.logger.warning(e)
-            self.error_msg.setText(f"Calibration not completed. Error: {e}.")
-            self.error_msg.exec()
+            msg = f"Calibration not completed. Error: {e}."
+            self.show_error_box(msg)
         except Exception as e:
-            self.logger.exception("Error while computing calibration")
-            self.error_msg.setText(f"Error: {e}\n\nSee logs for more information.")
-            self.error_msg.exec()
+            msg = f"Error: {e}\n\nSee logs for more information."
+            self.show_exception_box(msg)
         else:
             self._calibration_complete.emit(True)
             self.logger.info(f"Existing models:\n{self.pip_cal.tmp_storage._existing_models.keys()}")
@@ -985,28 +998,23 @@ class ControlWindow(QMainWindow):
         if self.update_calibration_but.isChecked():
             if self.pip_cal.model.is_calibrated is False:
                 self.update_calibration_but.setChecked(False)
-                e = "System is not calibrated. Can not update non-existent calibration."
-                self.logger.warning(e)
-                self.warn_msg.setText(f"Error: {e}\n\nConduct a new calibration or load an exsisting calibration before updating.")
-                self.warn_msg.exec()
+                msg = "System is not calibrated. Can not update non-existent calibration.\n\nConduct a new calibration or load an exsisting calibration before updating."
+                self.show_warning_box(msg)
             if self.conduct_calibration_but.isChecked():
                 self.update_calibration_but.setChecked(False)
-                self.logger.warning('Cannot update calibration while already conducting calibration.')
-                self.warn_msg.setText('Cannot update calibration while already conducting calibration. Complete calibration process (and uncheck the box) before updating a calibration.')
-                self.warn_msg.exec()
+                msg = 'Cannot update calibration while already conducting calibration.\n\nComplete calibration process (and uncheck the box) before updating a calibration.'
+                self.show_warning_box(msg)
         else:
             try:
                 _, obj_mag = self.zen_group.parse_combobox('objective')
                 _, opto_mag = self.zen_group.parse_combobox('optovar')
                 self.pip_cal.update(obj_mag=obj_mag, opto_mag=opto_mag, pip_angle=self.pip_angle)
             except CalibrationDataError as e:
-                self.logger.warning(e)
-                self.warn_msg.setText(f"Calibration not updated. Error: {e}\n\nMake sure you click on the tip to register the calibration point before unchecking 'Update'.")
-                self.warn_msg.exec()
+                msg = f"Calibration not updated. Error: {e}\n\nMake sure you click on the tip to register the calibration point before unchecking 'Update'."
+                self.show_warning_box(msg)
             except Exception as e:
-                self.logger.exception("Error while updating calibration")
-                self.error_msg.setText(f"Error: {e}\n\nSee logs for more information.")
-                self.error_msg.exec()
+                msg = f"Error while updating calibration: {e}\n\nSee logs for more information."
+                self.show_exception_box(msg)
             finally:
                 self.logger.info('Calibration unchecked. Deleting calibration points.')
                 self.pip_cal.data.rm_all()
@@ -1014,19 +1022,16 @@ class ControlWindow(QMainWindow):
     def save_calibration(self):
         ''' Saves calibration to a file '''
         if self.pip_cal.model.is_calibrated is False:
-            e = "System is not calibrated. Can not save non-existent calibration."
-            self.logger.warning(e)
-            self.warn_msg.setText(f"Error: {e}\n\nConduct a new calibration or load and update an existing calibration before saving.")
-            self.warn_msg.exec()
+            msg = "System is not calibrated. Can not save non-existent calibration.\n\nConduct a new calibration or load and update an existing calibration before saving."
+            self.show_warning_box(msg)
         else:
             try:
                 _, obj_mag = self.zen_group.parse_combobox('objective')
                 _, opto_mag = self.zen_group.parse_combobox('optovar')
                 self.pip_cal.save_model(obj_mag=obj_mag, opto_mag=opto_mag, ang_deg=np.rad2deg(self.pip_angle))
             except Exception as e:
-                self.logger.exception("Error while saving calibration")
-                self.error_msg.setText(f"Error while saving calibration: {e}")
-                self.error_msg.exec()
+                msg = f"Error while saving calibration {e}\n\nSee logs for more information."
+                self.show_exception_box(msg)
 
     def load_calibration(self):
         ''' Loads the most recent calibration '''
@@ -1041,17 +1046,14 @@ class ControlWindow(QMainWindow):
             _, opto_mag = self.zen_group.parse_combobox('optovar')
             self.pip_cal.load_model(obj_mag=obj_mag, opto_mag=opto_mag, ang_deg=np.rad2deg(self.pip_angle))
         except CalibrationFileError as e:
-            self.logger.warning(str(e))
-            self.warn_msg.setText(f"Error: {e}.\n\nYou must save a calibration file before it can be loaded.")
-            self.warn_msg.exec()
+            msg = f"Error: {e}.\n\nYou must save a calibration file before it can be loaded."
+            self.show_warning_box(msg)
         except CalibrationDNEError as e:
-            self.logger.warning(str(e))
-            self.warn_msg.setText(f"Error: {e}.\n\nYou must save a calibration with this microscope configuration before it can be loaded.")
-            self.warn_msg.exec()
+            msg = f"Error: {e}.\n\nYou must save a calibration with this microscope configuration before it can be loaded."
+            self.show_warning_box(msg)
         except Exception as e:
-            self.logger.exception('Error while loading calibration')
-            self.error_msg.setText(f"Error: {e}. Check logs for traceback.")
-            self.error_msg.exec()    
+            msg = f"Error while loading calibration: {e}.\n\nSee logs for more information."
+            self.show_exception_box(msg)
         else:
             self._calibration_complete.emit(True)        
 
@@ -1068,9 +1070,8 @@ class ControlWindow(QMainWindow):
             except CalibrationDNEError as e:
                 self.pip_cal.model.reset_calibration()
                 self._calibration_complete.emit(False)
-                self.logger.warning(str(e))
-                self.warn_msg.setText(f"You switched the microscope configuration, but '{e}'.\n\nYour previous calibration is invalid. Either switch to the previous microscope configuration or conduct/load a calibration for this microscope configuration.")
-                self.warn_msg.exec()
+                msg = f"You switched the microscope configuration, but '{e}'.\n\nYour previous calibration is invalid. Either switch to the previous microscope configuration or conduct/load a calibration for this microscope configuration."
+                self.show_warning_box(msg)
         # Load calibration or no warning if not exist
         else:
             try:
@@ -1124,8 +1125,8 @@ class ControlWindow(QMainWindow):
                 self.save_tiss_anot_data(raw_annot=raw, interpolate_annot=inter)
         except:
             self._annotation_complete.emit(False)
-            self.error_msg.setText("CAM error, is camera plugged in? \nPython error = \n" + str(sys.exc_info()[1]))
-            self.error_msg.exec()
+            msg = "CAM error, is camera plugged in? \nPython error = \n" + str(sys.exc_info()[1])
+            self.show_error_box(msg)
             self.response_monitor_window.append(">> Camera error. \n>> Python error = " + str(sys.exc_info()))
         else:
             self._annotation_complete.emit(True)
@@ -1294,8 +1295,8 @@ class ControlWindow(QMainWindow):
             self.motoryposition.setText(str(self.registerpositiony) +  self.mu +"m")
             self.motorzposition.setText(str(self.registerpositionz) +  self.mu +"m")
         except:
-            self.error_msg.setText("Manipulator error. \nPython error = \n" + str(sys.exc_info()[1]))
-            self.error_msg.exec()
+            msg = "Manipulator error. \nPython error = \n" + str(sys.exc_info()[1])
+            self.show_error_box(msg)
             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
 
     def advancemotor(self, axis, direction):
@@ -1305,8 +1306,8 @@ class ControlWindow(QMainWindow):
             move = delmotor(axis, direction, dist, speed,'relative',0)
             move.start()
         except:
-            self.error_msg.setText("Please enter an increment and speed in the manipulator window. \nPython error = \n" + str(sys.exc_info()[1]))
-            self.error_msg.exec()
+            msg = "Please enter an increment and speed in the manipulator window. \nPython error = \n" + str(sys.exc_info()[1])
+            self.show_error_box(msg)
             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
 
 
@@ -1329,8 +1330,8 @@ class ControlWindow(QMainWindow):
             self.injector_compensate.start()
 
         except:
-            self.error_msg.setText("Error, did you enter all parameters? Is the arduino plugged in? \nPython error = \n" + str(sys.exc_info()[1]))
-            self.error_msg.exec()
+            msg = "Error, did you enter all parameters? Is the arduino plugged in? \nPython error = \n" + str(sys.exc_info()[1])
+            self.show_error_box(msg)
             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
         else:
             self._parameter_complete.emit(True)
@@ -1354,9 +1355,8 @@ class ControlWindow(QMainWindow):
             self.inj_trajectory.start()
             self.inj_trajectory.finished.connect(self.show_n_injected)
         except:
-            print(traceback.format_exc())
-            self.error_msg.setText("Please complete calibration, enter all parameters, and select tip of pipette.\nPython error = \n" + str(sys.exc_info()[1]))
-            self.error_msg.exec()
+            msg = "Please complete calibration, enter all parameters, and select tip of pipette.\nPython error = \n" + str(sys.exc_info()[1])
+            self.show_error_box(msg)
             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
 
     def show_n_injected(self):
@@ -1366,8 +1366,8 @@ class ControlWindow(QMainWindow):
         try:
             self.inj_trajectory.stop()
         except:
-            self.error_msg.setText("You have to start the trajectory in order to be able to stop it...\nPython error = \n" + str(sys.exc_info()[1]))
-            self.error_msg.exec()
+            msg = "You have to start the trajectory in order to be able to stop it...\nPython error = \n" + str(sys.exc_info()[1])
+            self.show_error_box(msg)
             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
 
     def closeEvent(self, event):

@@ -121,6 +121,10 @@ class SemiAutoCalibrationTrajectory(QObject):
         if self._move_index == len(self._man_disps):
             self.cal.compute(z_polarity=self.z_polarity, pip_angle=self.pip_angle, obj_mag=self.obj_mag, opto_mag=self.opto_mag)
             self.cal.data.rm_all()
+        # Emit finished when all points have been reached
+        if self._move_index == (len(self._man_disps) + len(self._ex_positions)):
+            self.finished.emit()
+            return None
         # Initial calibration with small displacements
         if self._move_index < len(self._man_disps):
             cur_pos = self.dev.get_pos()
@@ -133,11 +137,5 @@ class SemiAutoCalibrationTrajectory(QObject):
             pix_pos = self._ex_positions[tmp_index]
             new_man_pos = self.cal.model.inverse(ex=pix_pos, man_axis_const='d')
             self.dev.goto_pos(new_man_pos, self.speed_ums)
-        # Emit finished when all points have been reached
-        if self._move_index == (len(self._man_disps) + len(self._ex_positions) -1):
-            self.finished.emit()
         # Increment move index
         self._move_index += 1
-
-                
-

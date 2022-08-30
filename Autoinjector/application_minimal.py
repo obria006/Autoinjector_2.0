@@ -232,7 +232,7 @@ class ControlWindow(QMainWindow):
         self.pip_cal_group.setLayout(pip_cal_layout)
         # Set connections
         self.conduct_calibration_but.clicked.connect(self.handle_calibration_button_clicked)
-        self.update_calibration_but.stateChanged.connect(self.update_calibration)
+        self.update_calibration_but.clicked.connect(self.update_calibration)
         self.save_calibration_but.clicked.connect(self.save_calibration)
         self.load_calibration_but.clicked.connect(self.load_calibration)
         self.display_calibration_but.stateChanged.connect(self.display_calibration)
@@ -984,17 +984,13 @@ class ControlWindow(QMainWindow):
         ''' Updates calibration by setting new reference position '''
         if self.update_calibration_but.isChecked():
             if self.pip_cal.model.is_calibrated is False:
-                tmp_block = QSignalBlocker(self.update_calibration_but)
                 self.update_calibration_but.setChecked(False)
-                tmp_block.unblock()
                 e = "System is not calibrated. Can not update non-existent calibration."
                 self.logger.warning(e)
                 self.warn_msg.setText(f"Error: {e}\n\nConduct a new calibration or load an exsisting calibration before updating.")
                 self.warn_msg.exec()
             if self.conduct_calibration_but.isChecked():
-                tmp_block = QSignalBlocker(self.update_calibration_but)
                 self.update_calibration_but.setChecked(False)
-                tmp_block.unblock()
                 self.logger.warning('Cannot update calibration while already conducting calibration.')
                 self.warn_msg.setText('Cannot update calibration while already conducting calibration. Complete calibration process (and uncheck the box) before updating a calibration.')
                 self.warn_msg.exec()

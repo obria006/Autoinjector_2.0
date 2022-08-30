@@ -47,7 +47,7 @@ class ControlWindow(QMainWindow):
     _annotation_complete = pyqtSignal(bool)
     _parameter_complete = pyqtSignal(bool)
     cal_pos_added = pyqtSignal()
-    def __init__(self,cam,brand,val,bins,rot,imagevals,scale,restest,com,fourtyxcalibdist, parent=None):
+    def __init__(self,cam,brand,val,bins,rot,imagevals,scale,restest,com, parent=None):
         super().__init__(parent)
         self.logger = logr(__name__)
         self._central_widget = QWidget(self)
@@ -59,7 +59,6 @@ class ControlWindow(QMainWindow):
         self.warn_msg = QMessageBox()
         self.warn_msg.setIcon(QMessageBox.Icon.Warning)
         self.warn_msg.setWindowTitle("Warning")
-        self.fourtyxmag = fourtyxcalibdist #distance manipulators move for calibration based on camera FOV and mag
 
         # initiate thread to poll position of motors and report error if they are not found
         try:
@@ -139,7 +138,6 @@ class ControlWindow(QMainWindow):
 
     def obj_changed(self, mag_level:float):
         if mag_level in list(self.zen_group.zen.objectives['magnification']):
-            self.motorcalibdist = self.fourtyxmag*(40/mag_level)
             self.response_monitor_window.append(">> Magnification set to " +str(mag_level))
 
     def opto_changed(self, mag_level:float):
@@ -386,7 +384,6 @@ class ControlWindow(QMainWindow):
         # Set magnification of objective
         mag_level = self.zen_group.zen.get_obj_info('magnification')
         if mag_level in list(self.zen_group.zen.objectives['magnification']):
-            self.motorcalibdist = self.fourtyxmag*(40/mag_level)
             self.response_monitor_window.append(">> Magnification set to " +str(mag_level))
         # Set magnificaiton of optovar
         opto_mag_level = self.zen_group.zen.get_opto_info('magnification')
@@ -1354,6 +1351,6 @@ if __name__ == "__main__":
     import sys
     app = QApplication(sys.argv)
     app.setApplicationName('MyWindow')
-    main = ControlWindow('HamamatsuHam_DCAM', 'HamamatsuHam', 'HamamatsuHam_DCAM', '2x2', 180, 256, 1.3, 'Off', 'com3', 40000)
+    main = ControlWindow('HamamatsuHam_DCAM', 'HamamatsuHam', 'HamamatsuHam_DCAM', '2x2', 180, 256, 1.3, 'Off', 'com3')
     main.show()
     sys.exit(app.exec())

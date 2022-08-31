@@ -4,7 +4,7 @@ from datetime import datetime
 from PIL import Image
 import pandas as pd
 import numpy as np
-from src.imageprocessing.image_io import save_image
+from src.video_control.image_io import save_image
 from src.miscellaneous.standard_logger import StandardLogger as logr
 from src.miscellaneous import validify as val
 

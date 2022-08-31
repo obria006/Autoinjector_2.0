@@ -13,8 +13,8 @@ from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
 from PyQt6.QtGui import QIcon, QPalette, QColor
 import pandas as pd
-from src.imageprocessing.videocontrolsThread import vidcontrols as vc
-from src.imageprocessing.draw import drawobj
+from src.video_control.video_utils import interpolate_vertical, AnnotationError
+from src.video_control.video import MMCamera, VideoDisplay
 from src.motorcontrol.altermotorposition import delmotor
 from src.motorcontrol.motorlocationThread import motorpositionThread
 from src.motorcontrol.trajectorythread_minimal import trajectoryimplementor
@@ -47,6 +47,7 @@ class ControlWindow(QMainWindow):
     _annotation_complete = pyqtSignal(bool)
     _parameter_complete = pyqtSignal(bool)
     cal_pos_added = pyqtSignal()
+
     def __init__(self,cam,brand,val,bins,rot,imagevals,scale,restest,com, parent=None):
         super().__init__(parent)
         self.logger = logr(__name__)
@@ -85,8 +86,12 @@ class ControlWindow(QMainWindow):
             self.arduinofound = False
 
         #initiate video stream thread using camera settings
-        self.vidctrl = vc(cam,brand,val,bins,rot,imagevals,scale,restest)
-        self.vidctrl.start()
+        self.cam_ = cam
+        self.brand_ = brand
+        self.val_ = val
+        self.bins_ = bins
+        self.rot_ = rot
+        self.imagevals_ = imagevals
         self.file_selected = 0
         self.restest = restest
         self.setup_gui()
@@ -115,11 +120,21 @@ class ControlWindow(QMainWindow):
         '''
         # Load the configuration values
         self.get_gui_cfg()
+        try:
+            mm_path = self.cfg.cfg_gui.values['micromanager path'].replace('\\','/')
+            self.cam_MM = MMCamera(mm_path, self.cam_, self.brand_, self.val_, self.bins_, self.rot_, self.imagevals_)
+        except Exception as e:
+            msg = f"Error while interfacing with camera: {e}.\n\nSee logs for more info."
+            self.show_exception_box(e)
+        self.vid_display = VideoDisplay(self.cam_MM, height=900, fps=30)
         self.define_dirs()
         self.pipette_calibrator_widgets()
         self.data_generator_widgets()
         self.injection_parameter_widgets()
         self.workflow_widgets()
+        self.video_display_widgets()
+        self.annotation_widgets()
+        self.display_modification_widgets()
         self.zen_group = ZenGroup()
         self.pip_cal = Calibrator(cal_data_dir=self.cal_data_dir)
         self.angle_io = AngleIO(ang_data_dir=self.cal_data_dir)
@@ -130,11 +145,17 @@ class ControlWindow(QMainWindow):
         self.zen_group.ref_changed.connect(self.ref_changed)
         self.GUIsetup()
         self.init_from_ZEN()
-        self.vidctrl.clicked_pos.connect(self.add_cal_positions)
-        self.workflow_connections()
+        self.set_connections()
         self.stateify_pipette_calibrator_widgets()
         self.stateify_data_generator_widgets()
         self.stateify_injection_parameter_widgets()
+        self.stateify_display_modification_widgets()
+
+    def set_connections(self):
+        self.workflow_connections()
+        self.video_display_connections()
+        self.annotation_connections()
+        self.display_modification_connections()
 
     def obj_changed(self, mag_level:float):
         if mag_level in list(self.zen_group.zen.objectives['magnification']):
@@ -379,6 +400,51 @@ class ControlWindow(QMainWindow):
         self.speed_entry.insert('1000')
         self.pressure_slider.setValue(20)
 
+    def video_display_widgets(self):
+        layout = QVBoxLayout()
+        layout.addWidget(self.vid_display)
+        self.video_display_group = QGroupBox('Microscope Video Stream')
+        self.video_display_group.setLayout(layout)
+
+    def video_display_connections(self):
+        self.vid_display.clicked_camera_pixel.connect(self.add_cal_positions)
+        self.vid_display.drawn_camera_pixels.connect(self.handle_drawn_edge)
+
+    def annotation_widgets(self):
+        layout = QVBoxLayout()
+        self.draw_edge_button = QCheckBox("Draw Edge")
+        layout.addWidget(self.draw_edge_button)
+        self.annotation_group = QGroupBox('Trajectory Annotation')
+        self.annotation_group.setLayout(layout)
+
+    def annotation_connections(self):
+        self.draw_edge_button.clicked.connect(self.draw_edge_clicked)
+        
+    def display_modification_widgets(self):
+        layout = QVBoxLayout()
+        exposure_label = QLabel("Camera Exposure")
+        self.exposure_slider = QSlider(Qt.Orientation.Horizontal)
+        self.exposure_slider.setMinimum(15)
+        self.exposure_slider.setMaximum(100)
+        self.exposure_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.exposure_slider.setTickInterval(0)
+        self.show_annotation_button = QPushButton("Show Edge")
+        self.hide_annotation_button = QPushButton("Hide Edge")
+        layout.addWidget(exposure_label)
+        layout.addWidget(self.exposure_slider)
+        layout.addWidget(self.show_annotation_button)
+        layout.addWidget(self.hide_annotation_button)
+        self.display_modification_group = QGroupBox('Display Settings')
+        self.display_modification_group.setLayout(layout)
+        
+    def stateify_display_modification_widgets(self):
+        exposure = int(float(self.cam_MM.get_exposure())*10)
+        self.exposure_slider.setValue(exposure)
+
+    def display_modification_connections(self):
+        self.exposure_slider.valueChanged.connect(self.exposure_value_change)
+        self.show_annotation_button.clicked.connect(partial(self.vid_display.show_interpolated_annotation,True))
+        self.hide_annotation_button.clicked.connect(partial(self.vid_display.show_interpolated_annotation,False))
 
     def init_from_ZEN(self):
         # Set magnification of objective
@@ -393,42 +459,7 @@ class ControlWindow(QMainWindow):
         self.response_monitor_window.append(">> Reflector set to " +str(ref_name))
 
     def GUIsetup(self):
-        #Create widgets for image display
-        self.image_analysis_window_box = QVBoxLayout()
-        self.image_analysis_window_box.addWidget(self.vidctrl.image_analysis_window)
-        self.image_analysis_window_box.addStretch()
-        groupbox_image_analysis_window= QGroupBox('Microscope Video Stream')
-        groupbox_image_analysis_window.setLayout(self.image_analysis_window_box)
 
-
-        #manual image processing controls
-        image_processing_windowmanual_detectedge = QPushButton("Draw Edge")
-        image_processing_windowmanual_detectedge.clicked.connect(self.drawedge)
-        image_processing_windowmanual = QHBoxLayout()
-        image_processing_windowmanual.addWidget(image_processing_windowmanual_detectedge)
-        groupbox_image_processing_windowmanual = QGroupBox('Draw Desired Trajectory')
-        groupbox_image_processing_windowmanual.setLayout(image_processing_windowmanual)
-
-        #view drawn edge
-        misc = QVBoxLayout()
-        misc_hideshape = QPushButton("Hide Edge")
-        misc_hideshape.clicked.connect(self.vidctrl.hideshapes)
-        misc_showshape = QPushButton("Show Edge")
-        misc_showshape.clicked.connect(self.vidctrl.showshapes)
-        exposurelabel = QLabel("Camera Exposure")
-        self.exposureslider = QSlider(Qt.Orientation.Horizontal)
-        self.exposureslider.setMinimum(4)
-        self.exposureslider.setMaximum(30)
-        self.exposureslider.setValue(8)
-        self.exposureslider.setTickPosition(QSlider.TickPosition.TicksBelow)
-        self.exposureslider.setTickInterval(0)
-        self.exposureslider.valueChanged.connect(self.exposurevaluechange)
-        misc.addWidget(exposurelabel)
-        misc.addWidget(self.exposureslider)
-        misc.addWidget(misc_showshape)
-        misc.addWidget(misc_hideshape)
-        groupbox_misc = QGroupBox('Display Settings')
-        groupbox_misc.setLayout(misc)
         
         #Manipulator Status 
         # -*- coding: utf-8 -*-
@@ -509,8 +540,8 @@ class ControlWindow(QMainWindow):
         self.mastergrid = QGridLayout()
         self.leftside=QVBoxLayout()
         self.leftside.addWidget(self.pip_cal_group)
-        self.leftside.addWidget(groupbox_image_processing_windowmanual)
-        self.leftside.addWidget(groupbox_misc)
+        self.leftside.addWidget(self.annotation_group)
+        self.leftside.addWidget(self.display_modification_group)
         self.leftside.addWidget(self.data_gen_group)
         self.leftside.addWidget(self.workflow_group)
 
@@ -587,7 +618,7 @@ class ControlWindow(QMainWindow):
         self.setWindowIcon(QIcon('favicon.png'))
         self.timer = QTimer()  
         self.mastergrid.addLayout(self.leftside,1,0,1,1)
-        self.mastergrid.addWidget(groupbox_image_analysis_window,1,1,1,1)
+        self.mastergrid.addWidget(self.video_display_group,1,1,1,1)
         self.mastergrid.addLayout(self.rightside,1,3,1,1)
         self.mastergrid.addWidget(groupbox_response_monitorgrid, 2,0,1,4)
         self.mastergrid.setContentsMargins(5, 5, 5, 5)
@@ -602,20 +633,15 @@ class ControlWindow(QMainWindow):
         else:
             self.response_monitor_window.append(">> Arduino connected and working on port " + str(self.com))
 
-        if self.vidctrl.camerafound == False:
-            self.response_monitor_window.append(">> Camera not detected. Wait 2 minutes then relaunch app. Make sure proper camera settings are used, and camera is shown in windows device manager under USB or camera.")
-        else:
-            self.response_monitor_window.append(">> Camera detected and working.")
 
     def valuechange(self):
         self.pressureslidervalue= self.pressure_slider.value()
         self.displaypressure = int(self.pressureslidervalue/2.55)
         self.pressure_display.setText(str(self.displaypressure)+'%')
 
-    def exposurevaluechange(self):
-        self.exposureslidervalue = self.exposureslider.value()/3.33
-        self.displayexposure = float(self.exposureslidervalue)
-        self.vidctrl.changeexposure(self.displayexposure)
+    def exposure_value_change(self):
+        new_exposure_value = float(self.exposure_slider.value())/10
+        self.cam_MM.set_exposure(new_exposure_value)
 
     def updateoverride(self,text):
         self.overrideon = str(text)
@@ -841,8 +867,9 @@ class ControlWindow(QMainWindow):
         if cal_mode == "Manual":
             pass
 
-    def add_cal_positions(self,x_click:float, y_click:float):
+    def add_cal_positions(self,pixel):
         ''' Adds clicked calibration positions to calibration data '''
+        x_click, y_click = pixel
         if self.conduct_calibration_but.isChecked():
             z_scope = self.zen_group.zen.get_focus_um()
             ex_pos = [x_click, y_click, z_scope]
@@ -851,8 +878,7 @@ class ControlWindow(QMainWindow):
             self.pip_cal.data.add_cal_position(ex=ex_pos, man=man_pos)
             self.cal_pos_added.emit()
             if self.save_tip_annot.isChecked():
-                self.tipposition1 = self.vidctrl.tipcircle
-                tip_dict = {'x':self.tipposition1.x(), 'y':self.tipposition1.y()}
+                tip_dict = {'x':x_click, 'y':y_click}
                 self.save_pip_cal_data(tip_dict)
         if self.update_calibration_but.isChecked():
             self.pip_cal.data.rm_all()
@@ -871,12 +897,12 @@ class ControlWindow(QMainWindow):
         self.logger.debug('Doing Semi-Auto. calibration')
         # Initalize for the calibration trajectory
         dev = SensapexDevice(1)
-        vid_width = self.vidctrl.width
-        vid_height = self.vidctrl.height
+        img_width = self.cam_MM.width
+        img_height = self.cam_MM.height
         z_scope = self.zen_group.zen.get_focus_um()
         _, obj_mag = self.zen_group.parse_combobox('objective')
         _, opto_mag = self.zen_group.parse_combobox('optovar')
-        self.cal_trajectory = SemiAutoCalibrationTrajectory(dev=dev, cal=self.pip_cal, img_w=vid_width, img_h=vid_height, ex_z=z_scope,z_polarity=-1,pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
+        self.cal_trajectory = SemiAutoCalibrationTrajectory(dev=dev, cal=self.pip_cal, img_w=img_width, img_h=img_height, ex_z=z_scope,z_polarity=-1,pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
         self.cal_pos_added.connect(self.cal_trajectory.next_cal_position)
         self.cal_trajectory.finished.connect(self.conduct_calibration_but.toggle)
         self.cal_trajectory.finished.connect(self.compute_calibration)
@@ -910,7 +936,12 @@ class ControlWindow(QMainWindow):
             self.conduct_calibration_but.setChecked(False)
             msg = 'Cannot conduct calibration while updating. Complete update calibration process (and uncheck the box) before conducting a new calibration.'
             self.show_warning_box(msg)
-            self.warn_msg.exec()
+            return None
+        # Untoggles calibration button if draw edge is checked
+        elif self.draw_edge_button.isChecked():
+            self.conduct_calibration_but.setChecked(False)
+            msg = 'Cannot conduct calibraiton while annotating tissue.\n\nComplete annotation process (and uncheck the box) before conducting a new calibration.'
+            self.show_warning_box(msg)
             return None
         # Asks user to if conditions valid for calibrating
         else:
@@ -982,27 +1013,34 @@ class ControlWindow(QMainWindow):
             if self.pip_disp_timer.isActive() is False:
                 self.pip_disp_timer.start(self.pip_disp_timeout)
             if self.pip_cal.model.is_calibrated is True:
-                self.vidctrl.display_tip_pos = True
+                self.vid_display.show_tip_position(True)
                 dev = SensapexDevice(1)
                 pos = dev.get_pos()
                 ex = self.pip_cal.model.forward(man=pos)
-                self.vidctrl.show_tip_pos(ex[0], ex[1])
+                self.vid_display.set_tip_position(ex[0], ex[1])
             else:
-                self.vidctrl.display_tip_pos = False
+                self.vid_display.show_tip_position(False)
         else:
-            self.vidctrl.display_tip_pos = False
+            self.vid_display.show_tip_position(False)
             self.pip_disp_timer.stop()
 
     def update_calibration(self):
         ''' Updates calibration by setting new reference position '''
         if self.update_calibration_but.isChecked():
+            # Untoggles calibration button if no calibraiton exists
             if self.pip_cal.model.is_calibrated is False:
                 self.update_calibration_but.setChecked(False)
                 msg = "System is not calibrated. Can not update non-existent calibration.\n\nConduct a new calibration or load an exsisting calibration before updating."
                 self.show_warning_box(msg)
+            # Untoggles calibration button if calibraiton button is checked
             if self.conduct_calibration_but.isChecked():
                 self.update_calibration_but.setChecked(False)
                 msg = 'Cannot update calibration while already conducting calibration.\n\nComplete calibration process (and uncheck the box) before updating a calibration.'
+                self.show_warning_box(msg)
+            # Untoggles calibration button if draw edge is checked
+            if self.draw_edge_button.isChecked():
+                self.update_calibration_but.setChecked(False)
+                msg = 'Cannot update calibraiton while annotating tissue.\n\nComplete annotation process (and uncheck the box) before updating the calibration.'
                 self.show_warning_box(msg)
         else:
             try:
@@ -1091,7 +1129,7 @@ class ControlWindow(QMainWindow):
         '''
         # Instance of object to save data
         pip_data_saver = PipTipData(pip_data_dir=self.pip_data_dir)
-        image = np.copy(self.vidctrl.unmod_frame)
+        image = np.copy(self.vid_display.frame)
         pip_data_saver.save_data(image=image, tip_position=tip_dict)
 
     """
@@ -1108,28 +1146,64 @@ class ControlWindow(QMainWindow):
         '''
         # Instance of object to save data
         tis_data_saver = TissueEdgeData(tis_data_dir=self.tis_data_dir)
-        image = np.copy(self.vidctrl.unmod_frame)
+        image = np.copy(self.vid_display.frame)
         tis_data_saver.save_data(image=image, raw_annot=raw_annot, interpolate_annot=interpolate_annot)
 
+    def draw_edge_clicked(self):
+        ''' Handles events whne the draw edge button is clicked '''
+        # Don't show drawn coordinates if not checked
+        if not self.draw_edge_button.isChecked():
+            self.vid_display.show_drawn_annotation(False)
+            return
+        # untoggles draw edge because conduct calibration is checked (and don't show drawn coords)
+        if self.conduct_calibration_but.isChecked():
+            self.draw_edge_button.setChecked(False)
+            self.vid_display.show_drawn_annotation(False)
+            msg = "Cannot draw annotation while calibration button is checked. Complete calibration before annotating tissue edge."
+            self.show_warning_box(msg)
+            return
+        # untoggles draw edge because update calibration is checked (and don't show drawn coords)
+        if self.update_calibration_but.isChecked():
+            self.draw_edge_button.setChecked(False)
+            self.vid_display.show_drawn_annotation(False)
+            msg = "Cannot draw annotation while calibration update button is checked. Complete calibration update before annotating tissue edge."
+            self.show_warning_box(msg)
+            return
+        # otherwise Show drawn annotation and interpolated annotation
+        if self.draw_edge_button.isChecked():
+            self.vid_display.show_drawn_annotation(True)
+            self.vid_display.show_interpolated_annotation(True)
+            return
 
-    def drawedge(self):
-        
-        try:
-            self.vidctrl.showshapes()
-            self.d = drawobj(self.vidctrl.frame)
-            self.d.drawedgecoord1 = np.asarray(self.d.drawedgecoord1)
-            self.vidctrl.edgearraypointer(self.d.drawedgecoord1)
-            if self.save_tiss_annot.isChecked():
-                raw = np.asarray(self.d.drawedgecoord)
-                inter = np.asarray(self.d.drawedgecoord1)
-                self.save_tiss_anot_data(raw_annot=raw, interpolate_annot=inter)
-        except:
-            self._annotation_complete.emit(False)
-            msg = "CAM error, is camera plugged in? \nPython error = \n" + str(sys.exc_info()[1])
-            self.show_error_box(msg)
-            self.response_monitor_window.append(">> Camera error. \n>> Python error = " + str(sys.exc_info()))
-        else:
-            self._annotation_complete.emit(True)
+    def handle_drawn_edge(self, drawn_pixels:list):
+        ''' Handles events when video display returns the drawn edge '''
+        # Only handle the drawn edge when the checkbutton is active
+        if self.draw_edge_button.isChecked():
+            # Try to interpolate the drawn edge coordinates
+            try:
+                self.interpolated_pixels = interpolate_vertical(drawn_pixels)
+                self.vid_display.set_interpolated_annotation(self.interpolated_pixels)
+                self._annotation_complete.emit(True)
+            except AnnotationError as e:
+                self.interpolated_pixels = []
+                self.vid_display.reset_interpolated_annotation()
+                msg = "Error while interpolating annotation. The annotation must go in one direction: either top-to-bottom or bottom-to-top.\n\nTry annotating again."
+                self.show_warning_box(msg)
+                self._annotation_complete.emit(False)
+            except Exception as e:
+                self.interpolated_pixels = []
+                self.vid_display.reset_interpolated_annotation()
+                msg = "Error while interpolating annotation.\n\nSee logs for more info."
+                self.show_exception_box(msg)
+                self._annotation_complete.emit(False)
+            else:
+                # Uncheck the button if successfully drawn (and dont show drawing)
+                self.draw_edge_button.setChecked(False)
+                self.vid_display.show_drawn_annotation(False)
+                if self.save_tiss_annot.isChecked():
+                    raw = np.asarray(drawn_pixels)
+                    inter = np.asarray(self.interpolated_pixels)
+                    self.save_tiss_anot_data(raw_annot=raw, interpolate_annot=inter)
 
     """
     -------------------------- Pre injection workflow controls   -----------------------------
@@ -1337,6 +1411,18 @@ class ControlWindow(QMainWindow):
             self._parameter_complete.emit(True)
         
     def run_3D_trajectory(self):
+        if self.conduct_calibration_but.isChecked():
+            msg = "Cannot start injections while calibration button is checked. Complete calibration before starting."
+            self.show_warning_box(msg)
+            return
+        if self.update_calibration_but.isChecked():
+            msg = "Cannot start injections while update calibration button is checked. Complete calibration update before starting."
+            self.show_warning_box(msg)
+            return
+        if self.draw_edge_button.isChecked():
+            msg = "Cannot start injections while draw annotation is checked. Complete tissue annotation before starting."
+            self.show_warning_box(msg)
+            return
         try:
             #get values from GUI
             um2nm = 1000
@@ -1346,7 +1432,7 @@ class ControlWindow(QMainWindow):
             speed_ums = int((self.motorspeed))
             dev = SensapexDevice(1)
             cal = self.pip_cal
-            edge = self.d.drawedgecoord1
+            edge = self.interpolated_pixels
             z_scope = self.zen_group.zen.get_focus_um()
             edge_arr = np.array(edge)
             z_arr = z_scope*np.ones((edge_arr.shape[0],1))
@@ -1373,7 +1459,7 @@ class ControlWindow(QMainWindow):
     def closeEvent(self, event):
         close_pressure = injection(arduino,0, 0,0,0,'bp')
         close_pressure.start()
-        self.vidctrl.vid_stop()
+        self.vid_display.stop()
         time.sleep(0.5)
         self.close()
 

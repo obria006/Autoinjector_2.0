@@ -15,9 +15,7 @@ from PyQt6.QtGui import QIcon, QPalette, QColor
 import pandas as pd
 from src.video_control.video_utils import interpolate_vertical, AnnotationError
 from src.video_control.video import MMCamera, VideoDisplay
-from src.motorcontrol.altermotorposition import delmotor
 from src.motorcontrol.motorlocationThread import motorpositionThread
-from src.motorcontrol.trajectorythread_minimal import trajectoryimplementor
 from src.pythonarduino.injectioncontrolmod import injection
 from src.cfg_mgmt.cfg_mngr import CfgManager
 from src.Qt_utils.gui_objects import QHLine
@@ -64,7 +62,6 @@ class ControlWindow(QMainWindow):
         try:
             self.getposition = motorpositionThread()
             self.getposition.start()
-            self.getposition.motorpos.connect(self.showmotorposition)
             self.motorfound = True
         except:
             msg = "Manipulators not detected. Wait 2 minutes then relaunch the app. If this does not work, replug manipulators into computer."
@@ -455,74 +452,6 @@ class ControlWindow(QMainWindow):
 
     def GUIsetup(self):
 
-        
-        #Manipulator Status 
-        # -*- coding: utf-8 -*-
-        self.mu = "µ"
-        self.motorchangeincrementtext = QLabel("Increment (" + self.mu + "m)")
-        self.motorchangespeedtext = QLabel("Speed (%)")
-        self.motorchangeincrement = QLineEdit(self)
-        self.motorchangespeed = QLineEdit(self)
-        self.motorxpositiontext = QLabel("X Position")
-        self.motorypositiontext = QLabel("Y Position")
-        self.motorzpositiontext = QLabel("Z Position")
-        self.motorxposition = QLineEdit(self)
-        self.motoryposition = QLineEdit(self)
-        self.motorzposition = QLineEdit(self)
-        self.motorxposition.setReadOnly(True)
-        self.motoryposition.setReadOnly(True)
-        self.motorzposition.setReadOnly(True)
-        self.motorxposition_increase = QPushButton("+")
-        self.motorxposition_increase.clicked.connect(lambda: self.advancemotor(axis='x',direction='increase'))
-        self.motorxposition_decrease = QPushButton("-")
-        self.motorxposition_decrease.clicked.connect(lambda: self.advancemotor(axis='x',direction='decrease'))
-        self.motoryposition_increase = QPushButton("+")
-        self.motoryposition_increase.clicked.connect(lambda: self.advancemotor(axis='y',direction='increase'))
-        self.motoryposition_decrease = QPushButton("-")
-        self.motoryposition_decrease.clicked.connect(lambda: self.advancemotor(axis='y',direction='decrease'))
-        self.motorzposition_increase = QPushButton("+")
-        self.motorzposition_increase.clicked.connect(lambda: self.advancemotor(axis='z',direction='increase'))
-        self.motorzposition_decrease = QPushButton("-")
-        self.motorzposition_decrease.clicked.connect(lambda: self.advancemotor(axis='z',direction='decrease'))
-        self.motorchange_inc_param = QHBoxLayout()
-        self.motorchange_speed_param = QHBoxLayout()
-        self.motorxposition_change_window = QHBoxLayout()
-        self.motoryposition_change_window = QHBoxLayout()
-        self.motorzposition_change_window = QHBoxLayout()
-        self.motorxposition_change_window.addStretch()
-        self.motorxposition_increase.setFixedWidth(75)
-        self.motorxposition_decrease.setFixedWidth(75)
-        self.motoryposition_increase.setFixedWidth(75)
-        self.motoryposition_decrease.setFixedWidth(75)
-        self.motorzposition_increase.setFixedWidth(75)
-        self.motorzposition_decrease.setFixedWidth(75)
-        self.motorchange_inc_param.addWidget(self.motorchangeincrementtext)
-        self.motorchange_inc_param.addWidget(self.motorchangeincrement)
-        self.motorchange_speed_param.addWidget(self.motorchangespeedtext)
-        self.motorchange_speed_param.addWidget(self.motorchangespeed)
-        self.motorxposition_change_window.addWidget(self.motorxposition_increase)
-        self.motorxposition_change_window.addWidget(self.motorxposition_decrease)
-        self.motoryposition_change_window.addStretch()
-        self.motoryposition_change_window.addWidget(self.motoryposition_increase)
-        self.motoryposition_change_window.addWidget(self.motoryposition_decrease)
-        self.motorzposition_change_window.addStretch()
-        self.motorzposition_change_window.addWidget(self.motorzposition_increase)
-        self.motorzposition_change_window.addWidget(self.motorzposition_decrease)
-        self.motorposition_change_window = QGridLayout()
-        self.motorposition_change_window.addWidget(self.motorxpositiontext,0,0)
-        self.motorposition_change_window.addWidget(self.motorxposition,0,1)
-        self.motorposition_change_window.addLayout(self.motorxposition_change_window,1,0,1,2)
-        self.motorposition_change_window.addWidget(self.motorypositiontext,2,0)
-        self.motorposition_change_window.addWidget(self.motoryposition,2,1)
-        self.motorposition_change_window.addLayout(self.motoryposition_change_window,3,0,1,2)
-        self.motorposition_change_window.addWidget(self.motorzpositiontext,4,0)
-        self.motorposition_change_window.addWidget(self.motorzposition,4,1)
-        self.motorposition_change_window.addLayout(self.motorzposition_change_window,5,0,1,2)
-        self.motorposition_change_window.addLayout(self.motorchange_inc_param,6,0,1,2)
-        self.motorposition_change_window.addLayout(self.motorchange_speed_param,7,0,1,2)
-        groupbox_motorpanel_window = QGroupBox('Manipulator')
-        groupbox_motorpanel_window.setLayout(self.motorposition_change_window)
-
         #response monitor 
         self.response_monitorgrid= QVBoxLayout()
         self.response_monitor_window = QTextBrowser()
@@ -542,7 +471,6 @@ class ControlWindow(QMainWindow):
 
         self.leftside.addStretch()
         self.rightside=QVBoxLayout()
-        self.rightside.addWidget(groupbox_motorpanel_window)
         self.rightside.addWidget(self.zen_group)
         self.rightside.addWidget(self.inj_parameter_group)
         self.rightside.addStretch()
@@ -1179,38 +1107,6 @@ class ControlWindow(QMainWindow):
         icon = self.style().standardIcon(pixmapi)
         pixmap = icon.pixmap(QSize(18,18))
         label.setPixmap(pixmap)
-    
-    """
-    ----------Motor Controls -----------------------------------------------------------------
-    These functions control displaying motor position
-    All functions call the class delmotor in the altermotorposition.py file
-    """
-
-    def showmotorposition(self, motorposition):
-        try:
-            self.motorposition = motorposition
-            self.registerpositionx = int(self.motorposition[0])/1000
-            self.registerpositiony = int(self.motorposition[1])/1000
-            self.registerpositionz = int(self.motorposition[2])/1000
-            self.motorxposition.setText(str(self.registerpositionx) +  self.mu +"m")
-            self.motoryposition.setText(str(self.registerpositiony) +  self.mu +"m")
-            self.motorzposition.setText(str(self.registerpositionz) +  self.mu +"m")
-        except:
-            msg = "Manipulator error. \nPython error = \n" + str(sys.exc_info()[1])
-            self.show_error_box(msg)
-            self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
-
-    def advancemotor(self, axis, direction):
-        try:
-            dist = float(float(self.motorchangeincrement.text())*1000)
-            speed = float(self.motorchangespeed.text())
-            move = delmotor(axis, direction, dist, speed,'relative',0)
-            move.start()
-        except:
-            msg = "Please enter an increment and speed in the manipulator window. \nPython error = \n" + str(sys.exc_info()[1])
-            self.show_error_box(msg)
-            self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
-
 
     """
     ----------Automated Microinjection Controls  -----------------------------------------------------------------

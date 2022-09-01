@@ -97,75 +97,61 @@ class ControlWindow(QMainWindow):
         self.pulseduration = 0
         self.edgedetected = False
     
-    # ---------- Initialize GUI -------------------------------------------------------
+    """
+    ============================================================================================
+
+    GUI INITIALIZATION
+
+    ============================================================================================
+    """
     def setup_gui(self):
-        '''
-        Function for initializing the GUI
-        
-        General order of
-        get config
-        initialze variables
-        do imports
-        make widgets
-        make connections
-        set widget states
+        ''' 
+        Setup the gui by importing configuration, defining directires, instantiating imports,
+        creating widgets, laying out the gui, setting widget connections, initializeing
+        the widget states, and finally assessing startup errors.
         '''
         # Load the configuration values
         self.get_gui_cfg()
+
+        # Define necessary directories
+        self.define_dirs()
+
+        # Instantiate imports
+        self.pip_cal = Calibrator(cal_data_dir=self.cal_data_dir)
+        self.angle_io = AngleIO(ang_data_dir=self.cal_data_dir)
+
+        # Instantiate the imported camera
         try:
             mm_path = self.cfg.cfg_gui.values['micromanager path'].replace('\\','/')
             self.cam_MM = MMCamera(mm_path, self.cam_, self.brand_, self.val_, self.bins_, self.rot_, self.imagevals_)
         except Exception as e:
             msg = f"Error while interfacing with camera: {e}.\n\nSee logs for more info."
             self.show_exception_box(e)
-        self.vid_display = VideoDisplay(self.cam_MM, height=900, fps=30)
-        self.define_dirs()
-        self.pipette_calibrator_widgets()
-        self.data_generator_widgets()
-        self.injection_parameter_widgets()
-        self.workflow_widgets()
-        self.video_display_widgets()
-        self.annotation_widgets()
-        self.display_modification_widgets()
+
+        # Instantiate imported widgets
+        self.vid_display = VideoDisplay(self.cam_MM, height=900, fps=50)
         self.zen_group = ZenGroup()
-        self.pip_cal = Calibrator(cal_data_dir=self.cal_data_dir)
-        self.angle_io = AngleIO(ang_data_dir=self.cal_data_dir)
-        self.zen_group.obj_changed.connect(self.obj_changed)
-        self.zen_group.obj_changed.connect(self.calibration_inputs_changed)
-        self.zen_group.opto_changed.connect(self.calibration_inputs_changed)
-        self.zen_group.opto_changed.connect(self.opto_changed)
-        self.zen_group.ref_changed.connect(self.ref_changed)
-        self.GUIsetup()
-        self.init_from_ZEN()
+
+        # Create main gui widgets
+        self.make_widgets()
+        
+        # Layout the widget groups in the main GUI
+        self.layout_gui()
+        
+        # Set the widget signal/slot connections
         self.set_connections()
-        self.stateify_pipette_calibrator_widgets()
-        self.stateify_data_generator_widgets()
-        self.stateify_injection_parameter_widgets()
-        self.stateify_display_modification_widgets()
 
-    def set_connections(self):
-        self.workflow_connections()
-        self.video_display_connections()
-        self.annotation_connections()
-        self.display_modification_connections()
+        # Define the initial widget states
+        self.stateify_widgets()
+        
+        # Assess any erros from startup
+        self.assess_startup_errors()
 
-    def obj_changed(self, mag_level:float):
-        if mag_level in list(self.zen_group.zen.objectives['magnification']):
-            self.response_monitor_window.append(">> Magnification set to " +str(mag_level))
-
-    def opto_changed(self, mag_level:float):
-        if mag_level in list(self.zen_group.zen.optovars['magnification']):
-            self.response_monitor_window.append(">> Optovar set to " +str(mag_level))
-
-    def ref_changed(self, ref_name:str):
-        if ref_name in list(self.zen_group.zen.reflectors['name']):
-            self.response_monitor_window.append(">> Reflector set to " +str(ref_name))
-    
     def get_gui_cfg(self):
         ''' Loads the configuration values for the GUI '''
         self.cfg = CfgManager()
         self.cfg.cfg_from_pointer()
-    
+
     def define_dirs(self):
         ''' Set dirs (and create if necessary) for GUI '''
         # General data directory
@@ -194,8 +180,87 @@ class ControlWindow(QMainWindow):
             os.makedirs(self.cal_arr_dir)
             self.logger.info(f'Created calibration array directory: {self.cal_arr_dir}')
 
-    def pipette_calibrator_widgets(self):
-        ''' Creates widgets for pipette calibration '''
+    def make_widgets(self):
+        """ Create the GUI's widgets """
+        # Create all interactive widgets
+        self.make_pipette_calibrator_widgets()
+        self.make_data_generator_widgets()
+        self.make_annotation_widgets()
+        self.make_display_modification_widgets()
+        self.make_video_display_widgets()
+        self.make_injection_parameter_widgets()
+        self.make_workflow_widgets()
+        self.make_system_status_widgets()
+        # Create pages for the stacked layout with different modes (like calibration
+        # mode or anotation mode)
+        self.make_default_left_page_widget()
+        self.make_default_right_page_widget()
+
+    def set_connections(self):
+        """ Set the signal/slot connections for the GUI's widgets """
+        self.set_pipette_calibrator_connections()
+        self.set_annotation_connections()
+        self.set_display_modification_connections()
+        self.set_video_display_connections()
+        self.set_inject_parameter_connections()
+        self.set_workflow_connections()
+        self.set_zeiss_connections()
+
+    def stateify_widgets(self):
+        """ Set the initial state for the GUI's widgets """
+        # Initialize states for the various gui widgets
+        self.stateify_pipette_calibrator_widgets()
+        self.stateify_data_generator_widgets()
+        self.stateify_display_modification_widgets()
+        self.stateify_injection_parameter_widgets()
+        # Show microscope configuration in response monitor
+        self.print_inital_ZEN_states_to_monitor()
+
+    def layout_gui(self):
+        # Organize the GUI layout
+        self.master_layout = QGridLayout()
+        self.left_stacked_layout = QStackedLayout()
+        self.right_stacked_layout = QStackedLayout()
+        self.center_layout = QHBoxLayout()
+        self.bottom_layout = QHBoxLayout()
+
+        # Add the different pages to the stacked layout
+        self.left_stacked_layout.addWidget(self.default_left_page)
+        self.right_stacked_layout.addWidget(self.default_right_page)
+
+        # Define the center layout widgets (places in `center_widget` so aligns with stacked pages)
+        center_widget = QWidget()
+        tmp_layout1 = QHBoxLayout()
+        tmp_layout1.addWidget(self.video_display_group)
+        center_widget.setLayout(tmp_layout1)
+        self.center_layout.addWidget(center_widget)
+
+        # Define the bottom layout widgets (places in `bottom_widget` so aligns with stacked pages)
+        bottom_widget = QWidget()
+        tmp_layout2 = QHBoxLayout()
+        tmp_layout2.addWidget(self.system_status_group)
+        bottom_widget.setLayout(tmp_layout2)
+        self.bottom_layout.addWidget(bottom_widget)
+
+        # Add layouts to master layout
+        self.master_layout.addLayout(self.left_stacked_layout,0,0,1,1)
+        self.master_layout.addLayout(self.center_layout,0,1,1,1)
+        self.master_layout.addLayout(self.right_stacked_layout,0,2,1,1)
+        self.master_layout.addLayout(self.bottom_layout,1,0,1,3)
+
+        # Set main window details
+        self.setWindowTitle('Autoinjector')
+        self._central_widget.setLayout(self.master_layout)
+        self.show()
+        self.setWindowIcon(QIcon('favicon.png'))
+        self.master_layout.setContentsMargins(5, 5, 5, 5)
+
+
+    """
+    Initialize pipette calibration widgets --------------------------------------------------------
+    """
+    def make_pipette_calibrator_widgets(self):
+        ''' Creates widgets for pipette calibration and specifies layout '''
         # Pipette angle
         angle_label = QLabel("Pipette \n Angle", parent=self)
         self.angle_mode_box = QComboBox(parent=self)
@@ -243,7 +308,9 @@ class ControlWindow(QMainWindow):
         pip_cal_layout.addLayout(h_layout2)
         self.pip_cal_group = QGroupBox('Pipette Calibration')
         self.pip_cal_group.setLayout(pip_cal_layout)
-        # Set connections
+    
+    def set_pipette_calibrator_connections(self):
+        """ Set the signal/slot connections for the pipette calibrator widgets """
         self.conduct_calibration_but.clicked.connect(self.handle_calibration_button_clicked)
         self.update_calibration_but.clicked.connect(self.update_calibration)
         self.save_calibration_but.clicked.connect(self.save_calibration)
@@ -256,7 +323,7 @@ class ControlWindow(QMainWindow):
         self.load_angle_button.clicked.connect(self.load_pipette_angle)
 
     def stateify_pipette_calibrator_widgets(self):
-        ''' Set initial states for the pipette calirbator widgets '''
+        ''' Set initial states for the pipette calibrator widgets '''
         self.angle_mode_box.insertItems(0, ['Automatic','Manual'])
         self.angle_mode_box.setCurrentText('Automatic')
         self.cal_mode_box.insertItems(0,['Manual','Semi-Auto.','Automatic'])
@@ -265,20 +332,12 @@ class ControlWindow(QMainWindow):
         self.pip_disp_timer.timeout.connect(self.display_calibration)
         self.pip_disp_timeout = 25
 
-    def data_generator_widgets(self):
-        ''' 
-        Creates widgets for data generation 
-        
-        Workflow:
-        wid1 = QtWidget
-        wid2 = QtWidget
-        layout = QTTYPELAYOUT
-        layout.addWidget(wid1)
-        layout.addWidget(wid2)
-        groupbox = QGroupBox
-        groupbox.setLayout(layout)
-        masterlayout.addWidget(groupbox)
-        '''
+
+    """
+    Initialize data generation widgets ------------------------------------------------------------
+    """
+    def make_data_generator_widgets(self):
+        ''' Creates widgets for data generation and specifies layout '''
         self.save_tip_annot = QCheckBox("Save tip annotation")
         self.save_tiss_annot = QCheckBox("Save tissue annotation")
         data_gen_layout = QVBoxLayout()
@@ -292,38 +351,76 @@ class ControlWindow(QMainWindow):
         self.save_tip_annot.setChecked(True)
         self.save_tiss_annot.setChecked(False)
 
-    def workflow_widgets(self):
-        '''
-        Creates widgets for showing status of injection workflow
-        '''
-        angle = QLabel('Set pipette angle')
-        self.angle_indicator = QLabel()
-        self._set_incomplete(self.angle_indicator)
-        calibration = QLabel('Conduct manipulator calibration')
-        self.calibration_indicator = QLabel()
-        self._set_incomplete(self.calibration_indicator)
-        annotation = QLabel('Annotate injection target')
-        self.annotation_indicator = QLabel()
-        self._set_incomplete(self.annotation_indicator)
-        parameter = QLabel('Set injection parameters')
-        self.parameter_indicator = QLabel()
-        self._set_incomplete(self.parameter_indicator)
-        form = QFormLayout()
-        form.addRow(self.angle_indicator,angle)
-        form.addRow(self.calibration_indicator,calibration)
-        form.addRow(self.annotation_indicator,annotation)
-        form.addRow(self.parameter_indicator,parameter)
-        self.workflow_group = QGroupBox('Pre-injection Workflow')
-        self.workflow_group.setLayout(form)
 
-    def workflow_connections(self):
-        self._angle_complete.connect(self._set_angle_ind)
-        self._calibration_complete.connect(self._set_calibration_ind)
-        self._annotation_complete.connect(self._set_annotation_ind)
-        self._parameter_complete.connect(self._set_parameter_ind)
+    """
+    Initialize injection target annotation widgets ------------------------------------------------
+    """
+    def make_annotation_widgets(self):
+        """ Creates widgets for injection target annotation """
+        layout = QVBoxLayout()
+        self.draw_edge_button = QCheckBox("Draw Edge")
+        self.change_display_button = QPushButton("Change Display")
+        layout.addWidget(self.draw_edge_button)
+        layout.addWidget(self.change_display_button)
+        self.annotation_group = QGroupBox('Trajectory Annotation')
+        self.annotation_group.setLayout(layout)
 
-    def injection_parameter_widgets(self):
-        ''' Creates widgets for injection parameters '''
+    def set_annotation_connections(self):
+        """ Set signal/slot connections for annotation widgets """
+        self.draw_edge_button.clicked.connect(self.draw_edge_clicked)
+
+    """
+    Initialize video display modification widgets -------------------------------------------------
+    """
+    def make_display_modification_widgets(self):
+        """ Make widgets to modify the video display and specifies widget layout """
+        layout = QVBoxLayout()
+        exposure_label = QLabel("Camera Exposure")
+        self.exposure_slider = QSlider(Qt.Orientation.Horizontal)
+        self.exposure_slider.setMinimum(15)
+        self.exposure_slider.setMaximum(100)
+        self.exposure_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.exposure_slider.setTickInterval(0)
+        self.show_annotation_button = QPushButton("Show Edge")
+        self.hide_annotation_button = QPushButton("Hide Edge")
+        layout.addWidget(exposure_label)
+        layout.addWidget(self.exposure_slider)
+        layout.addWidget(self.show_annotation_button)
+        layout.addWidget(self.hide_annotation_button)
+        self.display_modification_group = QGroupBox('Display Settings')
+        self.display_modification_group.setLayout(layout)
+        
+    def stateify_display_modification_widgets(self):
+        """ Sets initial states for dispaly modification widgets """
+        exposure = int(float(self.cam_MM.get_exposure())*10)
+        self.exposure_slider.setValue(exposure)
+
+    def set_display_modification_connections(self):
+        """ Sets signal slot connections for display modification widgets """
+        self.exposure_slider.valueChanged.connect(self.exposure_value_change)
+        self.show_annotation_button.clicked.connect(partial(self.vid_display.show_interpolated_annotation,True))
+        self.hide_annotation_button.clicked.connect(partial(self.vid_display.show_interpolated_annotation,False))
+
+
+    """
+    Initialize video display widgets --------------------------------------------------------------
+    """
+    def make_video_display_widgets(self):
+        layout = QVBoxLayout()
+        layout.addWidget(self.vid_display)
+        self.video_display_group = QGroupBox('Microscope Video Stream')
+        self.video_display_group.setLayout(layout)
+
+    def set_video_display_connections(self):
+        self.vid_display.clicked_camera_pixel.connect(self.add_cal_positions)
+        self.vid_display.drawn_camera_pixels.connect(self.handle_drawn_edge)
+    
+
+    """
+    Initialize injection parameter widgets ---------------------------------------------------------
+    """
+    def make_injection_parameter_widgets(self):
+        ''' Creates widgets for injection parameters and specifies layout '''
         mu = "µ"
         approach_label = QLabel("Approach Distance ("+ mu +"m)")
         depth_label = QLabel("Depth ("+ mu +"m)")
@@ -334,20 +431,16 @@ class ControlWindow(QMainWindow):
         self.spacing_entry = QLineEdit(self)
         self.speed_entry = QLineEdit(self)
         self.run_button = QPushButton("Run Trajectory")
-        self.run_button.clicked.connect(self.run_3D_trajectory)
         self.stop_button = QPushButton("Stop Process")
-        self.stop_button.clicked.connect(self.stoptrajectory)
         self.pressure_slider = QSlider(Qt.Orientation.Horizontal)
         self.pressure_slider = QSlider(Qt.Orientation.Horizontal)
         self.pressure_slider.setMinimum(10)
         self.pressure_slider.setMaximum(255)
         self.pressure_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         self.pressure_slider.setTickInterval(30)
-        self.pressure_slider.valueChanged.connect(self.valuechange)
         pressure_label = QLabel("Pressure")
         self.pressure_display = QLineEdit(self)
         self.set_values_button = QPushButton("Set Values")
-        self.set_values_button.clicked.connect(self.setautomatedparameters)
         h_layout1 = QHBoxLayout()
         h_layout1.addWidget(approach_label)
         h_layout1.addWidget(self.approach_entry)
@@ -383,62 +476,80 @@ class ControlWindow(QMainWindow):
         inj_param_layout.addLayout(v_layout3)
         self.inj_parameter_group = QGroupBox('Automated Microinjection Controls')
         self.inj_parameter_group.setLayout(inj_param_layout)
+
+    def set_inject_parameter_connections(self):
+        """ Sets signal/slot connections for injection parameter widgets """
+        self.run_button.clicked.connect(self.run_3D_trajectory)
+        self.stop_button.clicked.connect(self.stoptrajectory)
+        self.pressure_slider.valueChanged.connect(self.valuechange)
+        self.set_values_button.clicked.connect(self.setautomatedparameters)
     
     def stateify_injection_parameter_widgets(self):
-        ''' set initial states for injection parameters'''
+        ''' set initial states for injection parameter widgets'''
         self.approach_entry.insert('100')
         self.depth_entry.insert('20')
         self.spacing_entry.insert('50')
         self.speed_entry.insert('1000')
         self.pressure_slider.setValue(20)
 
-    def video_display_widgets(self):
+
+    """
+    Initialize injection workflow widgets ---------------------------------------------------------
+    """
+    def make_workflow_widgets(self):
+        ''' Creates widgets for showing status of injection workflow and specifies layout '''
+        angle = QLabel('Set pipette angle')
+        self.angle_indicator = QLabel()
+        calibration = QLabel('Conduct manipulator calibration')
+        self.calibration_indicator = QLabel()
+        annotation = QLabel('Annotate injection target')
+        self.annotation_indicator = QLabel()
+        parameter = QLabel('Set injection parameters')
+        self.parameter_indicator = QLabel()
+        form = QFormLayout()
+        form.addRow(self.angle_indicator,angle)
+        form.addRow(self.calibration_indicator,calibration)
+        form.addRow(self.annotation_indicator,annotation)
+        form.addRow(self.parameter_indicator,parameter)
+        self.workflow_group = QGroupBox('Pre-injection Workflow')
+        self.workflow_group.setLayout(form)
+        # Set all indicators to be incomplete (red) on initialization
+        self._set_incomplete(self.angle_indicator)
+        self._set_incomplete(self.calibration_indicator)
+        self._set_incomplete(self.annotation_indicator)
+        self._set_incomplete(self.parameter_indicator)
+
+    def set_workflow_connections(self):
+        """ Sets signal/slot connections for workflow widgets """
+        self._angle_complete.connect(self._set_angle_ind)
+        self._calibration_complete.connect(self._set_calibration_ind)
+        self._annotation_complete.connect(self._set_annotation_ind)
+        self._parameter_complete.connect(self._set_parameter_ind)
+
+
+    """
+    Initialize system status widgets --------------------------------------------------------------
+    """
+    def make_system_status_widgets(self):
         layout = QVBoxLayout()
-        layout.addWidget(self.vid_display)
-        self.video_display_group = QGroupBox('Microscope Video Stream')
-        self.video_display_group.setLayout(layout)
+        self.response_monitor_window = QTextBrowser()
+        self.response_monitor_window.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        layout.addWidget(self.response_monitor_window)
+        self.system_status_group = QGroupBox('System Status')
+        self.system_status_group.setLayout(layout)
 
-    def video_display_connections(self):
-        self.vid_display.clicked_camera_pixel.connect(self.add_cal_positions)
-        self.vid_display.drawn_camera_pixels.connect(self.handle_drawn_edge)
 
-    def annotation_widgets(self):
-        layout = QVBoxLayout()
-        self.draw_edge_button = QCheckBox("Draw Edge")
-        layout.addWidget(self.draw_edge_button)
-        self.annotation_group = QGroupBox('Trajectory Annotation')
-        self.annotation_group.setLayout(layout)
+    """
+    Initialize zeiss microscope widgets -----------------------------------------------------------
+    """
+    def set_zeiss_connections(self):
+        self.zen_group.obj_changed.connect(self.obj_changed)
+        self.zen_group.obj_changed.connect(self.calibration_inputs_changed)
+        self.zen_group.opto_changed.connect(self.calibration_inputs_changed)
+        self.zen_group.opto_changed.connect(self.opto_changed)
+        self.zen_group.ref_changed.connect(self.ref_changed)
 
-    def annotation_connections(self):
-        self.draw_edge_button.clicked.connect(self.draw_edge_clicked)
-        
-    def display_modification_widgets(self):
-        layout = QVBoxLayout()
-        exposure_label = QLabel("Camera Exposure")
-        self.exposure_slider = QSlider(Qt.Orientation.Horizontal)
-        self.exposure_slider.setMinimum(15)
-        self.exposure_slider.setMaximum(100)
-        self.exposure_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
-        self.exposure_slider.setTickInterval(0)
-        self.show_annotation_button = QPushButton("Show Edge")
-        self.hide_annotation_button = QPushButton("Hide Edge")
-        layout.addWidget(exposure_label)
-        layout.addWidget(self.exposure_slider)
-        layout.addWidget(self.show_annotation_button)
-        layout.addWidget(self.hide_annotation_button)
-        self.display_modification_group = QGroupBox('Display Settings')
-        self.display_modification_group.setLayout(layout)
-        
-    def stateify_display_modification_widgets(self):
-        exposure = int(float(self.cam_MM.get_exposure())*10)
-        self.exposure_slider.setValue(exposure)
-
-    def display_modification_connections(self):
-        self.exposure_slider.valueChanged.connect(self.exposure_value_change)
-        self.show_annotation_button.clicked.connect(partial(self.vid_display.show_interpolated_annotation,True))
-        self.hide_annotation_button.clicked.connect(partial(self.vid_display.show_interpolated_annotation,False))
-
-    def init_from_ZEN(self):
+    def print_inital_ZEN_states_to_monitor(self):
         # Set magnification of objective
         mag_level = self.zen_group.zen.get_obj_info('magnification')
         if mag_level in list(self.zen_group.zen.objectives['magnification']):
@@ -450,64 +561,40 @@ class ControlWindow(QMainWindow):
         ref_name = self.zen_group.zen.get_ref_info('name')
         self.response_monitor_window.append(">> Reflector set to " +str(ref_name))
 
-    def GUIsetup(self):
 
-        #response monitor 
-        self.response_monitorgrid= QVBoxLayout()
-        self.response_monitor_window = QTextBrowser()
-        self.response_monitor_window.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-        self.response_monitorgrid.addWidget(self.response_monitor_window)
-        groupbox_response_monitorgrid= QGroupBox('System Status')
-        groupbox_response_monitorgrid.setLayout(self.response_monitorgrid)
-
-        #organize main window
-        self.mastergrid = QGridLayout()
-        self.leftside=QVBoxLayout()
-        self.leftside.addWidget(self.pip_cal_group)
-        self.leftside.addWidget(self.annotation_group)
-        self.leftside.addWidget(self.display_modification_group)
-        self.leftside.addWidget(self.data_gen_group)
-        self.leftside.addWidget(self.workflow_group)
-
-        self.leftside.addStretch()
-        self.rightside=QVBoxLayout()
-        self.rightside.addWidget(self.zen_group)
-        self.rightside.addWidget(self.inj_parameter_group)
-        self.rightside.addStretch()
-
-        #Main window details...
-        self.setWindowTitle('Autoinjector')
-        self.setGeometry(100,100,200,200)
-        self._central_widget.setLayout(self.mastergrid)
-        self.show()
-        self.setWindowIcon(QIcon('favicon.png'))
-        self.timer = QTimer()  
-        self.mastergrid.addLayout(self.leftside,1,0,1,1)
-        self.mastergrid.addWidget(self.video_display_group,1,1,1,1)
-        self.mastergrid.addLayout(self.rightside,1,3,1,1)
-        self.mastergrid.addWidget(groupbox_response_monitorgrid, 2,0,1,4)
-        self.mastergrid.setContentsMargins(5, 5, 5, 5)
-
-        #print errors on response monitor if manipulator or arduino has an error
-        if self.motorfound == False:
-            self.response_monitor_window.append(">> Manipulators not detected. Wait 2 minutes then relaunch the app. If this does not work, replug manipulators into computer.")
-        else:
-            self.response_monitor_window.append(">> Manipulators detected and working.")
-        if self.arduinofound == False:
-            self.response_monitor_window.append(">> Arduino not detected, make sure you selected the correct com port, plug in, and try again")
-        else:
-            self.response_monitor_window.append(">> Arduino connected and working on port " + str(self.com))
-
-
-    def valuechange(self):
-        self.pressureslidervalue= self.pressure_slider.value()
-        self.displaypressure = int(self.pressureslidervalue/2.55)
-        self.pressure_display.setText(str(self.displaypressure)+'%')
-
-    def exposure_value_change(self):
-        new_exposure_value = float(self.exposure_slider.value())/10
-        self.cam_MM.set_exposure(new_exposure_value)
+    """
+    Initialize stacked layout widgets -------------------------------------------------------------
+    """
+    def make_default_left_page_widget(self):
+        # Define default left page for stacked layout
+        self.default_left_page = QWidget()
+        default_left_layout = QVBoxLayout()
+        default_left_layout.addWidget(self.pip_cal_group)
+        default_left_layout.addWidget(self.annotation_group)
+        default_left_layout.addWidget(self.display_modification_group)
+        default_left_layout.addWidget(self.data_gen_group)
+        default_left_layout.addWidget(self.workflow_group)
+        default_left_layout.addStretch()
+        self.default_left_page.setLayout(default_left_layout)
     
+    def make_default_right_page_widget(self):
+        # Define default right page for stacked layout
+        self.default_right_page = QWidget()
+        self.default_right_layout = QVBoxLayout()
+        self.default_right_layout.addWidget(self.zen_group)
+        self.default_right_layout.addWidget(self.inj_parameter_group)
+        self.default_right_layout.addStretch()
+        self.default_right_page.setLayout(self.default_right_layout)
+  
+      
+    """
+    ============================================================================================
+
+    AUXILLIARY GUI FUNCTIONS
+
+    Miscellaneous functions for GUI operation.
+    ============================================================================================
+    """
     def show_warning_box(self, msg:str):
         """
         Show GUI warning box to user and write warning to logger.
@@ -532,10 +619,34 @@ class ControlWindow(QMainWindow):
         self.logger.exception(str(msg).replace('\n',' '))
         self.error_msg.setText(str(msg))
         self.error_msg.exec()
+        
+    def assess_startup_errors(self):
+        #print errors on response monitor if manipulator or arduino has an error
+        if self.motorfound == False:
+            self.response_monitor_window.append(">> Manipulators not detected. Wait 2 minutes then relaunch the app. If this does not work, replug manipulators into computer.")
+        else:
+            self.response_monitor_window.append(">> Manipulators detected and working.")
+        if self.arduinofound == False:
+            self.response_monitor_window.append(">> Arduino not detected, make sure you selected the correct com port, plug in, and try again")
+        else:
+            self.response_monitor_window.append(">> Arduino connected and working on port " + str(self.com))
+
+    def closeEvent(self, event):
+        """ Functions to call when gui is closed (`X` is clicked) """
+        close_pressure = injection(arduino,0, 0,0,0,'bp')
+        close_pressure.start()
+        self.vid_display.stop()
+        time.sleep(0.5)
+        self.close()
+
 
     """
-    ------------------------ Data Generation Controls -------------------------
-    Functions control saving images from data
+    ============================================================================================
+
+    DATA GENERATION CONTROLS
+
+    Functions to control the saving of images and text/numerical data from GUI operation.
+    ============================================================================================
     """
     def acquire_tip_data(self, tip_position):
         '''
@@ -554,11 +665,15 @@ class ControlWindow(QMainWindow):
             inter = np.asarray(inter_edge_coord)
             self.save_tiss_anot_data(raw_annot=raw, interpolate_annot=inter)
 
-    """
-    ----------Calibration Controls -----------------------------------------------------------------
-    These functions control the calibration of the manipulators to the camera axes
-    """
 
+    """
+    ============================================================================================
+
+    CALIBRATION CONTROLS
+
+    Functions to control the calibration of the manipulator to the camera/microscope axes.
+    ============================================================================================
+    """
     def ask_continue_change_angle(self):
         '''
         If the system is currently calibrated with an angle, ask user if want to continue
@@ -978,8 +1093,6 @@ class ControlWindow(QMainWindow):
                 self._calibration_complete.emit(True)
             except CalibrationDNEError as e:
                 pass
-
-
     
     def save_pip_cal_data(self, tip_dict:dict):
         '''
@@ -993,10 +1106,15 @@ class ControlWindow(QMainWindow):
         image = np.copy(self.vid_display.frame)
         pip_data_saver.save_data(image=image, tip_position=tip_dict)
 
+
     """
-    ----------Desired Trajectory Control -----------------------------------------------------------------
-    This ontrols the detection of the edge of the tissue, and the tip of the pipette
-    """   
+    ============================================================================================
+
+    ANNOTATION CONTROLS
+
+    Functions to control the annotation of injection targets on the GUI display.
+    ============================================================================================
+    """
     def save_tiss_anot_data(self, raw_annot:np.ndarray, interpolate_annot:np.ndarray):
         '''
         Save image from camera and annotated coordinates of tissue trajectory
@@ -1066,9 +1184,40 @@ class ControlWindow(QMainWindow):
                     inter = np.asarray(self.interpolated_pixels)
                     self.save_tiss_anot_data(raw_annot=raw, interpolate_annot=inter)
 
+    
     """
-    -------------------------- Pre injection workflow controls   -----------------------------
-    """    
+    ============================================================================================
+
+    CAMERA/MICROSCOPE/ZEISS CONTROLS
+
+    Additional functions to control operation of zeiss microscope and camera
+    ============================================================================================
+    """
+    def obj_changed(self, mag_level:float):
+        if mag_level in list(self.zen_group.zen.objectives['magnification']):
+            self.response_monitor_window.append(">> Magnification set to " +str(mag_level))
+
+    def opto_changed(self, mag_level:float):
+        if mag_level in list(self.zen_group.zen.optovars['magnification']):
+            self.response_monitor_window.append(">> Optovar set to " +str(mag_level))
+
+    def ref_changed(self, ref_name:str):
+        if ref_name in list(self.zen_group.zen.reflectors['name']):
+            self.response_monitor_window.append(">> Reflector set to " +str(ref_name))
+
+    def exposure_value_change(self):
+        new_exposure_value = float(self.exposure_slider.value())/10
+        self.cam_MM.set_exposure(new_exposure_value)
+
+
+    """
+    ============================================================================================
+
+    INJECTION WORKFLOW CONTROLS
+
+    Functions to show indication of successfully doing GUI workflow and readiness for injection.
+    ============================================================================================
+    """ 
     def _set_angle_ind(self,state:bool):
         if state is True:
             self._set_complete(self.angle_indicator)
@@ -1093,7 +1242,6 @@ class ControlWindow(QMainWindow):
         else:
             self._set_incomplete(self.parameter_indicator)
 
-        
     def _set_complete(self,label:QLabel):
         ''' Set the widget with a complete icon '''
         pixmapi = QStyle.StandardPixmap.SP_DialogYesButton
@@ -1108,11 +1256,15 @@ class ControlWindow(QMainWindow):
         pixmap = icon.pixmap(QSize(18,18))
         label.setPixmap(pixmap)
 
-    """
-    ----------Automated Microinjection Controls  -----------------------------------------------------------------
-    These functions control the trajectory and pressure controls of the GUI
-    """
 
+    """
+    ============================================================================================
+
+    INJECTION PARAMETER CONTROLS
+
+    Functions to control setting of injection parameters and running injections.
+    ============================================================================================
+    """
     def setautomatedparameters(self):
         try:
             self.compensationpressureval = self.pressureslidervalue
@@ -1132,6 +1284,11 @@ class ControlWindow(QMainWindow):
             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
         else:
             self._parameter_complete.emit(True)
+
+    def valuechange(self):
+        self.pressureslidervalue= self.pressure_slider.value()
+        self.displaypressure = int(self.pressureslidervalue/2.55)
+        self.pressure_display.setText(str(self.displaypressure)+'%')
         
     def run_3D_trajectory(self):
         if self.conduct_calibration_but.isChecked():
@@ -1179,12 +1336,7 @@ class ControlWindow(QMainWindow):
             self.show_error_box(msg)
             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
 
-    def closeEvent(self, event):
-        close_pressure = injection(arduino,0, 0,0,0,'bp')
-        close_pressure.start()
-        self.vid_display.stop()
-        time.sleep(0.5)
-        self.close()
+    
 
 if __name__ == "__main__":
     import sys

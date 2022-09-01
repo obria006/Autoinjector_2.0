@@ -195,6 +195,8 @@ class ControlWindow(QMainWindow):
         # mode or anotation mode)
         self.make_default_left_page_widget()
         self.make_default_right_page_widget()
+        self.make_annotation_mode_left_page_widget()
+        self.make_annotation_mode_right_page_widget()
 
     def set_connections(self):
         """ Set the signal/slot connections for the GUI's widgets """
@@ -211,6 +213,7 @@ class ControlWindow(QMainWindow):
         # Initialize states for the various gui widgets
         self.stateify_pipette_calibrator_widgets()
         self.stateify_data_generator_widgets()
+        self.stateify_annotation_widgets()
         self.stateify_display_modification_widgets()
         self.stateify_injection_parameter_widgets()
         # Show microscope configuration in response monitor
@@ -226,7 +229,9 @@ class ControlWindow(QMainWindow):
 
         # Add the different pages to the stacked layout
         self.left_stacked_layout.addWidget(self.default_left_page)
+        self.left_stacked_layout.addWidget(self.annotation_mode_left_page)
         self.right_stacked_layout.addWidget(self.default_right_page)
+        self.right_stacked_layout.addWidget(self.annotation_mode_right_page)
 
         # Define the center layout widgets (places in `center_widget` so aligns with stacked pages)
         center_widget = QWidget()
@@ -357,17 +362,52 @@ class ControlWindow(QMainWindow):
     """
     def make_annotation_widgets(self):
         """ Creates widgets for injection target annotation """
-        layout = QVBoxLayout()
-        self.draw_edge_button = QCheckBox("Draw Edge")
-        self.change_display_button = QPushButton("Change Display")
-        layout.addWidget(self.draw_edge_button)
-        layout.addWidget(self.change_display_button)
-        self.annotation_group = QGroupBox('Trajectory Annotation')
-        self.annotation_group.setLayout(layout)
+        # Make the default annotation widgets
+        mode_label1 = QLabel('Annotation Mode:')
+        self.annotation_combo_box = QComboBox()
+        self.annotation_combo_box.setPlaceholderText('Mode')
+        self.annotation_button = QPushButton("Annotate Target")
+        self.default_annotation_group = QGroupBox("Trajectory Annotation")
+        # Make alternate annotation widgets
+        mode_label2 = QLabel('Annotation Mode:')
+        self.annotation_mode_display = QLabel('')
+        self.complete_annotation_button = QPushButton("Complete Annotation")
+        self.exit_annotation_button = QPushButton("Exit Annotation")
+        hline = QHLine()
+        guidance_label = QLabel('Annotation Guidance')
+        self.annotation_guidance = QLabel('')
+        self.annotation_guidance.setWordWrap(True)
+        self.alt_annotation_group = QGroupBox("Annotation Control")
+        # Specify the default annotation layout and group
+        default_layout = QVBoxLayout()
+        mode_layout1= QHBoxLayout()
+        mode_layout1.addWidget(mode_label1)
+        mode_layout1.addWidget(self.annotation_combo_box)
+        default_layout.addLayout(mode_layout1)
+        default_layout.addWidget(self.annotation_button)
+        self.default_annotation_group.setLayout(default_layout)
+        alt_layout = QVBoxLayout()
+        mode_layout2 = QHBoxLayout()
+        mode_layout2.addWidget(mode_label2)
+        mode_layout2.addWidget(self.annotation_mode_display)
+        alt_layout.addLayout(mode_layout2)
+        alt_layout.addWidget(self.complete_annotation_button)
+        alt_layout.addWidget(self.exit_annotation_button)
+        alt_layout.addWidget(hline)
+        alt_layout.addWidget(guidance_label)
+        alt_layout.addWidget(self.annotation_guidance)
+        self.alt_annotation_group.setLayout(alt_layout)
 
     def set_annotation_connections(self):
         """ Set signal/slot connections for annotation widgets """
-        self.draw_edge_button.clicked.connect(self.draw_edge_clicked)
+        self.annotation_button.clicked.connect(self.annotate_trajectory_pressed)
+        self.complete_annotation_button.clicked.connect(self.annotation_complete_pressed)
+        self.exit_annotation_button.clicked.connect(self.exit_annotation_mode)
+        self.annotation_combo_box.currentTextChanged.connect(self.annotation_combo_changed)
+
+    def stateify_annotation_widgets(self):
+        self.annotation_combo_box.insertItems(0,['Manual','Automatic'])
+        self.annotation_combo_box.setCurrentText('Manual')
 
     """
     Initialize video display modification widgets -------------------------------------------------
@@ -425,7 +465,7 @@ class ControlWindow(QMainWindow):
         approach_label = QLabel("Approach Distance ("+ mu +"m)")
         depth_label = QLabel("Depth ("+ mu +"m)")
         spacing_label = QLabel("Spacing ("+ mu +"m)")
-        speed_label = QLabel("Speed (%)")
+        speed_label = QLabel(f"Speed ({mu}/s)")
         self.approach_entry = QLineEdit(self)
         self.depth_entry= QLineEdit(self)
         self.spacing_entry = QLineEdit(self)
@@ -566,11 +606,11 @@ class ControlWindow(QMainWindow):
     Initialize stacked layout widgets -------------------------------------------------------------
     """
     def make_default_left_page_widget(self):
-        # Define default left page for stacked layout
+        """ Define default left page for stacked layout """
         self.default_left_page = QWidget()
         default_left_layout = QVBoxLayout()
         default_left_layout.addWidget(self.pip_cal_group)
-        default_left_layout.addWidget(self.annotation_group)
+        default_left_layout.addWidget(self.default_annotation_group)
         default_left_layout.addWidget(self.display_modification_group)
         default_left_layout.addWidget(self.data_gen_group)
         default_left_layout.addWidget(self.workflow_group)
@@ -578,15 +618,31 @@ class ControlWindow(QMainWindow):
         self.default_left_page.setLayout(default_left_layout)
     
     def make_default_right_page_widget(self):
-        # Define default right page for stacked layout
+        """ Define default right page for stacked layout """
         self.default_right_page = QWidget()
-        self.default_right_layout = QVBoxLayout()
-        self.default_right_layout.addWidget(self.zen_group)
-        self.default_right_layout.addWidget(self.inj_parameter_group)
-        self.default_right_layout.addStretch()
-        self.default_right_page.setLayout(self.default_right_layout)
-  
-      
+        default_right_layout = QVBoxLayout()
+        default_right_layout.addWidget(self.zen_group)
+        default_right_layout.addWidget(self.inj_parameter_group)
+        default_right_layout.addStretch()
+        self.default_right_page.setLayout(default_right_layout)
+
+    def make_annotation_mode_left_page_widget(self):
+        """ Define annotation mode left page for stacked layout """
+        self.annotation_mode_left_page = QWidget()
+        layout = QVBoxLayout()
+        layout.addWidget(self.alt_annotation_group)
+        layout.addStretch()
+        self.annotation_mode_left_page.setLayout(layout)
+
+    def make_annotation_mode_right_page_widget(self):
+        """ Define annotation mode left page for stacked layout """
+        self.annotation_mode_right_page = QWidget()
+        layout = QVBoxLayout()
+        #FIXME layout.addWidget(self.zen_group)
+        layout.addStretch()
+        self.annotation_mode_right_page.setLayout(layout)
+
+
     """
     ============================================================================================
 
@@ -913,12 +969,6 @@ class ControlWindow(QMainWindow):
             msg = 'Cannot conduct calibration while updating. Complete update calibration process (and uncheck the box) before conducting a new calibration.'
             self.show_warning_box(msg)
             return None
-        # Untoggles calibration button if draw edge is checked
-        elif self.draw_edge_button.isChecked():
-            self.conduct_calibration_but.setChecked(False)
-            msg = 'Cannot conduct calibraiton while annotating tissue.\n\nComplete annotation process (and uncheck the box) before conducting a new calibration.'
-            self.show_warning_box(msg)
-            return None
         # Asks user to if conditions valid for calibrating
         else:
             try:
@@ -1012,11 +1062,6 @@ class ControlWindow(QMainWindow):
             if self.conduct_calibration_but.isChecked():
                 self.update_calibration_but.setChecked(False)
                 msg = 'Cannot update calibration while already conducting calibration.\n\nComplete calibration process (and uncheck the box) before updating a calibration.'
-                self.show_warning_box(msg)
-            # Untoggles calibration button if draw edge is checked
-            if self.draw_edge_button.isChecked():
-                self.update_calibration_but.setChecked(False)
-                msg = 'Cannot update calibraiton while annotating tissue.\n\nComplete annotation process (and uncheck the box) before updating the calibration.'
                 self.show_warning_box(msg)
         else:
             try:
@@ -1115,6 +1160,72 @@ class ControlWindow(QMainWindow):
     Functions to control the annotation of injection targets on the GUI display.
     ============================================================================================
     """
+    def annotation_combo_changed(self):
+        """ Handle what to do when the annotation combobox state is changed """
+        annot_mode = self.annotation_combo_box.currentText()
+        self.annotation_mode_display.setText(annot_mode)
+
+    def annotation_complete_pressed(self):
+        """ Handle what to do when user clicks annotation complete """
+        # Stop showing the raw drawn edge
+        self.vid_display.show_drawn_annotation(False)
+        # Switch GUI to default mode
+        self.switch_to_default_mode()
+
+    def annotate_trajectory_pressed(self):
+        """ Handle what to do when user clicks annotate trajectory """
+        # Allow video display to show the drawn and interpolated annotations
+        self.vid_display.show_drawn_annotation(True)
+        self.vid_display.show_interpolated_annotation(True)
+        # Update the annotaiton guidance
+        self.modify_annotation_guidance()
+        # Switch gui to the annotaiton mode
+        self.switch_to_annotation_mode()
+
+    def exit_annotation_mode(self):
+        """
+        Exit the annotation mode by stop showing the drawn edge and change
+        the gui to the default mode 
+        """
+        # Stop showing the raw drawn edge
+        self.vid_display.show_drawn_annotation(False)
+        # Nullify any interpolated edge coordinates if they exist
+        self.interpolated_pixels = []
+        self.vid_display.reset_interpolated_annotation()
+        self._annotation_complete.emit(False)
+        # Switch GUI to default mode
+        self.switch_to_default_mode()
+
+    def switch_to_annotation_mode(self):
+        """ Modify GUI to show annotation mode layout """
+        self.left_stacked_layout.setCurrentWidget(self.annotation_mode_left_page)
+        self.right_stacked_layout.setCurrentWidget(self.annotation_mode_right_page)
+
+    def switch_to_default_mode(self):
+        """ Modify GUI to show default application layout """
+        self.left_stacked_layout.setCurrentWidget(self.default_left_page)
+        self.right_stacked_layout.setCurrentWidget(self.default_right_page)
+
+    def modify_annotation_guidance(self):
+        """ Modify the annotaiton guidance text to inform user how to proceed """
+        annot_mode = self.annotation_combo_box.currentText()
+        annot_notes = ("Notes:\n"
+            "1. Multiple annotations will overwrite each other.\n"
+            "2. Selecting `Exit` will exit without the annotation.")
+        if annot_mode == "Manual":
+            msg = ("Process:\n1. In video display, click-and-drag mouse along tissue edge."
+            f"\n2. Select `Complete Annotation` to exit to main GUI.\n\n{annot_notes}")
+        elif annot_mode == "Automatic":
+            msg = ("Process:\n1. Automatic annotation is shown. If satisfied, select `Complete "
+            " Annotation`.\n2. If unstisfied, manually annotate by click-and-drag mouse along "
+            f"tissue edge.\n3.Select `Complete Annotation` to exit to main GUI.\n\n{annot_notes}")
+        else:
+            err_msg = f"Invalid annotation mode: {annot_mode}. Must be in ['Manual', 'Auotmatic']"
+            self.show_error_box(err_msg)
+            raise NotImplementedError(err_msg)
+        self.annotation_guidance.setText(msg)
+        
+
     def save_tiss_anot_data(self, raw_annot:np.ndarray, interpolate_annot:np.ndarray):
         '''
         Save image from camera and annotated coordinates of tissue trajectory
@@ -1128,36 +1239,11 @@ class ControlWindow(QMainWindow):
         image = np.copy(self.vid_display.frame)
         tis_data_saver.save_data(image=image, raw_annot=raw_annot, interpolate_annot=interpolate_annot)
 
-    def draw_edge_clicked(self):
-        ''' Handles events whne the draw edge button is clicked '''
-        # Don't show drawn coordinates if not checked
-        if not self.draw_edge_button.isChecked():
-            self.vid_display.show_drawn_annotation(False)
-            return
-        # untoggles draw edge because conduct calibration is checked (and don't show drawn coords)
-        if self.conduct_calibration_but.isChecked():
-            self.draw_edge_button.setChecked(False)
-            self.vid_display.show_drawn_annotation(False)
-            msg = "Cannot draw annotation while calibration button is checked. Complete calibration before annotating tissue edge."
-            self.show_warning_box(msg)
-            return
-        # untoggles draw edge because update calibration is checked (and don't show drawn coords)
-        if self.update_calibration_but.isChecked():
-            self.draw_edge_button.setChecked(False)
-            self.vid_display.show_drawn_annotation(False)
-            msg = "Cannot draw annotation while calibration update button is checked. Complete calibration update before annotating tissue edge."
-            self.show_warning_box(msg)
-            return
-        # otherwise Show drawn annotation and interpolated annotation
-        if self.draw_edge_button.isChecked():
-            self.vid_display.show_drawn_annotation(True)
-            self.vid_display.show_interpolated_annotation(True)
-            return
 
     def handle_drawn_edge(self, drawn_pixels:list):
         ''' Handles events when video display returns the drawn edge '''
-        # Only handle the drawn edge when the checkbutton is active
-        if self.draw_edge_button.isChecked():
+        # Only handle the drawn edge when the annotaion mode is active
+        if self.left_stacked_layout.currentWidget() == self.annotation_mode_left_page:
             # Try to interpolate the drawn edge coordinates
             try:
                 self.interpolated_pixels = interpolate_vertical(drawn_pixels)
@@ -1176,9 +1262,6 @@ class ControlWindow(QMainWindow):
                 self.show_exception_box(msg)
                 self._annotation_complete.emit(False)
             else:
-                # Uncheck the button if successfully drawn (and dont show drawing)
-                self.draw_edge_button.setChecked(False)
-                self.vid_display.show_drawn_annotation(False)
                 if self.save_tiss_annot.isChecked():
                     raw = np.asarray(drawn_pixels)
                     inter = np.asarray(self.interpolated_pixels)
@@ -1297,10 +1380,6 @@ class ControlWindow(QMainWindow):
             return
         if self.update_calibration_but.isChecked():
             msg = "Cannot start injections while update calibration button is checked. Complete calibration update before starting."
-            self.show_warning_box(msg)
-            return
-        if self.draw_edge_button.isChecked():
-            msg = "Cannot start injections while draw annotation is checked. Complete tissue annotation before starting."
             self.show_warning_box(msg)
             return
         try:

@@ -19,7 +19,6 @@ from src.motorcontrol.altermotorposition import delmotor
 from src.motorcontrol.motorlocationThread import motorpositionThread
 from src.motorcontrol.trajectorythread_minimal import trajectoryimplementor
 from src.pythonarduino.injectioncontrolmod import injection
-from src.resolutiontest.gotoposition import GetPos
 from src.cfg_mgmt.cfg_mngr import CfgManager
 from src.Qt_utils.gui_objects import QHLine
 from src.miscellaneous.standard_logger import StandardLogger as logr
@@ -48,7 +47,7 @@ class ControlWindow(QMainWindow):
     _parameter_complete = pyqtSignal(bool)
     cal_pos_added = pyqtSignal()
 
-    def __init__(self,cam,brand,val,bins,rot,imagevals,scale,restest,com, parent=None):
+    def __init__(self,cam,brand,val,bins,rot,imagevals,scale,com, parent=None):
         super().__init__(parent)
         self.logger = logr(__name__)
         self._central_widget = QWidget(self)
@@ -93,7 +92,6 @@ class ControlWindow(QMainWindow):
         self.rot_ = rot
         self.imagevals_ = imagevals
         self.file_selected = 0
-        self.restest = restest
         self.setup_gui()
 
         #initiate parameters for injection
@@ -101,9 +99,6 @@ class ControlWindow(QMainWindow):
         self.injectpressurevoltage = 0
         self.pulseduration = 0
         self.edgedetected = False
-        self.overrideon = 'No'
-
-        self.i = 0 #restest point number
     
     # ---------- Initialize GUI -------------------------------------------------------
     def setup_gui(self):
@@ -545,64 +540,6 @@ class ControlWindow(QMainWindow):
         self.leftside.addWidget(self.data_gen_group)
         self.leftside.addWidget(self.workflow_group)
 
-        if self.restest == "On":
-            #resolution test
-            overrideymotorthetalab = QLabel("Theta Value")
-            overridepixelsizelab = QLabel("Microns/Pixel")
-            step1 = QLabel("Step 1")
-            step2 = QLabel("Step 2")
-            step3 = QLabel("Step 3")
-            step4 = QLabel("Step 4")
-            adjustpoint = QLabel("Adjust Point")
-            self.overrideymotortheta = QLineEdit()
-            self.overridepixelsize = QLineEdit()
-            go_to_point = QPushButton("Go to res point")
-            get_current_pos = QPushButton("Record point") #records targeted pos
-            calculate_error= QPushButton("Calculate Error") #finds dist between current pos and targeted pos and outputs dist
-            go_to_centerpoint = QPushButton("Go to center point")
-            go_to_point.clicked.connect(self.go_to_point_func)
-            get_current_pos.clicked.connect(self.get_current_pos_func)
-            calculate_error.clicked.connect(self.calculate_error_func)
-            go_to_centerpoint.clicked.connect(self.go_to_centerpoint_func)
-            addpoint = QPushButton("+")
-            addpoint.clicked.connect(self.add_restestpoint)
-            subpoint = QPushButton("-")
-            subpoint.clicked.connect(self.sub_restestpoint)
-
-            restestlayout = QGridLayout()
-            restestlayout.addWidget(step1,2,0)
-            restestlayout.addWidget(go_to_point,2,1,1,2)
-            restestlayout.addWidget(step2,3,0)
-            restestlayout.addWidget(get_current_pos,3,1,1,2)
-            restestlayout.addWidget(step3,4,0)
-            restestlayout.addWidget(calculate_error,4,1,1,2)
-            restestlayout.addWidget(step4,5,0)
-            restestlayout.addWidget(go_to_centerpoint,5,1,1,2)
-            restestlayout.addWidget(adjustpoint,6,0)
-            restestlayout.addWidget(addpoint,6,1)
-            restestlayout.addWidget(subpoint,6,2)
-
-            overrideres = QGridLayout()
-            overrideonlab = QLabel("Override?")
-            overrideon = QComboBox(self)
-            overrideon.addItem("No")
-            overrideon.addItem("Yes")
-            overrideon.textActivated[str].connect(self.updateoverride)
-            overrideres.addWidget(overrideonlab,6,0)
-            overrideres.addWidget(overrideon,6,1,1,2)
-            overrideres.addWidget(overrideymotorthetalab, 7,0)
-            overrideres.addWidget(self.overrideymotortheta, 7,2)
-            overrideres.addWidget(overridepixelsizelab, 8, 0)
-            overrideres.addWidget(self.overridepixelsize,8,2)
-            groubox_override = QGroupBox("Override Calibrated Settings")
-            groubox_override.setLayout(overrideres)
-
-            restestlayout.addWidget(groubox_override,7,0,1,3)
-            groupbox_restest = QGroupBox("Resolution Test")
-            groupbox_restest.setLayout(restestlayout)
-            self.leftside.addWidget(groupbox_restest)
-
-
         self.leftside.addStretch()
         self.rightside=QVBoxLayout()
         self.rightside.addWidget(groupbox_motorpanel_window)
@@ -642,10 +579,6 @@ class ControlWindow(QMainWindow):
     def exposure_value_change(self):
         new_exposure_value = float(self.exposure_slider.value())/10
         self.cam_MM.set_exposure(new_exposure_value)
-
-    def updateoverride(self,text):
-        self.overrideon = str(text)
-        self.response_monitor_window.append(">> Override calibrated settings for resolution test set to ON.")
     
     def show_warning_box(self, msg:str):
         """
@@ -1207,7 +1140,6 @@ class ControlWindow(QMainWindow):
 
     """
     -------------------------- Pre injection workflow controls   -----------------------------
-    These Functions control testing resolution error
     """    
     def _set_angle_ind(self,state:bool):
         if state is True:
@@ -1247,112 +1179,7 @@ class ControlWindow(QMainWindow):
         icon = self.style().standardIcon(pixmapi)
         pixmap = icon.pixmap(QSize(18,18))
         label.setPixmap(pixmap)
-        
-    """
-    ---------- Resolution Test Controls   -----------------------------------------------------------------
-    These Functions control testing resolution error
-    """
-    def go_to_point_func(self):
-        try:
-            if self.overrideon == "Yes":
-                self.ymotortheta = float(self.overrideymotortheta.text())
-                self.pixelsize = float(self.overridepixelsize.text())
-
-            #get current position of manipulator
-            getmotorpos = delmotor('', '', 0, 1000,'getposition_m0',0)
-            getmotorpos.start()
-            
-            time.sleep(0.2)
-            print('m0 = ' + str(getmotorpos.m0))
-            self.m0 = getmotorpos.m0
-            self.stringm0 = str(self.m0)
-            
-            #get position of first point in restest grid
-            c2x = self.vidctrl.points.drawpointsx
-            c2y = self.vidctrl.points.drawpointsy
-            self.c2 = (c2x[self.i],c2y[self.i])
-            
-            #generate commands to go from current point to restest point
-            self.c0 = (self.vidctrl.height/2,self.vidctrl.width/2)
-            getpos = GetPos(self.c0,self.c2,self.m0,1000,self.ymotortheta,self.pip_angle,self.pixelsize)
-            print('m1 instructed = ' +  str(getpos.futuremotor))
-            self.m1 = getpos.futuremotor
-
-            #use generated commands to move from current point to restest point
-            move = delmotor('x', 'increase', getpos.futuremotor, 1000,'absolute',0)
-            move.start()
-        except:
-            self.error_msg.setText("restest err. \nPython error = \n" + str(sys.exc_info()[1]))
-            self.error_msg.exec()
-            self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
-        
-    def get_current_pos_func(self):
-        try:
-            #get c1, get m1
-            getcurrentmotorm1 = delmotor('', '', 0, 1000,'getposition_m1',0)
-            getcurrentmotorm1.start()
-            time.sleep(0.4)
-            self.m1 = getcurrentmotorm1.m1
-            self.c1 = self.vidctrl.positionnow
-            print('m1 real =' + str(self.m1))
-        except:
-            self.error_msg.setText("restest err. \nPython error = \n" + str(sys.exc_info()[1]))
-            self.error_msg.exec()
-            self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
-
-    def calculate_error_func(self):
-        try:
-            #move to absolute truth position
-            getcurrentmotorm2 = delmotor('', '', 0, 1000,'getposition_m2',0)
-            getcurrentmotorm2.start()
-            time.sleep(0.4)
-            self.m2 = getcurrentmotorm2.m2
-
-            self.errorx = abs(int(self.m2[0])-int(self.m1[0]))
-            self.errory = abs(int(self.m2[1])-int(self.m1[1]))
-            self.errorz = abs(int(self.m2[2])-int(self.m1[2]))
-            print('m2 = ' + str(self.m2))
-            print('error x,y,z,d in nm = ')
-            print(self.errorx)
-            print(self.errory)
-            print(self.errorz)
-
-            if len(self.m2) == 4:
-                self.errord = abs(int(self.m2[3])-int(self.m1[3]))
-                print(self.errord)
-        except:
-            self.error_msg.setText("restest err. \nPython error = \n" + str(sys.exc_info()[1]))
-            self.error_msg.exec()
-            self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
-
-    def go_to_centerpoint_func(self):
-        try:
-            #go back to center point
-            s1m0 = self.stringm0.replace(',','')
-            s2m0 = s1m0.replace('[','')
-            s3m0 = s2m0.replace(']','')
-            if len(self.m0) == 3:
-                s4m0 = s3m0.split(' ',2)
-            elif len(self.m0) ==4:
-                s4m0 = s3m0.split(' ',3)            
-            m0 = [int(i) for i in s4m0]
-            move = delmotor('x', 'increase', m0, 1000,'absolute',0)
-            move.start()
-        except:
-            self.error_msg.setText("restest err. \nPython error = \n" + str(sys.exc_info()[1]))
-            self.error_msg.exec()
-            self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
-
-    def add_restestpoint(self):
-        #changes selected point
-        self.i = self.i + 1
-        print('point vertex = ' + str(self.i))
-
-    def sub_restestpoint(self):
-        #changes selected point
-        self.i = self.i - 1
-        print('point vertex = ' + str(self.i))
-
+    
     """
     ----------Motor Controls -----------------------------------------------------------------
     These functions control displaying motor position
@@ -1467,6 +1294,6 @@ if __name__ == "__main__":
     import sys
     app = QApplication(sys.argv)
     app.setApplicationName('MyWindow')
-    main = ControlWindow('HamamatsuHam_DCAM', 'HamamatsuHam', 'HamamatsuHam_DCAM', '2x2', 180, 256, 1.3, 'Off', 'com3')
+    main = ControlWindow('HamamatsuHam_DCAM', 'HamamatsuHam', 'HamamatsuHam_DCAM', '2x2', 180, 256, 1.3, 'com3')
     main.show()
     sys.exit(app.exec())

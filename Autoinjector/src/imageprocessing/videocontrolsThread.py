@@ -5,7 +5,6 @@ import cv2
 import numpy as np
 import time
 import pymmcore
-from src.imageprocessing.restestgrid import ResTest
 import os
 import sys
 from skimage.util import img_as_ubyte
@@ -15,7 +14,7 @@ import traceback
 class vidcontrols(QThread):
     #vidout = pyqtSignal()
     clicked_pos = pyqtSignal([float, float])
-    def __init__(self,cam,brand,val,bins,rot,imagevals,scalefactor,restest):
+    def __init__(self,cam,brand,val,bins,rot,imagevals,scalefactor):
         #defines camera settings
         self.cam = cam
         self.brand = brand
@@ -24,7 +23,6 @@ class vidcontrols(QThread):
         self.rot = int(rot)
         self.imagevals = imagevals
         self.scalefactor = scalefactor
-        self.restest = restest
         #self.exposure = 30
 
         #error message box
@@ -97,17 +95,6 @@ class vidcontrols(QThread):
             self.unmod_frame = np.copy(self.frame)
             self.width = int(self.frame.shape[0])
             self.height = int(self.frame.shape[1])
-
-
-            #resolution testing grid
-            if self.restest == "On":
-                try:
-                    #cv2.circle(self.frame, (self.width/2, self.height/2), 3, 255, -1)
-                    for i in range(0,len(self.points.drawpointsx)):
-                        cv2.circle(self.frame, (self.points.drawpointsx[i], self.points.drawpointsy[i]), 1, 255, -1)
-                except:
-                    self.points = ResTest()
-                    self.points.makePoints(self.height,self.width)
 
 
             #Look to see if line/point is drawn, show if it is

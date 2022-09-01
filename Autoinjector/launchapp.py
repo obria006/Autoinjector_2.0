@@ -29,18 +29,6 @@ class camerasetting(QDialog):
         groupboxlayout1 = QGroupBox("Camera Selection")
         groupboxlayout1.setLayout(layout1)
 
-        self.layout3 = QHBoxLayout()
-        restestlabel = QLabel("Resolution Test?")
-        restest = QComboBox(self)
-        restest.addItem("Select")
-        restest.addItem("On")
-        restest.addItem("Off")
-        restest.textActivated[str].connect(self.updaterestest)
-        self.layout3.addWidget(restestlabel)
-        self.layout3.addWidget(restest)
-        groupboxlayout3 = QGroupBox('Resolution Test')
-        groupboxlayout3.setLayout(self.layout3)
-
         self.layout4 = QHBoxLayout()
         comlabel = QLabel("Arduino Com Port")
         com = QComboBox(self)
@@ -68,7 +56,6 @@ class camerasetting(QDialog):
         saveexitbutton.clicked.connect(self.close1)
         mainlayout.addWidget(groupboxlayout1)
         mainlayout.addWidget(groupboxlayout4)
-        mainlayout.addWidget(groupboxlayout3)
         #mainlayout.addWidget(groupboxlayout2)
         mainlayout.addWidget(saveexitbutton)
         self.setWindowTitle('Settings')
@@ -115,11 +102,11 @@ class camerasetting(QDialog):
             self.customvals.show() 
             self.custom = True
 
-        self.imagevals = np.power(2, bits)
-
-    def updaterestest(self,text):
-        self.restest = text
-
+        try:
+            self.imagevals = np.power(2, bits)
+        except:
+            pass
+        
     def updatecom(self,text):
         self.com = text
 
@@ -136,9 +123,9 @@ class camerasetting(QDialog):
                 self.scalefactor = float(self.customvals.scalefactor)
                 self.fourtyxmagcalibdist = int(self.customvals.fourtyxmagcalib)
             self.close()
-            x = ControlWindow(self.devicename,self.brand,self.devicevalue,self.bins,self.rotate,self.imagevals, self.scalefactor, self.restest,self.com, self.fourtyxmagcalibdist)
+            x = ControlWindow(self.devicename,self.brand,self.devicevalue,self.bins,self.rotate,self.imagevals, self.scalefactor, self.com, self.fourtyxmagcalibdist)
             x.show()
-            print(self.devicename +","+ self.brand + ","+self.devicevalue + ","+self.bins + ","+str(self.rotate) +","+ str(self.imagevals) +","+ str(self.scalefactor) + ","+str(self.fourtyxmagcalibdist))
+            print(self.devicename +","+ self.brand + ","+self.devicevalue + ","+self.bins + ","+str(self.rotate) +","+ str(self.imagevals) +","+ str(self.scalefactor))
             
         except:
             error_msg = QMessageBox()

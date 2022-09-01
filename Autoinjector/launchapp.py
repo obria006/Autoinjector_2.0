@@ -72,7 +72,6 @@ class camerasetting(QDialog):
             self.bins = "none"
             self.rotate = 180
             bits = 8  
-            self.fourtyxmagcalibdist = 40000 
             self.scalefactor = 2.4                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
 
 
@@ -83,7 +82,6 @@ class camerasetting(QDialog):
             self.bins = "2x2"
             self.rotate = 180
             bits = 8
-            self.fourtyxmagcalibdist = 40000 
             self.scalefactor = 1.3
 
         if text == 'Zeiss Axiocam':
@@ -93,7 +91,6 @@ class camerasetting(QDialog):
             self.bins = "none"
             self.rotate = 270
             bits = 16
-            self.fourtyxmagcalibdist = 30000 
             self.scalefactor = 1.5
 
         if text == 'Custom':
@@ -106,7 +103,7 @@ class camerasetting(QDialog):
             self.imagevals = np.power(2, bits)
         except:
             pass
-        
+
     def updatecom(self,text):
         self.com = text
 
@@ -121,9 +118,8 @@ class camerasetting(QDialog):
                 bits = int(self.customvals.bits)
                 self.imagevals = np.power(2, bits)
                 self.scalefactor = float(self.customvals.scalefactor)
-                self.fourtyxmagcalibdist = int(self.customvals.fourtyxmagcalib)
             self.close()
-            x = ControlWindow(self.devicename,self.brand,self.devicevalue,self.bins,self.rotate,self.imagevals, self.scalefactor, self.com, self.fourtyxmagcalibdist)
+            x = ControlWindow(self.devicename,self.brand,self.devicevalue,self.bins,self.rotate,self.imagevals, self.scalefactor, self.com)
             x.show()
             print(self.devicename +","+ self.brand + ","+self.devicevalue + ","+self.bins + ","+str(self.rotate) +","+ str(self.imagevals) +","+ str(self.scalefactor))
             
@@ -150,12 +146,10 @@ class CustomCam(QDialog):
         bitlabel = QLabel("Bits")
         rotatelabel = QLabel("Rotate (CW)")
         scalfaclabel = QLabel("Scale Factor")
-        calibdistlabel = QLabel("40x calibration dist")
         self.devicename1 = QLineEdit(self)
         self.brand1 = QLineEdit(self)
         self.devicevalue1 = QLineEdit(self)
         self.scalefactor1 = QLineEdit(self)
-        self.fourtyxmagcalibdist1 = QLineEdit(self)
         bits = QComboBox(self)
         bits.addItem("Select")
         bits.addItem("4")
@@ -183,7 +177,6 @@ class CustomCam(QDialog):
         self.layout2.addWidget(bitlabel, 3,0,1,1)
         self.layout2.addWidget(rotatelabel, 5,0,1,1)
         self.layout2.addWidget(scalfaclabel, 6,0,1,1)
-        self.layout2.addWidget(calibdistlabel, 7,0,1,1)
         self.layout2.addWidget(self.devicename1, 0,1,1,1)
         self.layout2.addWidget(self.brand1, 1,1,1,1)
         self.layout2.addWidget(self.devicevalue1, 2,1,1,1)
@@ -191,7 +184,6 @@ class CustomCam(QDialog):
         self.layout2.addWidget(bits, 3,1,1,1)
         self.layout2.addWidget(rotate, 5,1,1,1)
         self.layout2.addWidget(self.scalefactor1, 6, 1,1,1)
-        self.layout2.addWidget(self.fourtyxmagcalibdist1, 7,1,1,1)
         groupboxlayout2 = QGroupBox('Custom Settings')
         groupboxlayout2.setLayout(self.layout2)
 
@@ -220,7 +212,6 @@ class CustomCam(QDialog):
 
     def closecustom(self):
         self.scalefactor = self.scalefactor1.text()
-        self.fourtyxmagcalib = self.fourtyxmagcalibdist1.text()
         self.devicename = str(self.devicename1.text())
         self.brand = str(self.brand1.text())
         self.devicevalue = str(self.devicevalue1.text())

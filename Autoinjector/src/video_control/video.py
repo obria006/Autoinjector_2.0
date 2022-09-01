@@ -134,7 +134,12 @@ class MMCamera():
         """
         #if video is streaming
         if self.cap.getRemainingImageCount() > 0:
-            frame = self.cap.getLastImage()
+            try:
+                frame = self.cap.getLastImage()
+            except IndexError as e:
+                raise utils.NoFrameError(e)
+            except:
+                raise
             frame = img_as_ubyte(frame) #convert to 8 bit from 16 bit
 
             if self.rot > 0: #rotate 

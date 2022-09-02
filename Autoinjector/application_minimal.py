@@ -26,7 +26,7 @@ from src.manipulator_control.calibration import Calibrator, AngleIO, Calibration
 from src.manipulator_control.sensapex_utils import SensapexDevice
 from src.manipulator_control.injection_trajectory import SurfaceLineTrajectory3D
 from src.manipulator_control.calibration_trajectory import SemiAutoCalibrationTrajectory
-from src.ZEN_interface.ZEN_App import ZenGroup
+from src.ZEN_interface.ZEN_mvc import ModelZEN, ControllerZEN, ViewZENComplete, ViewZENFocus
 
 
 
@@ -130,7 +130,10 @@ class ControlWindow(QMainWindow):
 
         # Instantiate imported widgets
         self.vid_display = VideoDisplay(self.cam_MM, height=900, fps=50)
-        self.zen_group = ZenGroup()
+        zen_model = ModelZEN()
+        self.zen_controller = ControllerZEN(zen_model)
+        self.full_zen_app = ViewZENComplete(self.zen_controller)
+        self.focus_zen_app = ViewZENFocus(self.zen_controller)
 
         # Create main gui widgets
         self.make_widgets()
@@ -583,22 +586,21 @@ class ControlWindow(QMainWindow):
     Initialize zeiss microscope widgets -----------------------------------------------------------
     """
     def set_zeiss_connections(self):
-        self.zen_group.obj_changed.connect(self.obj_changed)
-        self.zen_group.obj_changed.connect(self.calibration_inputs_changed)
-        self.zen_group.opto_changed.connect(self.calibration_inputs_changed)
-        self.zen_group.opto_changed.connect(self.opto_changed)
-        self.zen_group.ref_changed.connect(self.ref_changed)
+        self.zen_controller.obj_changed.connect(self.obj_changed)
+        self.zen_controller.obj_changed.connect(self.calibration_inputs_changed)
+        self.zen_controller.opto_changed.connect(self.calibration_inputs_changed)
+        self.zen_controller.opto_changed.connect(self.opto_changed)
+        self.zen_controller.ref_changed.connect(self.ref_changed)
 
     def print_inital_ZEN_states_to_monitor(self):
         # Set magnification of objective
-        mag_level = self.zen_group.zen.get_obj_info('magnification')
-        if mag_level in list(self.zen_group.zen.objectives['magnification']):
-            self.response_monitor_window.append(">> Magnification set to " +str(mag_level))
+        _, _, mag_level = self.zen_controller.get_current_objective()
+        self.response_monitor_window.append(">> Magnification set to " +str(mag_level))
         # Set magnificaiton of optovar
-        opto_mag_level = self.zen_group.zen.get_opto_info('magnification')
+        _, _, opto_mag_level = self.zen_controller.get_current_optovar()
         self.response_monitor_window.append(">> Optovar set to " +str(opto_mag_level))
         # Set name of reflector
-        ref_name = self.zen_group.zen.get_ref_info('name')
+        ref_name, _ = self.zen_controller.get_current_reflector()
         self.response_monitor_window.append(">> Reflector set to " +str(ref_name))
 
 
@@ -621,7 +623,7 @@ class ControlWindow(QMainWindow):
         """ Define default right page for stacked layout """
         self.default_right_page = QWidget()
         default_right_layout = QVBoxLayout()
-        default_right_layout.addWidget(self.zen_group)
+        default_right_layout.addWidget(self.full_zen_app.zen_group)
         default_right_layout.addWidget(self.inj_parameter_group)
         default_right_layout.addStretch()
         self.default_right_page.setLayout(default_right_layout)
@@ -638,7 +640,7 @@ class ControlWindow(QMainWindow):
         """ Define annotation mode left page for stacked layout """
         self.annotation_mode_right_page = QWidget()
         layout = QVBoxLayout()
-        #FIXME layout.addWidget(self.zen_group)
+        layout.addWidget(self.focus_zen_app.zen_group)
         layout.addStretch()
         self.annotation_mode_right_page.setLayout(layout)
 
@@ -903,7 +905,7 @@ class ControlWindow(QMainWindow):
         ''' Adds clicked calibration positions to calibration data '''
         x_click, y_click = pixel
         if self.conduct_calibration_but.isChecked():
-            z_scope = self.zen_group.zen.get_focus_um()
+            z_scope = self.zen_controller.get_focus_um()
             ex_pos = [x_click, y_click, z_scope]
             dev = SensapexDevice(1)
             man_pos = dev.get_pos()
@@ -914,7 +916,7 @@ class ControlWindow(QMainWindow):
                 self.save_pip_cal_data(tip_dict)
         if self.update_calibration_but.isChecked():
             self.pip_cal.data.rm_all()
-            z_scope = self.zen_group.zen.get_focus_um()
+            z_scope = self.zen_controller.get_focus_um()
             ex_pos = [x_click, y_click, z_scope]
             dev = SensapexDevice(1)
             man_pos = dev.get_pos()
@@ -931,9 +933,9 @@ class ControlWindow(QMainWindow):
         dev = SensapexDevice(1)
         img_width = self.cam_MM.width
         img_height = self.cam_MM.height
-        z_scope = self.zen_group.zen.get_focus_um()
-        _, obj_mag = self.zen_group.parse_combobox('objective')
-        _, opto_mag = self.zen_group.parse_combobox('optovar')
+        z_scope = self.zen_controller.get_focus_um()
+        _, _, obj_mag = self.zen_controller.get_current_objective()
+        _, _, opto_mag = self.zen_controller.get_current_optovar()
         self.cal_trajectory = SemiAutoCalibrationTrajectory(dev=dev, cal=self.pip_cal, img_w=img_width, img_h=img_height, ex_z=z_scope,z_polarity=-1,pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
         self.cal_pos_added.connect(self.cal_trajectory.next_cal_position)
         self.cal_trajectory.finished.connect(self.conduct_calibration_but.toggle)
@@ -1012,8 +1014,8 @@ class ControlWindow(QMainWindow):
         try:
             if "pip_angle" not in list(self.__dict__.keys()):
                 raise CalibrationError(f'Pipette angle not set. The pipette angle must be set before conducting a calibration.')
-            _, obj_mag = self.zen_group.parse_combobox('objective')
-            _, opto_mag = self.zen_group.parse_combobox('optovar')
+            _, _, obj_mag = self.zen_controller.get_current_objective()
+            _, _, opto_mag = self.zen_controller.get_current_optovar()
             self.logger.info(f"Computing calibration with data\n{self.pip_cal.data.data_df}")
             self.pip_cal.compute(z_polarity=-1, pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
         except CalibrationDataError as e:
@@ -1065,8 +1067,8 @@ class ControlWindow(QMainWindow):
                 self.show_warning_box(msg)
         else:
             try:
-                _, obj_mag = self.zen_group.parse_combobox('objective')
-                _, opto_mag = self.zen_group.parse_combobox('optovar')
+                _, _, obj_mag = self.zen_controller.get_current_objective()
+                _, _, opto_mag = self.zen_controller.get_current_optovar()
                 self.pip_cal.update(obj_mag=obj_mag, opto_mag=opto_mag, pip_angle=self.pip_angle)
             except CalibrationDataError as e:
                 msg = f"Calibration not updated. Error: {e}\n\nMake sure you click on the tip to register the calibration point before unchecking 'Update'."
@@ -1085,8 +1087,8 @@ class ControlWindow(QMainWindow):
             self.show_warning_box(msg)
         else:
             try:
-                _, obj_mag = self.zen_group.parse_combobox('objective')
-                _, opto_mag = self.zen_group.parse_combobox('optovar')
+                _, _, obj_mag = self.zen_controller.get_current_objective()
+                _, _, opto_mag = self.zen_controller.get_current_optovar()
                 self.pip_cal.save_model(obj_mag=obj_mag, opto_mag=opto_mag, ang_deg=np.rad2deg(self.pip_angle))
             except Exception as e:
                 msg = f"Error while saving calibration {e}\n\nSee logs for more information."
@@ -1101,8 +1103,8 @@ class ControlWindow(QMainWindow):
             if ret == QMessageBox.StandardButton.No:
                 return None
         try:
-            _, obj_mag = self.zen_group.parse_combobox('objective')
-            _, opto_mag = self.zen_group.parse_combobox('optovar')
+            _, _, obj_mag = self.zen_controller.get_current_objective()
+            _, _, opto_mag = self.zen_controller.get_current_optovar()
             self.pip_cal.load_model(obj_mag=obj_mag, opto_mag=opto_mag, ang_deg=np.rad2deg(self.pip_angle))
         except CalibrationFileError as e:
             msg = f"Error: {e}.\n\nYou must save a calibration file before it can be loaded."
@@ -1119,8 +1121,8 @@ class ControlWindow(QMainWindow):
     def calibration_inputs_changed(self):
         ''' Changes the calibration if the microscope changes'''
         # Set new calibraiton model if it exists or warn user
-        _, obj_mag = self.zen_group.parse_combobox('objective')
-        _, opto_mag = self.zen_group.parse_combobox('optovar')
+        _, _, obj_mag = self.zen_controller.get_current_objective()
+        _, _, opto_mag = self.zen_controller.get_current_optovar()
         # Use an existing calibration for this config or show warning if was already calibrated and now its not
         if self.pip_cal.model.is_calibrated is True:
             try:
@@ -1277,16 +1279,13 @@ class ControlWindow(QMainWindow):
     ============================================================================================
     """
     def obj_changed(self, mag_level:float):
-        if mag_level in list(self.zen_group.zen.objectives['magnification']):
-            self.response_monitor_window.append(">> Magnification set to " +str(mag_level))
+        self.response_monitor_window.append(">> Magnification set to " +str(mag_level))
 
     def opto_changed(self, mag_level:float):
-        if mag_level in list(self.zen_group.zen.optovars['magnification']):
-            self.response_monitor_window.append(">> Optovar set to " +str(mag_level))
+        self.response_monitor_window.append(">> Optovar set to " +str(mag_level))
 
     def ref_changed(self, ref_name:str):
-        if ref_name in list(self.zen_group.zen.reflectors['name']):
-            self.response_monitor_window.append(">> Reflector set to " +str(ref_name))
+        self.response_monitor_window.append(">> Reflector set to " +str(ref_name))
 
     def exposure_value_change(self):
         new_exposure_value = float(self.exposure_slider.value())/10
@@ -1392,7 +1391,7 @@ class ControlWindow(QMainWindow):
             dev = SensapexDevice(1)
             cal = self.pip_cal
             edge = self.interpolated_pixels
-            z_scope = self.zen_group.zen.get_focus_um()
+            z_scope = self.zen_controller.get_focus_um()
             edge_arr = np.array(edge)
             z_arr = z_scope*np.ones((edge_arr.shape[0],1))
             edge_3D = np.concatenate((edge_arr,z_arr),axis=1).tolist()

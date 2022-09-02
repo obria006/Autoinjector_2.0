@@ -660,7 +660,7 @@ class ControllerZEN(QObject):
         """
         self._model.goto_focus_rel_um(rel_focus)
 
-    def get_focus_pos(self)->str:
+    def get_focus_um(self)->float:
         """
         Return current position of focus
 
@@ -668,7 +668,7 @@ class ControllerZEN(QObject):
             string of current focus position
         """
         pos = self._model.get_focus_um()
-        return str(pos)
+        return pos
     
     def parse_to_combobox(self, box_name:str) -> str:
         """
@@ -798,6 +798,47 @@ class ControllerZEN(QObject):
 
         return combo_vals, cur_combo_str
 
+    def get_current_objective(self):
+        """
+        Return tuple of objective information
+
+        Returns:
+            name (str): current name
+            pos (int): current position
+            mag (float): current magnification
+        """
+        pos = self._model.get_obj_info('position')
+        mag = self._model.get_obj_info('magnification')
+        name = self._model.get_obj_info('name')
+        return name, pos, mag
+
+    def get_current_optovar(self):
+        """
+        Return tuple of optovar information
+
+        Returns:
+            pos (int): current position
+            mag (float): current magnification
+            name (str): current name
+        """
+        pos = self._model.get_opto_info('position')
+        mag = self._model.get_opto_info('magnification')
+        name = self._model.get_opto_info('name')
+        return name, pos, mag
+
+    def get_current_reflector(self):
+        """
+        Return tuple of reflector information
+
+        Returns:
+            pos (int): current position
+            name (str): current name
+        """
+        pos = self._model.get_ref_info('position')
+        name = self._model.get_ref_info('name')
+        return name, pos
+
+
 class ViewZEN(QObject):
     """
     Widgets for creating a Zeiss/ZEN GUI interface. Widgets are already
@@ -870,7 +911,7 @@ class ViewZEN(QObject):
         Set initial states for the widgets using info from the controller
         """
         # Initialize the display of the inital focus position
-        pos = self._controller.get_focus_pos()
+        pos = str(self._controller.get_focus_um())
         self.update_focus_display(pos)
 
         # Set the inital um increment for changing focus position
@@ -1094,7 +1135,6 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     model = ModelZEN()
     controller = ControllerZEN(model)
-    # view = ViewZEN(controller)
     win = ViewZENComplete(controller).zen_group
     # win = ViewZENFocus(controller).zen_group
     win.show()

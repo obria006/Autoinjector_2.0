@@ -18,26 +18,129 @@ from src.Qt_utils.gui_objects import QHLine
 from src.miscellaneous.standard_logger import StandardLogger
 from src.miscellaneous import validify as val
 
-class ModelZEN:
+class ModelZEN(QObject):
     """
-    Model for controlling Zeiss/ZEN microscope/software.
+    Model for controlling Zeiss/ZEN microscope/software. Uses a timer to
+    periodically sample the position of the microscope components and send
+    signals to the view if these positions change.
+
+    Signals:
+        foc_position_changed: emitted when periodically sampling reveals the
+            focus position has changed.
+        obj_position_changed: emitted when periodically sampling reveals the
+            objective position has changed.
+        opto_position_changed: emitted when periodically sampling reveals the
+            optovar position has changed.
+        ref_position_changed: emitted when periodically sampling reveals the
+            reflector position has changed.
     """
+    foc_position_changed = pyqtSignal(float)
+    obj_position_changed = pyqtSignal()
+    opto_position_changed = pyqtSignal()
+    ref_position_changed = pyqtSignal()
 
     def __init__(self):
+        super().__init__()
         try:
-            self.zen = win32com.client.GetActiveObject("Zeiss.Micro.Scripting.ZenWrapperLM")
+            self._zen = win32com.client.GetActiveObject("Zeiss.Micro.Scripting.ZenWrapperLM")
         except:
             raise
         # Max and min values of focus position in ZEN
         self.focus_max_um = 10000
         self.focus_min_um = 0
+        # Dataframe of objectives, optovars, and reflectors of microscope
         self.objectives = self._connected_objectives()
         self.optovars = self._connected_optovars()
         self.reflectors = self._connected_reflectors()
+        # Initial starting positions for hardware
+        self._focus_position = self.get_focus_um()
+        self._objective_position = self.get_obj_info('position')
+        self._optovar_position = self.get_opto_info('position')
+        self._reflector_position = self.get_ref_info('position')
+        # Timer to periodically sample microscope positions
+        self._timer = QTimer()
+        TIMEOUT_MS = 500
+        self._timer.timeout.connect(self._sample_hardware)
+        self._timer.start(TIMEOUT_MS)
+
+
+    def _sample_hardware(self):
+        """
+        Periodically samples the hardware position and emits signal if their
+        positions change.
+        """
+        self._sample_focus_position()
+        self._sample_objective_position()
+        self._sample_optovar_position()
+        self._sample_reflector_position()
+
+    def _sample_focus_position(self):
+        """
+        Compares microscope focus position against internal position and emits
+        a signal if the don't match and updates internal position
+        """
+        pos = self.get_focus_um()
+        if pos != self._focus_position:
+            self._focus_position = pos
+            self.foc_position_changed.emit(self._focus_position)
+
+    def _sample_objective_position(self):
+        """
+        Compares microscope objective position against internal position and emits
+        a signal if the don't match and updates internal position
+        """
+        # Get objective pos
+        obj_pos = self.get_obj_info("position")
+        # Update position if changed. Sometimes while switch says pos is 0 (impossible, so dont handle 0 pos)
+        if obj_pos != self._objective_position and obj_pos != 0:
+            # Set new combobox value
+            if obj_pos in list(self.objectives['position']):
+                self._objective_position = obj_pos
+                self.obj_position_changed.emit()
+            # Objective pos not listed in objectives so raise key erros
+            else:
+                self._logger.error(f"Objectives dataframe doesn't have position: {obj_pos}. Objectives {self._model.objectives}")
+                raise KeyError(f"Objectives dataframe doesn't have position: {obj_pos}")
+
+    def _sample_optovar_position(self):
+        """
+        Compares microscope optovar position against internal position and emits
+        a signal if the don't match and updates internal position
+        """
+        # Get optovar pos
+        opto_pos = self.get_opto_info("position")
+        # Update position if changed. Sometimes while switch says pos is 0 (impossible, so dont handle 0 pos)
+        if opto_pos != self._optovar_position and opto_pos != 0:
+            # Set new combobox value
+            if opto_pos in list(self.optovars['position']):
+                self._optovar_position = opto_pos
+                self.opto_position_changed.emit()
+            # Wasn't listed optovars so raise error
+            else:
+                self._logger.error(f"Optovars dataframe doesn't have position: {opto_pos}. Optovars {self._model.optovars}")
+                raise KeyError(f"Optovars dataframe doesn't have position: {opto_pos}")
+
+    def _sample_reflector_position(self):
+        """
+        Compares microscope reflector position against internal position and emits
+        a signal if the don't match and updates internal position
+        """
+        # Get reflector pos
+        ref_pos = self.get_ref_info("position")
+        # Update position if changed. Sometimes while switch says pos is 0 (impossible, so dont handle 0 pos)
+        if ref_pos != self._reflector_position and ref_pos != 0:
+            # If already in the listed optovars (had a valid name) then don't ask zen for the mag (to prevent zen block eventloop)
+            if ref_pos in list(self.reflectors['position']):
+                self._reflector_position = ref_pos
+                self.ref_position_changed.emit()
+            # Wasn't listed in reflectors so raise error
+            else:
+                self._logger.error(f"Reflectors dataframe doesn't have position: {ref_pos}. reflectors {self._model.reflectors}")
+                raise KeyError(f"Reflectors dataframe doesn't have position: {ref_pos}")
 
     def get_focus_um(self)->float:
         '''Returns position of focus in um (consistent w/ ZEN software)'''
-        foc_ZEN_um = self.zen.Devices.Focus.ActualPosition
+        foc_ZEN_um = self._zen.Devices.Focus.ActualPosition
         return foc_ZEN_um
 
     def goto_focus_abs_um(self,des_foc_um:float)->None:
@@ -53,7 +156,7 @@ class ModelZEN:
         if des_foc_um > self.focus_max_um or des_foc_um < self.focus_min_um:
             raise ValueError(f'Invalid goto_focus_abs_um position: {des_foc_um}um. Must be {self.focus_min_um}um to {self.focus_max_um}um.')
         # TODO add threaded move function
-        self.zen.Devices.Focus.MoveTo(des_foc_um)
+        self._zen.Devices.Focus.MoveTo(des_foc_um)
 
     def goto_focus_rel_um(self, delta_foc_um:float)->None:
         '''
@@ -88,8 +191,8 @@ class ModelZEN:
             raise ValueError(f"Objective start position must be a number type. {type(start_pos)} is invalid.")
         obj_dict = {}
         for pos in range(start_pos, end_pos+1):
-            name = self.zen.Devices.ObjectiveChanger.GetNameByPosition(pos)
-            mag = self.zen.Devices.ObjectiveChanger.GetMagnificationByPosition(pos)
+            name = self._zen.Devices.ObjectiveChanger.GetNameByPosition(pos)
+            mag = self._zen.Devices.ObjectiveChanger.GetMagnificationByPosition(pos)
             obj_dict[pos] = {'name':name, 'position':pos, 'magnification':mag}
         obj_df = pd.DataFrame(obj_dict).transpose()
         return obj_df
@@ -134,11 +237,11 @@ class ModelZEN:
             raise KeyError(f"Invalid objective info key: {key}. Key must be in ['position', 'name', 'magnification']")
         # Return requested info
         if key == 'position':
-            return self.zen.Devices.ObjectiveChanger.ActualPosition
+            return self._zen.Devices.ObjectiveChanger.ActualPosition
         if key == 'name':
-            return self.zen.Devices.ObjectiveChanger.ActualPositionName
+            return self._zen.Devices.ObjectiveChanger.ActualPositionName
         if key == 'magnification':
-            return self.zen.Devices.ObjectiveChanger.Magnification
+            return self._zen.Devices.ObjectiveChanger.Magnification
 
     def goto_obj_mag(self, mag:float) -> None:
         '''
@@ -176,8 +279,8 @@ class ModelZEN:
         if pos not in list(self.objectives.index.values):
             raise ValueError(f'Requested invalid objective position: {pos}. No objective in position: {pos}')
         # Goto new position
-        self.zen.Devices.ObjectiveChanger.TargetPosition = pos
-        self.zen.Devices.ObjectiveChanger.Apply()
+        self._zen.Devices.ObjectiveChanger.TargetPosition = pos
+        self._zen.Devices.ObjectiveChanger.Apply()
 
     def _connected_optovars(self, start_pos:int=1, end_pos:int=3)->pd.DataFrame:
         '''
@@ -197,8 +300,8 @@ class ModelZEN:
             raise ValueError(f"Optovar start position must be a number type. {type(start_pos)} is invalid.")
         opto_dict = {}
         for pos in range(start_pos, end_pos+1):
-            name = self.zen.Devices.Optovar.GetNameByPosition(pos)
-            mag = self.zen.Devices.Optovar.GetMagnificationByPosition(pos)
+            name = self._zen.Devices.Optovar.GetNameByPosition(pos)
+            mag = self._zen.Devices.Optovar.GetMagnificationByPosition(pos)
             opto_dict[pos] = {'name':name, 'position':pos, 'magnification':mag}
         opto_df = pd.DataFrame(opto_dict).transpose()
         return opto_df
@@ -243,11 +346,11 @@ class ModelZEN:
             raise KeyError(f"Invalid optovar info key: {key}. Key must be in ['position', 'name', 'magnification']")
         # Return requested info
         if key == 'position':
-            return self.zen.Devices.Optovar.ActualPosition
+            return self._zen.Devices.Optovar.ActualPosition
         if key == 'name':
-            return self.zen.Devices.Optovar.ActualPositionName
+            return self._zen.Devices.Optovar.ActualPositionName
         if key == 'magnification':
-            return self.zen.Devices.Optovar.Magnification
+            return self._zen.Devices.Optovar.Magnification
 
     def goto_opto_mag(self, mag:float) -> None:
         '''
@@ -285,8 +388,8 @@ class ModelZEN:
         if pos not in list(self.optovars.index.values):
             raise ValueError(f'Requested invalid optovar position: {pos}. No optovar in position: {pos}')
         # Goto new position
-        self.zen.Devices.Optovar.TargetPosition = pos
-        self.zen.Devices.Optovar.Apply()
+        self._zen.Devices.Optovar.TargetPosition = pos
+        self._zen.Devices.Optovar.Apply()
 
     def _connected_reflectors(self, start_pos:int=1, end_pos:int=6)->pd.DataFrame():
         '''
@@ -305,7 +408,7 @@ class ModelZEN:
             raise ValueError(f"Reflector start position must be a number type. {type(start_pos)} is invalid.")
         ref_dict = {}
         for pos in range(start_pos, end_pos+1):
-            name = self.zen.Devices.Reflector.GetNameByPosition(pos)
+            name = self._zen.Devices.Reflector.GetNameByPosition(pos)
             if name is None:
                 name = f"Pos. {round(pos)}"
             ref_dict[pos] = {'name':name, 'position':pos}
@@ -342,11 +445,11 @@ class ModelZEN:
             raise KeyError(f"Invalid reflector info key: {key}. Key must be in ['position', 'name']")
         # Return requested info
         if key == 'position':
-            return self.zen.Devices.Reflector.ActualPosition
+            return self._zen.Devices.Reflector.ActualPosition
         if key == 'name':
-            ref_name = self.zen.Devices.Reflector.ActualPositionName
+            ref_name = self._zen.Devices.Reflector.ActualPositionName
             if ref_name is None or ref_name == '':
-                pos = self.zen.Devices.Reflector.ActualPosition
+                pos = self._zen.Devices.Reflector.ActualPosition
                 ref_name = f"Pos. {round(pos)}"
             return ref_name
 
@@ -373,17 +476,16 @@ class ModelZEN:
         if pos not in list(self.reflectors.index.values):
             raise ValueError(f'Requested invalid reflector position: {pos}. No reflector in position: {pos}')
         # Goto new position
-        self.zen.Devices.Reflector.TargetPosition = pos
-        self.zen.Devices.Reflector.Apply()
+        self._zen.Devices.Reflector.TargetPosition = pos
+        self._zen.Devices.Reflector.Apply()
 
 
 class ControllerZEN(QObject):
     """
-    Controller for zeiss/ZEN interface within the MVC architecture. Uses a
-    timer to periodically sample the position of the microscope components
-    and send signals to the view if these positions change. Recieves signals
-    from the view and acts on them to change to postion of the microscope to
-    reflect the user input.
+    Controller for zeiss/ZEN interface within the MVC architecture. Recieves
+    signals from model when hardware positoin has changed and sends these to
+    view. Alro recieves signals from the view and acts on them to change to
+    postion of the microscope to reflect the user input.
     """
     
     ex_foc_position_changed = pyqtSignal(str)
@@ -402,36 +504,29 @@ class ControllerZEN(QObject):
             model: Model for zeiss/zen microscope control in MVC architecture
         """
         super().__init__()
-        self.logger = StandardLogger(__name__)
+        self._logger = StandardLogger(__name__)
         self._model = model
-        self._init_states()
+        self._set_model_connections()
 
-        # Timer to periodically sample microscope positions
-        self._timer = QTimer()
-        TIMEOUT_MS = 1000
-        self._timer.timeout.connect(self._timer_position_updates)
-        self._timer.start(TIMEOUT_MS)
+    def _set_model_connections(self):
+        """
+        Set signal/slot connections between model-controller
+        """
+        # Update controller when the model changed externally
+        self._model.foc_position_changed.connect(self.focus_model_change)
+        self._model.obj_position_changed.connect(self.objective_model_change)
+        self._model.opto_position_changed.connect(self.optovar_model_change)
+        self._model.ref_position_changed.connect(self.reflector_model_change)
 
-    def _init_states(self):
+    def objective_model_change(self):
         """
-        Initialize states of hardware positions. These states will be used to
-        reference against the periodically sampeled hardware positions to
-        determine if external position change occurred.
+        Handles when objective changes in the model (like the user changed it
+        in the ZEN software). Emits signal of the hardware change so view can
+        reflect the change.
         """
-        self._focus_position = str(self._model.get_focus_um())
-        self._obj_position = self._model.get_obj_info("position")
-        self._opto_position = self._model.get_opto_info("position")
-        self._ref_position = self._model.get_ref_info("position")
+        obj_combo_str = self.parse_to_combobox('objective')
+        self.ex_obj_position_changed.emit(obj_combo_str)
 
-    def _timer_position_updates(self):
-        """
-        Periodically samples the hardware position and emits signal if their
-        positions change.
-        """
-        self.sample_focus_position()
-        self.sample_objective_position()
-        self.sample_optovar_position()
-        self.sample_reflector_position()
 
     def objective_view_change(self, obj_combobox:str):
         """
@@ -443,7 +538,7 @@ class ControllerZEN(QObject):
                 objective position and magnitude to change to.
         """
         # Update internal attribute of objective positoin
-        obj_pos, obj_mag = self.parse_combobox('objective', obj_combobox)
+        obj_pos, obj_mag = self.parse_from_combobox('objective', obj_combobox)
         self._obj_position = obj_pos
         # Make the commanded objective move
         self.change_objective(obj_pos, obj_mag)
@@ -462,8 +557,17 @@ class ControllerZEN(QObject):
             self._model.goto_obj_pos(des_pos)
             self.obj_changed.emit(des_mag)
         except:
-            self.logger.exception('Error encountered while changing objective position')
+            self._logger.exception('Error encountered while changing objective position')
             raise
+
+    def optovar_model_change(self):
+        """
+        Handles when optovar changes in the model (like the user changed it
+        in the ZEN software). Emits signal of the hardware change so view can
+        reflect the change.
+        """
+        opto_combo_str = self.parse_to_combobox('optovar')
+        self.ex_opto_position_changed.emit(opto_combo_str)
 
     def optovar_view_change(self, opto_combobox:str):
         """
@@ -475,7 +579,7 @@ class ControllerZEN(QObject):
                 optovar position and magnitude to change to.
         """
         # Update internal attribute of optovar position
-        opto_pos, opto_mag = self.parse_combobox('optovar', opto_combobox)
+        opto_pos, opto_mag = self.parse_from_combobox('optovar', opto_combobox)
         self._opto_position = opto_pos
         # Make the commanded optovar move
         self.change_optovar(opto_pos, opto_mag)
@@ -494,8 +598,17 @@ class ControllerZEN(QObject):
             self._model.goto_opto_pos(des_pos)
             self.opto_changed.emit(des_mag)
         except:
-            self.logger.exception('Error encountered while changing optovar position')
+            self._logger.exception('Error encountered while changing optovar position')
             raise
+
+    def reflector_model_change(self):
+        """
+        Handles when reflector changes in the model (like the user changed it
+        in the ZEN software). Emits signal of the hardware change so view can
+        reflect the change.
+        """
+        ref_combo_str = self.parse_to_combobox('reflector')
+        self.ex_ref_position_changed.emit(ref_combo_str)
 
     def reflector_view_change(self, ref_combobox:str):
         """
@@ -507,7 +620,7 @@ class ControllerZEN(QObject):
                 relector position and magnitude to change to.
         """
         # Update internal attribute of reflector position
-        ref_pos, ref_name = self.parse_combobox('reflector', ref_combobox)
+        ref_pos, ref_name = self.parse_from_combobox('reflector', ref_combobox)
         self._ref_position = ref_pos
         # Make commanded reflector omve
         self.change_reflector(ref_pos, ref_name)
@@ -526,10 +639,19 @@ class ControllerZEN(QObject):
             self._model.goto_ref_pos(des_pos)
             self.ref_changed.emit(des_name)
         except:
-            self.logger.exception('Error encountered while changing reflector position')
+            self._logger.exception('Error encountered while changing reflector position')
             raise
 
-    def focus_view_change(self, rel_focus:float):
+    def focus_model_change(self, foc_pos:float):
+        """
+        Handles when focus changes in the model (like the user changed it
+        in the ZEN software). Emits signal of the hardware change so view can
+        reflect the change.
+        """
+        position = str(foc_pos)
+        self.ex_foc_position_changed.emit(position)
+
+    def goto_focus_relative(self, rel_focus:float):
         """
         Move focus position relative to current position.
 
@@ -537,7 +659,6 @@ class ControllerZEN(QObject):
             rel_focus (float): Relative positoin change
         """
         self._model.goto_focus_rel_um(rel_focus)
-        self.sample_focus_position()
 
     def get_focus_pos(self)->str:
         """
@@ -548,8 +669,40 @@ class ControllerZEN(QObject):
         """
         pos = self._model.get_focus_um()
         return str(pos)
+    
+    def parse_to_combobox(self, box_name:str) -> str:
+        """
+        Creates a combobox string from the hardware's info associated with
+        `box name`. Queries the model for the hardware info before creating the
+        string to return
+
+        Args:
+            box_name (str): Name of combo box. Must be in ['objective',
+                'optovar', 'reflector']
+
+        Returns:
+            string to set in combobox as '{pos}: {secondary info}'
+        """
+        # Validate
+        if box_name not in ['objective', 'optovar', 'reflector']:
+            raise KeyError(f"Request combobox name to parse: {box_name}. Name must be in ['objective', 'optovar', 'reflector']")
+        if box_name == "objective":
+            cur_pos = self._model.get_obj_info('position')
+            cur_mag = self._model.get_obj_info('magnification')
+            cur_combo_str = f"{cur_pos}: {cur_mag}x"
+            return cur_combo_str
+        if box_name == "optovar":
+            cur_pos = self._model.get_opto_info('position')
+            cur_mag = self._model.get_opto_info('magnification')
+            cur_combo_str = f"{cur_pos}: {cur_mag}x"
+            return cur_combo_str
+        if box_name == "reflector":
+            cur_pos = self._model.get_ref_info('position')
+            cur_name = self._model.get_ref_info('name')
+            cur_combo_str = f"{cur_pos}: {cur_name}"
+            return cur_combo_str
         
-    def parse_combobox(self, box_name:str, box_val:str):
+    def parse_from_combobox(self, box_name:str, box_val:str):
         '''
         Parse the desired combo box to get its position and secondary info.
 
@@ -588,77 +741,6 @@ class ControllerZEN(QObject):
             ret = (pos, name)
         return ret
 
-    def sample_focus_position(self):
-        """
-        Compares microscope focus position against internal position and emits
-        a signal if the don't match and updates internal position
-        """
-        pos = str(self._model.get_focus_um())
-        if pos != self._focus_position:
-            self._focus_position = pos
-            self.ex_foc_position_changed.emit(pos)
-
-    def sample_objective_position(self):
-        """
-        Compares microscope objective position against internal position and emits
-        a signal if the don't match and updates internal position
-        """
-        # Get objective pos
-        obj_pos = self._model.get_obj_info("position")
-        # Update position if changed. Sometimes while switch says pos is 0 (impossible, so dont handle 0 pos)
-        if obj_pos != self._obj_position and obj_pos != 0:
-            # Set new combobox value
-            if obj_pos in list(self._model.objectives['position']):
-                self._obj_position = obj_pos
-                obj_mag = self._model.objectives.at[obj_pos, 'magnification']
-                new_combo_str = f"{obj_pos}: {obj_mag}x"
-                self.ex_obj_position_changed.emit(new_combo_str)
-            # Objective pos not listed in objectives so raise key erros
-            else:
-                self.logger.error(f"Objectives dataframe doesn't have position: {obj_pos}. Objectives {self._model.objectives}")
-                raise KeyError(f"Objectives dataframe doesn't have position: {obj_pos}")
-
-    def sample_optovar_position(self):
-        """
-        Compares microscope optovar position against internal position and emits
-        a signal if the don't match and updates internal position
-        """
-        # Get optovar pos
-        opto_pos = self._model.get_opto_info("position")
-        # Update position if changed. Sometimes while switch says pos is 0 (impossible, so dont handle 0 pos)
-        if opto_pos != self._opto_position and opto_pos != 0:
-            # Set new combobox value
-            if opto_pos in list(self._model.optovars['position']):
-                self._opto_position = opto_pos
-                opto_mag = self._model.optovars.at[opto_pos, 'magnification']
-                new_combo_str = f"{opto_pos}: {opto_mag}x"
-                self.ex_opto_position_changed.emit(new_combo_str)
-            # Wasn't listed optovars so raise error
-            else:
-                self.logger.error(f"Optovars dataframe doesn't have position: {opto_pos}. Optovars {self._model.optovars}")
-                raise KeyError(f"Optovars dataframe doesn't have position: {opto_pos}")
-
-    def sample_reflector_position(self):
-        """
-        Compares microscope reflector position against internal position and emits
-        a signal if the don't match and updates internal position
-        """
-        # Get reflector pos
-        ref_pos = self._model.get_ref_info("position")
-        # Update position if changed. Sometimes while switch says pos is 0 (impossible, so dont handle 0 pos)
-        if ref_pos != self._ref_position and ref_pos != 0:
-            # If already in the listed optovars (had a valid name) then don't ask zen for the mag (to prevent zen block eventloop)
-            if ref_pos in list(self._model.reflectors['position']):
-                self._ref_position = ref_pos
-                ref_name = self._model.reflectors.at[ref_pos, 'name']
-                new_combo_str = f"{ref_pos}: {ref_name}"
-                self.ex_ref_position_changed.emit(new_combo_str)
-            # Wasn't listed in reflectors so raise error
-            else:
-                self.logger.error(f"Reflectors dataframe doesn't have position: {ref_pos}. reflectors {self._model.reflectors}")
-                raise KeyError(f"Reflectors dataframe doesn't have position: {ref_pos}")
-
-
     def objectives_information(self):
         """
         Return list of connected objectives and the current objective
@@ -674,9 +756,7 @@ class ControllerZEN(QObject):
         mags = list(self._model.objectives['magnification'])
         combo_vals = [f"{positions[k]}: {mags[k]}x" for k in range(len(positions))]
         # Add current positoin (if not in active objective positoin)
-        cur_pos = self._model.get_obj_info('position')
-        cur_mag = self._model.get_obj_info('magnification')
-        cur_combo_str = f"{cur_pos}: {cur_mag}x"
+        cur_combo_str = self.parse_to_combobox('objective')
 
         return combo_vals, cur_combo_str
 
@@ -695,9 +775,7 @@ class ControllerZEN(QObject):
         mags = list(self._model.optovars['magnification'])
         combo_vals = [f"{positions[k]}: {mags[k]}x" for k in range(len(positions))]
         # Add current positoin (if not in active optovar positoin)
-        cur_pos = self._model.get_opto_info('position')
-        cur_mag = self._model.get_opto_info('magnification')
-        cur_combo_str = f"{cur_pos}: {cur_mag}x"
+        cur_combo_str = self.parse_to_combobox('optovar')
 
         return combo_vals, cur_combo_str
 
@@ -716,9 +794,7 @@ class ControllerZEN(QObject):
         names = list(self._model.reflectors['name'])
         combo_vals = [f"{positions[k]}: {names[k]}" for k in range(len(positions))]
         # Add current positoin (if not in active reflector positoin)
-        cur_pos = self._model.get_ref_info('position')
-        cur_name = self._model.get_ref_info('name')
-        cur_combo_str = f"{cur_pos}: {cur_name}"
+        cur_combo_str = self.parse_to_combobox('reflector')
 
         return combo_vals, cur_combo_str
 
@@ -751,7 +827,7 @@ class ViewZEN(QObject):
             parent: parent of object
         """
         super().__init__()
-        self.logger = StandardLogger(__name__)
+        self._logger = StandardLogger(__name__)
         self._controller = controller
 
         self._make_widgets()
@@ -828,7 +904,7 @@ class ViewZEN(QObject):
         self.obj_selector.currentTextChanged.connect(self._controller.objective_view_change)
         self.opto_selector.currentTextChanged.connect(self._controller.optovar_view_change)
         self.ref_selector.currentTextChanged.connect(self._controller.reflector_view_change)
-        self.change_focus_request.connect(self._controller.focus_view_change)
+        self.change_focus_request.connect(self._controller.goto_focus_relative)
         # Set controller's signals' connection with view slots (ie updates the view
         # when microscope config changes w/o action from the view.)
         self._controller.ex_foc_position_changed.connect(lambda foc_pos: self.update_focus_display(foc_pos))
@@ -869,13 +945,13 @@ class ViewZEN(QObject):
         try:
             val = self._increment_to_num()
         except ValueError as e:
-            self.logger.exception('Request invalid focus increment')
+            self._logger.exception('Request invalid focus increment')
         else:
             # Unthreaded
             try:
                 self.change_focus_request.emit(val) 
             except ValueError:
-                self.logger.exception('Error while attempting to increment focus')
+                self._logger.exception('Error while attempting to increment focus')
 
         
     def minus_focus(self):
@@ -887,13 +963,13 @@ class ViewZEN(QObject):
         try:
             val = -self._increment_to_num()
         except ValueError as e:
-            self.logger.exception('Request invalid focus increment')
+            self._logger.exception('Request invalid focus increment')
         else:
             # Unthreaded 
             try:
                 self.change_focus_request.emit(val)  
             except ValueError:
-                self.logger.exception('Error while attempting to increment focus')
+                self._logger.exception('Error while attempting to increment focus')
 
     def _increment_to_num(self):
         '''

@@ -824,7 +824,6 @@ class ViewZEN(QObject):
         """
         Args:
             controller: zeiss controller for mvc architecture
-            parent: parent of object
         """
         super().__init__()
         self._logger = StandardLogger(__name__)
@@ -983,20 +982,19 @@ class ViewZEN(QObject):
             raise ValueError(f'Focus increment must be a valid number. {inc_val} is invalid.')
 
 
-class ViewZENComplete(QGroupBox):
+class ViewZENComplete(ViewZEN):
     """
     A full blown application by using the `ViewZEN` widgets to make a user
     interface.
     """
     
-    def __init__(self, view: ViewZEN, parent=None):
+    def __init__(self, controller:ControllerZEN):
         """
         Args:
-            view: ziess view object with pre-initialized/connected widgets
-            parent: where to place the user interface
+            controller: zeiss controller for mvc architecture
         """
-        super().__init__("Zeiss Control")
-        self._view = view
+        super().__init__(controller)
+        self.zen_group = QGroupBox("Zeiss Control")
         self._make_application()
 
 
@@ -1013,11 +1011,11 @@ class ViewZENComplete(QGroupBox):
         h_layout3 = QHBoxLayout()
         v_layout = QVBoxLayout()
         h_layout1.addWidget(foc_disp_label)
-        h_layout1.addWidget(self._view.foc_disp)
-        h_layout2.addWidget(self._view.btn_minus)
-        h_layout2.addWidget(self._view.btn_plus)
+        h_layout1.addWidget(self.foc_disp)
+        h_layout2.addWidget(self.btn_minus)
+        h_layout2.addWidget(self.btn_plus)
         h_layout3.addWidget(foc_inc_label)
-        h_layout3.addWidget(self._view.foc_inc)
+        h_layout3.addWidget(self.foc_inc)
         v_layout.addLayout(h_layout1)
         v_layout.addLayout(h_layout2)
         v_layout.addLayout(h_layout3)
@@ -1030,32 +1028,74 @@ class ViewZENComplete(QGroupBox):
         obj_selector_label = QLabel('Objective:')        
         h_layout4 = QHBoxLayout()
         h_layout4.addWidget(obj_selector_label)
-        h_layout4.addWidget(self._view.obj_selector)
+        h_layout4.addWidget(self.obj_selector)
         v_layout.addLayout(h_layout4)
 
         # Optovar widgets
         opto_selector_label = QLabel('Optovar:')       
         h_layout5 = QHBoxLayout()
         h_layout5.addWidget(opto_selector_label)
-        h_layout5.addWidget(self._view.opto_selector)
+        h_layout5.addWidget(self.opto_selector)
         v_layout.addLayout(h_layout5)
 
         # Reflector widgets
         ref_selector_label = QLabel('Reflector:')        
         h_layout6 = QHBoxLayout()
         h_layout6.addWidget(ref_selector_label)
-        h_layout6.addWidget(self._view.ref_selector)
+        h_layout6.addWidget(self.ref_selector)
         v_layout.addLayout(h_layout6)
 
         # Create groupbox
-        self.setLayout(v_layout)
+        self.zen_group.setLayout(v_layout)
+
+class ViewZENFocus(ViewZEN):
+    """
+    A full blown application by using the `ViewZEN` widgets to make a user
+    interface.
+    """
+    
+    def __init__(self, controller:ControllerZEN):
+        """
+        Args:
+            controller: zeiss controller for mvc architecture
+        """
+        super().__init__(controller)
+        self.zen_group = QGroupBox("Zeiss Control")
+        self._make_application()
+
+
+    def _make_application(self):
+        """
+        Make widgets to support the `ViewZEN` and layout the widgets in an
+        window.
+        """
+        # Focus widgets
+        foc_disp_label = QLabel('Focus (µm):')
+        foc_inc_label = QLabel('Increment (µm):')
+        h_layout1 = QHBoxLayout()
+        h_layout2 = QHBoxLayout()
+        h_layout3 = QHBoxLayout()
+        v_layout = QVBoxLayout()
+        h_layout1.addWidget(foc_disp_label)
+        h_layout1.addWidget(self.foc_disp)
+        h_layout2.addWidget(self.btn_minus)
+        h_layout2.addWidget(self.btn_plus)
+        h_layout3.addWidget(foc_inc_label)
+        h_layout3.addWidget(self.foc_inc)
+        v_layout.addLayout(h_layout1)
+        v_layout.addLayout(h_layout2)
+        v_layout.addLayout(h_layout3)
+
+        # Create groupbox
+        self.zen_group.setLayout(v_layout)
 
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     model = ModelZEN()
     controller = ControllerZEN(model)
-    view = ViewZEN(controller)
-    win = ViewZENComplete(view)
+    # view = ViewZEN(controller)
+    win = ViewZENComplete(controller).zen_group
+    # win = ViewZENFocus(controller).zen_group
     win.show()
     sys.exit(app.exec())

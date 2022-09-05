@@ -1,0 +1,24 @@
+batch_size: 16
+kwargs:
+  data_dir: data/processed/uncropped
+  data_type: val
+  size: 26
+  transform:
+    NumpyToTensor:
+      img_dtype: float
+      mask_dtype: short
+    RandomFlip: {}
+    RandomJitter:
+      brightness: 0.3
+      contrast: 0.3
+      p: 0.3
+    RandomRotationTransform:
+      angles:
+      - 0
+      - 90
+      - 180
+    ResizeTransform:
+      size: !!python/tuple
+      - 128
+      - 128
+workers: 1

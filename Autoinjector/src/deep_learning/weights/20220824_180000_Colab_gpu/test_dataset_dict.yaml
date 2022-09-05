@@ -1,0 +1,7 @@
+batch_size: 16
+kwargs:
+  data_dir: data/processed/uncropped
+  data_type: test
+  size: 12
+  transform: null
+workers: 1

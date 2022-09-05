@@ -1,0 +1,6 @@
+cuda: true
+n_epochs: 75
+resume_path: null
+save: true
+save_dir: results/20220824_143343
+train_lr: 0.0005

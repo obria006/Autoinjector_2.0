@@ -27,6 +27,8 @@ from src.manipulator_control.sensapex_utils import SensapexDevice
 from src.manipulator_control.injection_trajectory import SurfaceLineTrajectory3D
 from src.manipulator_control.calibration_trajectory import SemiAutoCalibrationTrajectory
 from src.ZEN_interface.ZEN_mvc import ModelZEN, ControllerZEN, ViewZENComplete, ViewZENFocus
+from src.deep_learning.tissue_detection import ModelTissueDetection
+from src.deep_learning.edge_utils.error_utils import EdgeNotFoundError
 
 
 
@@ -119,6 +121,8 @@ class ControlWindow(QMainWindow):
         # Instantiate imports
         self.pip_cal = Calibrator(cal_data_dir=self.cal_data_dir)
         self.angle_io = AngleIO(ang_data_dir=self.cal_data_dir)
+        ckpt_path = "Autoinjector/src/deep_learning/weights/20220824_180000_Colab_gpu/best.pth"
+        self.tissue_model = ModelTissueDetection(ckpt_path)
 
         # Instantiate the imported camera
         try:
@@ -369,11 +373,16 @@ class ControlWindow(QMainWindow):
         mode_label1 = QLabel('Annotation Mode:')
         self.annotation_combo_box = QComboBox()
         self.annotation_combo_box.setPlaceholderText('Mode')
+        edge_label1 = QLabel('Auto-detect Edge:')
+        self.edge_type_combo_box = QComboBox()
+        self.edge_type_combo_box.setPlaceholderText('Type')
         self.annotation_button = QPushButton("Annotate Target")
         self.default_annotation_group = QGroupBox("Trajectory Annotation")
         # Make alternate annotation widgets
-        mode_label2 = QLabel('Annotation Mode:')
+        mode_label2 = QLabel(mode_label1.text())
         self.annotation_mode_display = QLabel('')
+        edge_label2 = QLabel(edge_label1.text())
+        self.edge_type_display = QLabel('')
         self.complete_annotation_button = QPushButton("Complete Annotation")
         self.exit_annotation_button = QPushButton("Exit Annotation")
         hline = QHLine()
@@ -383,17 +392,17 @@ class ControlWindow(QMainWindow):
         self.alt_annotation_group = QGroupBox("Annotation Control")
         # Specify the default annotation layout and group
         default_layout = QVBoxLayout()
-        mode_layout1= QHBoxLayout()
-        mode_layout1.addWidget(mode_label1)
-        mode_layout1.addWidget(self.annotation_combo_box)
-        default_layout.addLayout(mode_layout1)
+        form1 = QFormLayout()
+        form1.addRow(mode_label1, self.annotation_combo_box)
+        form1.addRow(edge_label1, self.edge_type_combo_box)
+        default_layout.addLayout(form1)
         default_layout.addWidget(self.annotation_button)
         self.default_annotation_group.setLayout(default_layout)
         alt_layout = QVBoxLayout()
-        mode_layout2 = QHBoxLayout()
-        mode_layout2.addWidget(mode_label2)
-        mode_layout2.addWidget(self.annotation_mode_display)
-        alt_layout.addLayout(mode_layout2)
+        form2 = QFormLayout()
+        form2.addRow(mode_label2, self.annotation_mode_display)
+        form2.addRow(edge_label2, self.edge_type_display)
+        alt_layout.addLayout(form2)
         alt_layout.addWidget(self.complete_annotation_button)
         alt_layout.addWidget(self.exit_annotation_button)
         alt_layout.addWidget(hline)
@@ -407,10 +416,14 @@ class ControlWindow(QMainWindow):
         self.complete_annotation_button.clicked.connect(self.annotation_complete_pressed)
         self.exit_annotation_button.clicked.connect(self.exit_annotation_mode)
         self.annotation_combo_box.currentTextChanged.connect(self.annotation_combo_changed)
+        self.edge_type_combo_box.currentTextChanged.connect(self.edge_type_combo_changed)
 
     def stateify_annotation_widgets(self):
         self.annotation_combo_box.insertItems(0,['Manual','Automatic'])
         self.annotation_combo_box.setCurrentText('Manual')
+        self.edge_type_combo_box.insertItems(0,['Apical','Basal'])
+        self.edge_type_combo_box.setCurrentText('Apical')
+        self.update_annotation_display_labels()
 
     """
     Initialize video display modification widgets -------------------------------------------------
@@ -1162,10 +1175,38 @@ class ControlWindow(QMainWindow):
     Functions to control the annotation of injection targets on the GUI display.
     ============================================================================================
     """
+    def automatic_tissue_annotation(self):
+        annot_mode = self.annotation_combo_box.currentText()
+        edge_type = self.edge_type_combo_box.currentText().lower()
+        if annot_mode == "Automatic":
+            try:
+                image = np.copy(self.vid_display.frame)
+                # image = np.copy(self.vid_display.test_img)
+                detection_dict = self.tissue_model.detect(image, edge_type)
+                edge_pixels = detection_dict['edge_coordinates']
+                self.handle_drawn_edge(edge_pixels)
+                # self.interpolated_pixels = edge_pixels
+                # self.vid_display.set_interpolated_annotation(self.interpolated_pixels)
+            except EdgeNotFoundError as e:
+                msg = f"{e}\n\nManually annotate the edge."
+                self.show_warning_box(msg)
+            except:
+                msg = "Error while detecting tissue.\n\nSee logs for more info."
+                self.show_exception_box(msg)
+
     def annotation_combo_changed(self):
         """ Handle what to do when the annotation combobox state is changed """
+        self.update_annotation_display_labels()
+
+    def edge_type_combo_changed(self):
+        """ Handle what to do when the edge type combobox state is changed """
+        self.update_annotation_display_labels()
+
+    def update_annotation_display_labels(self):
         annot_mode = self.annotation_combo_box.currentText()
         self.annotation_mode_display.setText(annot_mode)
+        edge_type = self.edge_type_combo_box.currentText()
+        self.edge_type_display.setText(edge_type)
 
     def annotation_complete_pressed(self):
         """ Handle what to do when user clicks annotation complete """
@@ -1183,6 +1224,7 @@ class ControlWindow(QMainWindow):
         self.modify_annotation_guidance()
         # Switch gui to the annotaiton mode
         self.switch_to_annotation_mode()
+        self.automatic_tissue_annotation()
 
     def exit_annotation_mode(self):
         """

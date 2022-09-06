@@ -302,12 +302,10 @@ class ControlWindow(QMainWindow):
         self.update_calibration_but = QCheckBox("")
         self.save_calibration_but = QPushButton("Save Calibration", self)
         self.load_calibration_but = QPushButton("Load Calibration", self)
-        self.display_calibration_but = QCheckBox("")
         form = QFormLayout()
         form.addRow(cal_mode_label,self.cal_mode_box)
         form.addRow(new_cal_label,self.conduct_calibration_but)
         form.addRow(upd_cal_label,self.update_calibration_but)
-        form.addRow(show_cal_label,self.display_calibration_but)
         h_layout2 = QHBoxLayout()
         h_layout2.addWidget(self.save_calibration_but)
         h_layout2.addWidget(self.load_calibration_but)
@@ -327,7 +325,6 @@ class ControlWindow(QMainWindow):
         self.update_calibration_but.clicked.connect(self.update_calibration)
         self.save_calibration_but.clicked.connect(self.save_calibration)
         self.load_calibration_but.clicked.connect(self.load_calibration)
-        self.display_calibration_but.stateChanged.connect(self.display_calibration)
         self.angle_mode_box.currentTextChanged.connect(self.set_angle_mode)
         self.cal_mode_box.currentTextChanged.connect(self.set_cal_mode)
         self.set_angle_button.clicked.connect(self.set_pipette_angle)
@@ -340,9 +337,6 @@ class ControlWindow(QMainWindow):
         self.angle_mode_box.setCurrentText('Automatic')
         self.cal_mode_box.insertItems(0,['Manual','Semi-Auto.','Automatic'])
         self.cal_mode_box.setCurrentText('Semi-Auto.')
-        self.pip_disp_timer = QTimer()
-        self.pip_disp_timer.timeout.connect(self.display_calibration)
-        self.pip_disp_timeout = 25
 
 
     """
@@ -437,12 +431,51 @@ class ControlWindow(QMainWindow):
         self.exposure_slider.setMaximum(100)
         self.exposure_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         self.exposure_slider.setTickInterval(0)
-        self.show_annotation_button = QPushButton("Show Edge")
-        self.hide_annotation_button = QPushButton("Hide Edge")
+        display_tip_label = QLabel('Show tip:')
+        self.display_tip_rbon = QRadioButton("On")
+        rboff1 = QRadioButton("Off")
+        display_annotation_label = QLabel('Show annotation:')
+        self.display_annotation_rbon = QRadioButton("On")
+        rboff2 = QRadioButton("Off")
+        display_segmentation_label = QLabel('Show tissue:')
+        self.display_segmentation_rbon = QRadioButton("On")
+        rboff3 = QRadioButton("Off")
+        display_edge_label = QLabel('Show edge:')
+        self.display_edges_rbon = QRadioButton("On")
+        rboff4 = QRadioButton("Off")
+        bg1 = QButtonGroup(self)
+        bg1.addButton(self.display_tip_rbon)
+        bg1.addButton(rboff1)
+        bg2 = QButtonGroup(self)
+        bg2.addButton(self.display_annotation_rbon)
+        bg2.addButton(rboff2)
+        bg3 = QButtonGroup(self)
+        bg3.addButton(self.display_segmentation_rbon)
+        bg3.addButton(rboff3)
+        bg4 = QButtonGroup(self)
+        bg4.addButton(self.display_edges_rbon)
+        bg4.addButton(rboff4)
+
+        hl1 = QHBoxLayout()
+        hl1.addWidget(self.display_tip_rbon)
+        hl1.addWidget(rboff1)
+        hl2 = QHBoxLayout()
+        hl2.addWidget(self.display_annotation_rbon)
+        hl2.addWidget(rboff2)
+        hl3 = QHBoxLayout()
+        hl3.addWidget(self.display_segmentation_rbon)
+        hl3.addWidget(rboff3)
+        hl4 = QHBoxLayout()
+        hl4.addWidget(self.display_edges_rbon)
+        hl4.addWidget(rboff4)
+        form = QFormLayout()
+        form.addRow(display_tip_label, hl1)
+        form.addRow(display_annotation_label, hl2)
+        form.addRow(display_segmentation_label, hl3)
+        form.addRow(display_edge_label, hl4)
         layout.addWidget(exposure_label)
         layout.addWidget(self.exposure_slider)
-        layout.addWidget(self.show_annotation_button)
-        layout.addWidget(self.hide_annotation_button)
+        layout.addLayout(form)
         self.display_modification_group = QGroupBox('Display Settings')
         self.display_modification_group.setLayout(layout)
         
@@ -450,12 +483,21 @@ class ControlWindow(QMainWindow):
         """ Sets initial states for dispaly modification widgets """
         exposure = int(float(self.cam_MM.get_exposure())*10)
         self.exposure_slider.setValue(exposure)
+        self.display_tip_rbon.setChecked(True)
+        self.display_annotation_rbon.setChecked(True)
+        self.display_segmentation_rbon.setChecked(True)
+        self.display_edges_rbon.setChecked(True)
 
     def set_display_modification_connections(self):
         """ Sets signal slot connections for display modification widgets """
         self.exposure_slider.valueChanged.connect(self.exposure_value_change)
-        self.show_annotation_button.clicked.connect(partial(self.vid_display.show_interpolated_annotation,True))
-        self.hide_annotation_button.clicked.connect(partial(self.vid_display.show_interpolated_annotation,False))
+        self.display_tip_rbon.toggled.connect(self.display_calibration)
+        self.display_annotation_rbon.toggled.connect(self.display_annotation)
+        self.display_segmentation_rbon.toggled.connect(self.display_tissue_mask)
+        self.display_edges_rbon.toggled.connect(self.display_edge_mask)
+        self.pip_disp_timer = QTimer()
+        self.pip_disp_timer.timeout.connect(self.display_calibration)
+        self.pip_disp_timeout = 25
 
 
     """
@@ -1047,23 +1089,6 @@ class ControlWindow(QMainWindow):
             self.logger.info('Calibration unchecked. Deleting calibration points.')
             self.pip_cal.data.rm_all()
     
-    def display_calibration(self):
-        ''' Send computed tip positoin (in camera) to video to be displayed.
-        Calls itself on timer to update tip position in video'''
-        if self.display_calibration_but.isChecked():
-            if self.pip_disp_timer.isActive() is False:
-                self.pip_disp_timer.start(self.pip_disp_timeout)
-            if self.pip_cal.model.is_calibrated is True:
-                self.vid_display.show_tip_position(True)
-                dev = SensapexDevice(1)
-                pos = dev.get_pos()
-                ex = self.pip_cal.model.forward(man=pos)
-                self.vid_display.set_tip_position(ex[0], ex[1])
-            else:
-                self.vid_display.show_tip_position(False)
-        else:
-            self.vid_display.show_tip_position(False)
-            self.pip_disp_timer.stop()
 
     def update_calibration(self):
         ''' Updates calibration by setting new reference position '''
@@ -1183,8 +1208,14 @@ class ControlWindow(QMainWindow):
                 image = np.copy(self.vid_display.frame)
                 # image = np.copy(self.vid_display.test_img)
                 detection_dict = self.tissue_model.detect(image, edge_type)
+                df = detection_dict['detection_data']
                 edge_pixels = detection_dict['edge_coordinates']
                 self.handle_drawn_edge(edge_pixels)
+                tissue_mask = detection_dict['segmentation_image']>0
+                kernel = cv2.getStructuringElement(shape=cv2.MORPH_RECT, ksize=(11, 11))
+                apical_mask = cv2.dilate((detection_dict['edge_image'] == 1).astype(np.uint8),kernel)
+                basal_mask = cv2.dilate((detection_dict['edge_image'] == 2).astype(np.uint8), kernel)
+                self.vid_display.set_masks(tissue_mask=tissue_mask, apical_mask=apical_mask, basal_mask=basal_mask)
                 # self.interpolated_pixels = edge_pixels
                 # self.vid_display.set_interpolated_annotation(self.interpolated_pixels)
             except EdgeNotFoundError as e:
@@ -1212,6 +1243,7 @@ class ControlWindow(QMainWindow):
         """ Handle what to do when user clicks annotation complete """
         # Stop showing the raw drawn edge
         self.vid_display.show_drawn_annotation(False)
+        self.vid_display.reset_masks()
         # Switch GUI to default mode
         self.switch_to_default_mode()
 
@@ -1236,6 +1268,7 @@ class ControlWindow(QMainWindow):
         # Nullify any interpolated edge coordinates if they exist
         self.interpolated_pixels = []
         self.vid_display.reset_interpolated_annotation()
+        self.vid_display.reset_masks()
         self._annotation_complete.emit(False)
         # Switch GUI to default mode
         self.switch_to_default_mode()
@@ -1332,6 +1365,54 @@ class ControlWindow(QMainWindow):
     def exposure_value_change(self):
         new_exposure_value = float(self.exposure_slider.value())/10
         self.cam_MM.set_exposure(new_exposure_value)
+
+    
+    """
+    ============================================================================================
+
+    DISPLAY MODIFICATION CONTROLS
+
+    Functions for controlling the additional annotations/modificaions shown on video display
+    ============================================================================================
+    """
+    def display_annotation(self):
+        """ Tells video display whether to display annotated coordinates """
+        if self.display_annotation_rbon.isChecked():
+            self.vid_display.show_interpolated_annotation(True)
+        else:
+            self.vid_display.show_interpolated_annotation(False)
+
+    def display_calibration(self):
+        ''' Send computed tip positoin (in camera) to video to be displayed.
+        Calls itself on timer to update tip position in video'''
+        if self.display_tip_rbon.isChecked():
+            if self.pip_disp_timer.isActive() is False:
+                self.pip_disp_timer.start(self.pip_disp_timeout)
+            if self.pip_cal.model.is_calibrated is True:
+                self.vid_display.show_tip_position(True)
+                dev = SensapexDevice(1)
+                pos = dev.get_pos()
+                ex = self.pip_cal.model.forward(man=pos)
+                self.vid_display.set_tip_position(ex[0], ex[1])
+            else:
+                self.vid_display.show_tip_position(False)
+        else:
+            self.vid_display.show_tip_position(False)
+            self.pip_disp_timer.stop()
+
+    def display_tissue_mask(self):
+        """ Tells video display whether to display annotated coordinates """
+        if self.display_segmentation_rbon.isChecked():
+            self.vid_display.show_tissue_mask(True)
+        else:
+            self.vid_display.show_tissue_mask(False)
+
+    def display_edge_mask(self):
+        """ Tells video display whether to display annotated coordinates """
+        if self.display_edges_rbon.isChecked():
+            self.vid_display.show_edge_mask(True)
+        else:
+            self.vid_display.show_edge_mask(False)
 
 
     """

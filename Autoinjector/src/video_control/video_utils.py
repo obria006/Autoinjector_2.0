@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from scipy.interpolate import UnivariateSpline
 import numpy as np
 import cv2
@@ -69,6 +70,43 @@ def display_x(image, center_xy, radius, color, thickness):
 
 def display_point(image, center_xy, color):
     return cv2.circle(image, center_xy, radius=1, color=color, thickness=-1)
+
+def display_transparent_mask(image:np.ndarray, rgb:np.ndarray, mask:np.ndarray, color:list):
+    """
+    Display transparent mask on image with color. Returns RGB image with colored
+    and transparent mask.
+
+    Args:
+        image (np.ndarray): 2d gray scale image with image intensity values
+        rgb (np.ndarray): 3d rgb image to insert the colored mask
+        mask (np.ndarray): 0-1 valued binary mask image
+        color (list): 3 element list of uint8 colored values
+
+    Returns:
+        3d rgb image with colored mask
+    """
+    # Validate
+    if image.shape != mask.shape:
+        raise ValueError(f"image and mask must have same width and height. {image.shape} does not match {mask.shape}")
+    if np.amax(mask) > 1 or np.amin(mask) < 0 or len(np.unique(mask)) > 2:
+        breakpoint()
+        raise ValueError(f"Mask must be binary valued on 0-1")
+    if image.dtype != np.uint8:
+        raise TypeError(f"Image must be 8bit image")
+    if not isinstance(color, Iterable):
+        raise TypeError(f"Invalid `color` type: {type(color)}. Color must be Iterable type.")
+    if len(color) !=3:
+        raise ValueError(f"Invalid `color`: {color}. `color` must be a 3 element rgb triplet")
+    for ele in color:
+        assert ele>=0 and ele<=255 and isinstance(ele, int)
+    # Compute 0-1 normalized intensity mask and multiply by color value to get rgb mask
+    normalized_intensity_mask = np.multiply(image.astype(np.float32)/255,mask.astype(np.float32))
+    rgb_mask = (cv2.cvtColor(normalized_intensity_mask, cv2.COLOR_GRAY2RGB)*color).astype(np.uint8)
+    # insert rgb mask into rgb image where mask exists
+    rgb = np.copy(rgb)
+    rgb[np.where(mask)] = rgb_mask[np.where(mask)]
+
+    return rgb    
     
 def interpolate_vertical(drawn_pixels:list):
     pixel_arr = np.array(drawn_pixels)

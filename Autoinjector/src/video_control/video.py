@@ -326,6 +326,46 @@ class VideoDisplay(QWidget):
         """
         self.canvas.painter.interpolated_edge = []
 
+    def show_tissue_mask(self, bool_:bool):
+        """
+        Tells `Painter` whether to show tissue mask
+
+        Args:
+            bool_ (bool): Whether to show annotation
+        """
+        self.canvas.painter.show_tissue_mask(bool_)
+
+    def show_edge_mask(self, bool_:bool):
+        """
+        Tells `Painter` whether to show tissue mask
+
+        Args:
+            bool_ (bool): Whether to show annotation
+        """
+        self.canvas.painter.show_edge_mask(bool_)
+
+    def set_masks(self, tissue_mask:np.ndarray=None, apical_mask:np.ndarray=None, basal_mask:np.ndarray=None):
+        """
+        Sets the `Painter`'s masks for display.
+
+        Args:
+            tissue_mask (np.ndarray): 0-1 binary mask of tissue to display
+            apical_mask (np.ndarray): 0-1 binary mask of apical edge to display
+            basal_mask (np.ndarray): 0-1 binary mask of basal edge to display
+        """
+        self.canvas.painter.tissue_mask = cv2.resize(tissue_mask.astype(np.uint8), (self.width, self.height), cv2.INTER_AREA)
+        self.canvas.painter.apical_mask = cv2.resize(apical_mask.astype(np.uint8), (self.width, self.height), cv2.INTER_AREA)
+        self.canvas.painter.basal_mask = cv2.resize(basal_mask.astype(np.uint8), (self.width, self.height), cv2.INTER_AREA)
+
+    def reset_masks(self):
+        """
+        Resets `Painter`'s masks to null.
+        """
+        self.canvas.painter.tissue_mask = None
+        self.canvas.painter.apical_mask = None
+        self.canvas.painter.basal_mask = None
+
+
     def convert_canvas_to_camera(self, canvas_pixel:list)-> list:
         """
         Convert canvas pixels to camera pixels because they can be different sizes
@@ -483,11 +523,12 @@ class Canvas(QLabel):
         """
         # Convert image to rgb and resize to canvas dimensison
         rgb = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-        resized = cv2.resize(src=rgb, dsize=(self.width, self.height), interpolation = cv2.INTER_AREA)
+        resized_img = cv2.resize(src=image, dsize=(self.width, self.height), interpolation = cv2.INTER_AREA)
+        resized_rgb = cv2.resize(src=rgb, dsize=(self.width, self.height), interpolation = cv2.INTER_AREA)
         # Draw on the image to show annotations
-        resized = self.painter.paint_image(resized)
+        resized_rgb = self.painter.paint_image(resized_img, resized_rgb)
         # Convert to pixmap and set canvas's pixmap
-        canvas_img = QImage(resized, self.width, self.height, self.width*3, QImage.Format.Format_RGB888)
+        canvas_img = QImage(resized_rgb, self.width, self.height, self.width*3, QImage.Format.Format_RGB888)
         pixmap = QPixmap.fromImage(canvas_img)
         self.setPixmap(pixmap)
 
@@ -502,11 +543,16 @@ class Painter():
         self._show_clicked_points_bool = True
         self._show_drawn_edge_bool = True
         self._show_interpolated_edge_bool = False
+        self._show_segmented_tissue_bool = False
+        self._show_segmented_edges_bool = False
         self.calibration_points = []
         self.calibrated_tip_points = []
         self.clicked_points = []
         self.drawn_edge = []
         self.interpolated_edge = []
+        self.tissue_mask = None
+        self.apical_mask = None
+        self.basal_mask = None
         self.set_colors()
 
     def set_colors(self):
@@ -515,6 +561,9 @@ class Painter():
         self.RED = [255, 0, 0]
         self.GREEN = [0, 255, 0]
         self.BLUE = [0, 0, 255]
+        self.TISSUE = [255, 170, 187]
+        self.APICAL = [153, 221, 255]
+        self.BASAL = [238, 221, 136]
 
     def show_calibration_points(self, bool_:bool):
         """
@@ -561,22 +610,43 @@ class Painter():
         """
         self._show_interpolated_edge_bool = bool_
 
-    def paint_image(self,image:np.ndarray)->np.ndarray:
+    def show_tissue_mask(self, bool_:bool):
+        """
+        Sets boolean indicator to show tissue mask annotation
+
+        Args:
+            bool_: Whether to show tissue mask annotation
+        """
+        self._show_segmented_tissue_bool = bool_
+
+    def show_edge_mask(self, bool_:bool):
+        """
+        Sets boolean indicator to show edge mask annotation
+
+        Args:
+            bool_: Whether to show edge mask annotation
+        """
+        self._show_segmented_edges_bool = bool_
+
+    def paint_image(self,image: np.ndarray, image_rgb:np.ndarray)->np.ndarray:
         """
         Modifies image with annotations.
 
         Args:
-            image (np.ndarray): Image to modify
+            image (np.ndarray): 2d grayscale image for drawing masks
+            image_rgb (np.ndarray): rgb image to modify and display
 
         Returns
             np.ndarray of modified image
         """
-        image = self.draw_calibration_points(image)
-        image = self.draw_calibrated_tip_points(image)
-        image = self.draw_clicked_points(image)
-        image = self.draw_drawn_edge(image)
-        image = self.draw_interpolated_edge(image)
-        return image
+        image_rgb = self.draw_tissue_mask(image, image_rgb)
+        image_rgb = self.draw_edge_mask(image, image_rgb)
+        image_rgb = self.draw_calibration_points(image_rgb)
+        image_rgb = self.draw_calibrated_tip_points(image_rgb)
+        image_rgb = self.draw_clicked_points(image_rgb)
+        image_rgb = self.draw_drawn_edge(image_rgb)
+        image_rgb = self.draw_interpolated_edge(image_rgb)
+        return image_rgb
 
     def draw_calibration_points(self, image:np.ndarray)->np.ndarray:
         """
@@ -689,6 +759,42 @@ class Painter():
                         thickness = 1
                     )
         return image
+
+    def draw_tissue_mask(self, image:np.ndarray, rgb:np.ndarray)->np.ndarray:
+        """
+        Modifies image by displaying transparent mask of tissue
+
+        Args:
+            image (np.ndarray): 2d grayscale image instensity scaling colored mask
+            irgb (np.ndarray): rgb image to modify and display
+
+        Returns
+            np.ndarray of modified image
+        """
+        if self._show_segmented_tissue_bool is True:
+            if self.tissue_mask is not None:
+                rgb = utils.display_transparent_mask(image, rgb, self.tissue_mask, self.TISSUE)
+
+        return rgb
+
+    def draw_edge_mask(self, image:np.ndarray, rgb:np.ndarray)->np.ndarray:
+        """
+        Modifies image by displaying transparent mask of edge
+
+        Args:
+            image (np.ndarray): 2d grayscale image instensity scaling colored mask
+            irgb (np.ndarray): rgb image to modify and display
+
+        Returns
+            np.ndarray of modified image
+        """
+        if self._show_segmented_edges_bool is True:
+            if self.apical_mask is not None:
+                rgb = utils.display_transparent_mask(image, rgb, self.apical_mask, self.APICAL)
+            if self.basal_mask is not None:
+                rgb = utils.display_transparent_mask(image, rgb, self.basal_mask, self.BASAL)
+
+        return rgb
 
 if __name__ == "__main__":
     mm_path = os.path.join('C:', os.path.sep, 'Program Files','Micro-Manager-2.0')

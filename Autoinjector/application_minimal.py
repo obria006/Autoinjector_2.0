@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
 from PyQt6.QtGui import QIcon, QPalette, QColor
 import pandas as pd
-from src.video_control.video_utils import interpolate_vertical, AnnotationError
+from src.video_control.video_utils import interpolate, AnnotationError
 from src.video_control.video import MMCamera, VideoDisplay
 from src.motorcontrol.motorlocationThread import motorpositionThread
 from src.pythonarduino.injectioncontrolmod import injection
@@ -1323,7 +1323,7 @@ class ControlWindow(QMainWindow):
         if self.left_stacked_layout.currentWidget() == self.annotation_mode_left_page:
             # Try to interpolate the drawn edge coordinates
             try:
-                self.interpolated_pixels = interpolate_vertical(drawn_pixels)
+                self.interpolated_pixels = interpolate(drawn_pixels)
                 self.vid_display.set_interpolated_annotation(self.interpolated_pixels)
                 self._annotation_complete.emit(True)
             except AnnotationError as e:

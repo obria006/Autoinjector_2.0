@@ -106,7 +106,38 @@ def display_transparent_mask(image:np.ndarray, rgb:np.ndarray, mask:np.ndarray, 
     rgb = np.copy(rgb)
     rgb[np.where(mask)] = rgb_mask[np.where(mask)]
 
-    return rgb    
+    return rgb
+
+def interpolate(drawn_pixels):
+    pixel_arr = np.array(drawn_pixels)
+    n = len(pixel_arr)
+    tvals = np.arange(len(pixel_arr)).reshape(-1,1) / (len(pixel_arr)-1)
+    xvals = pixel_arr[:,0]
+    yvals = pixel_arr[:,1]
+    
+    # Fit splines for data
+    unispl_x = UnivariateSpline(tvals, xvals, s=5*n)
+    unispl_y = UnivariateSpline(tvals, yvals, s=5*n)
+
+    # Approximate total pixel distance of annotation using inf norm
+    # This should over estimate the total number of pixels in a contiguous annotation
+    dist = 0
+    for ind, pix in enumerate(pixel_arr):
+        if ind == 0:
+            continue
+        dist += np.linalg.norm(pix - pixel_arr[ind-1], ord=np.inf)
+    # Generate datapoints from the total distance to make contigous pline
+    tnew = np.linspace(0,1,int(dist))
+    xnew = (unispl_x(tnew)).astype(int).reshape(-1,1)
+    ynew = (unispl_y(tnew)).astype(int).reshape(-1,1)
+    interpolated = np.concatenate([xnew,ynew],axis=1)
+    # Remove duplicate values in interpolated
+    sequential_differences = np.diff(interpolated, axis=0).astype(np.bool)
+    is_sequentially_different = np.any(sequential_differences,axis=1)
+    non_duplicate_indices = np.insert(is_sequentially_different,0,True)
+    interpolated = interpolated[non_duplicate_indices]
+
+    return interpolated
     
 def interpolate_vertical(drawn_pixels:list):
     pixel_arr = np.array(drawn_pixels)

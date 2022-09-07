@@ -353,9 +353,12 @@ class VideoDisplay(QWidget):
             apical_mask (np.ndarray): 0-1 binary mask of apical edge to display
             basal_mask (np.ndarray): 0-1 binary mask of basal edge to display
         """
-        self.canvas.painter.tissue_mask = cv2.resize(tissue_mask.astype(np.uint8), (self.width, self.height), cv2.INTER_AREA)
-        self.canvas.painter.apical_mask = cv2.resize(apical_mask.astype(np.uint8), (self.width, self.height), cv2.INTER_AREA)
-        self.canvas.painter.basal_mask = cv2.resize(basal_mask.astype(np.uint8), (self.width, self.height), cv2.INTER_AREA)
+        if tissue_mask is not None:
+            self.canvas.painter.tissue_mask = cv2.resize(tissue_mask.astype(np.uint8), (self.width, self.height), cv2.INTER_AREA)
+        if apical_mask is not None:    
+            self.canvas.painter.apical_mask = cv2.resize(apical_mask.astype(np.uint8), (self.width, self.height), cv2.INTER_AREA)
+        if basal_mask is not None:
+            self.canvas.painter.basal_mask = cv2.resize(basal_mask.astype(np.uint8), (self.width, self.height), cv2.INTER_AREA)
 
     def reset_masks(self):
         """

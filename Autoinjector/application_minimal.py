@@ -1209,15 +1209,33 @@ class ControlWindow(QMainWindow):
                 # image = np.copy(self.vid_display.test_img)
                 detection_dict = self.tissue_model.detect(image, edge_type)
                 df = detection_dict['detection_data']
-                edge_pixels = detection_dict['edge_coordinates']
-                self.handle_drawn_edge(edge_pixels)
                 tissue_mask = detection_dict['segmentation_image']>0
+                apical_labels = df.loc[df['semantic']=='apical','edge'].to_numpy()
+                apical_mask=None
+                basal_labels = df.loc[df['semantic']=='basal','edge'].to_numpy()
+                basal_mask=None
                 kernel = cv2.getStructuringElement(shape=cv2.MORPH_RECT, ksize=(11, 11))
-                apical_mask = cv2.dilate((detection_dict['edge_image'] == 1).astype(np.uint8),kernel)
-                basal_mask = cv2.dilate((detection_dict['edge_image'] == 2).astype(np.uint8), kernel)
+                for ind, label in enumerate(apical_labels):
+                    if ind == 0:
+                        apical_mask = detection_dict['edge_image'] == label
+                    else:
+                        apical_mask = np.bitwise_or(apical_mask, detection_dict['edge_image'] == label)
+                if apical_mask is not None:
+                    apical_mask = cv2.dilate(apical_mask.astype(np.uint8),kernel)
+                for ind, label in enumerate(basal_labels):
+                    if ind == 0:
+                        basal_mask = detection_dict['edge_image'] == label
+                    else:
+                        basal_mask = np.bitwise_or(basal_mask, detection_dict['edge_image'] == label)
+                if basal_mask is not None:
+                    basal_mask = cv2.dilate(basal_mask.astype(np.uint8), kernel)
                 self.vid_display.set_masks(tissue_mask=tissue_mask, apical_mask=apical_mask, basal_mask=basal_mask)
+
+                edge_pixels = detection_dict['edge_coordinates']
+                if edge_pixels is None:
+                    raise EdgeNotFoundError(f"Edge not found: {edge_type}.")
                 # self.interpolated_pixels = edge_pixels
-                # self.vid_display.set_interpolated_annotation(self.interpolated_pixels)
+                self.handle_drawn_edge(edge_pixels)
             except EdgeNotFoundError as e:
                 msg = f"{e}\n\nManually annotate the edge."
                 self.show_warning_box(msg)

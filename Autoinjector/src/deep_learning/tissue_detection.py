@@ -7,6 +7,8 @@ import tifffile
 from matplotlib import pyplot as plt
 from PyQt6.QtCore import QObject
 from src.deep_learning.edge_utils.error_utils import EdgeNotFoundError
+from src.miscellaneous.standard_logger import StandardLogger
+from src.deep_learning.edge_utils.general import sort_path_along_binary_trajectory
 from src.deep_learning.predict import Predicter
 from src.deep_learning.inference import TissueEdgeClassifier, SegmenterWrapper
 
@@ -19,6 +21,7 @@ class ModelTissueDetection():
         Args:
             model_ckpt (str): Path to file containing model weights
         """
+        self._logger = StandardLogger(__name__)
         if not os.path.exists(model_ckpt):
             raise OSError(f"Invalid segmenter model directory: {model_ckpt}")
         segmenter = SegmenterWrapper(Predicter.from_ckpt(model_ckpt), in_size=(128, 128))
@@ -64,17 +67,21 @@ class ModelTissueDetection():
         # Validate that desired edge was detected
         existing_edges = np.unique(edge_df['semantic'].to_numpy())
         if edge_type not in existing_edges:
-            raise EdgeNotFoundError(f"Edge not found: {edge_type}. Detected edges include: {existing_edges.tolist()}")
+            return None
         # Get the longest edge label
         desired_edge_df = edge_df[edge_df['semantic']==edge_type]
         largest_edge_size = np.amax(desired_edge_df['size'].to_numpy())
         ind = desired_edge_df.index[desired_edge_df['size']==largest_edge_size].tolist()[0]
         desired_edge_label = desired_edge_df.loc[ind,'edge']
         # Get coordinates of edge from connected component edge image
-        # FIXME - convert to path of coordiantes that follows one after another vs left-to-right
-        edge_coords = np.transpose(np.where(edge_cc==desired_edge_label)) # first column is row index and second column i
-        # Convert from [rows (y), columns (x)] to [x, y] array
-        edge_coords[:,[0,1]] = edge_coords[:,[1,0]]
+        try:
+            # edge_coords = np.transpose(np.where(edge_cc==desired_edge_label)) # first column is row index and second column i
+            edge_coords = np.asarray(sort_path_along_binary_trajectory(edge_cc==desired_edge_label))
+            # Convert from [rows (y), columns (x)] to [x, y] array
+            edge_coords[:,[0,1]] = edge_coords[:,[1,0]]
+        except Exception as e:
+            self._logger.exception("Error while sorting detected edges.")
+            edge_coords = None
 
         return edge_coords
 

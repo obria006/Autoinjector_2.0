@@ -89,7 +89,6 @@ def display_transparent_mask(image:np.ndarray, rgb:np.ndarray, mask:np.ndarray, 
     if image.shape != mask.shape:
         raise ValueError(f"image and mask must have same width and height. {image.shape} does not match {mask.shape}")
     if np.amax(mask) > 1 or np.amin(mask) < 0 or len(np.unique(mask)) > 2:
-        breakpoint()
         raise ValueError(f"Mask must be binary valued on 0-1")
     if image.dtype != np.uint8:
         raise TypeError(f"Image must be 8bit image")

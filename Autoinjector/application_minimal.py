@@ -547,8 +547,6 @@ class ControlWindow(QMainWindow):
         self.depth_entry= QLineEdit(self)
         self.spacing_entry = QLineEdit(self)
         self.speed_entry = QLineEdit(self)
-        self.run_button = QPushButton("Run Trajectory")
-        self.stop_button = QPushButton("Stop Process")
         self.pressure_slider = QSlider(Qt.Orientation.Horizontal)
         self.pressure_slider = QSlider(Qt.Orientation.Horizontal)
         self.pressure_slider.setMinimum(10)
@@ -582,8 +580,6 @@ class ControlWindow(QMainWindow):
         v_layout3.addLayout(h_layout5)
         v_layout4 = QVBoxLayout()
         v_layout4.addWidget(self.set_values_button)
-        v_layout4.addWidget(self.run_button)
-        v_layout4.addWidget(self.stop_button)
         v_layout3.addLayout(v_layout4)
         inj_param_layout = QVBoxLayout()
         inj_param_layout.addLayout(h_layout1)
@@ -596,8 +592,6 @@ class ControlWindow(QMainWindow):
 
     def set_inject_parameter_connections(self):
         """ Sets signal/slot connections for injection parameter widgets """
-        self.run_button.clicked.connect(self.run_3D_trajectory)
-        self.stop_button.clicked.connect(self.stoptrajectory)
         self.pressure_slider.valueChanged.connect(self.valuechange)
         self.set_values_button.clicked.connect(self.setautomatedparameters)
     
@@ -614,7 +608,7 @@ class ControlWindow(QMainWindow):
     Initialize injection workflow widgets ---------------------------------------------------------
     """
     def make_workflow_widgets(self):
-        ''' Creates widgets for showing status of injection workflow and specifies layout '''
+        ''' Creates widgets for showing status of injection workflow and specifies layout '''       
         angle = QLabel('Set pipette angle')
         self.angle_indicator = QLabel()
         calibration = QLabel('Conduct manipulator calibration')
@@ -623,13 +617,23 @@ class ControlWindow(QMainWindow):
         self.annotation_indicator = QLabel()
         parameter = QLabel('Set injection parameters')
         self.parameter_indicator = QLabel()
+        hline = QHLine()
+        self.run_button = QPushButton("Run Trajectory")
+        self.stop_button = QPushButton("Stop Process")
+        layout = QVBoxLayout()
         form = QFormLayout()
         form.addRow(self.angle_indicator,angle)
         form.addRow(self.calibration_indicator,calibration)
         form.addRow(self.annotation_indicator,annotation)
         form.addRow(self.parameter_indicator,parameter)
-        self.workflow_group = QGroupBox('Pre-injection Workflow')
-        self.workflow_group.setLayout(form)
+        vl = QVBoxLayout()
+        vl.addWidget(hline)
+        vl.addWidget(self.run_button)
+        vl.addWidget(self.stop_button)
+        layout.addLayout(form)
+        layout.addLayout(vl)
+        self.workflow_group = QGroupBox('Injection Workflow')
+        self.workflow_group.setLayout(layout)
         # Set all indicators to be incomplete (red) on initialization
         self._set_incomplete(self.angle_indicator)
         self._set_incomplete(self.calibration_indicator)
@@ -638,6 +642,8 @@ class ControlWindow(QMainWindow):
 
     def set_workflow_connections(self):
         """ Sets signal/slot connections for workflow widgets """
+        self.run_button.clicked.connect(self.run_3D_trajectory)
+        self.stop_button.clicked.connect(self.stoptrajectory)
         self._angle_complete.connect(self._set_angle_ind)
         self._calibration_complete.connect(self._set_calibration_ind)
         self._annotation_complete.connect(self._set_annotation_ind)
@@ -689,7 +695,6 @@ class ControlWindow(QMainWindow):
         default_left_layout.addWidget(self.default_annotation_group)
         default_left_layout.addWidget(self.display_modification_group)
         default_left_layout.addWidget(self.data_gen_group)
-        default_left_layout.addWidget(self.workflow_group)
         default_left_layout.addStretch()
         self.default_left_page.setLayout(default_left_layout)
     
@@ -699,6 +704,7 @@ class ControlWindow(QMainWindow):
         default_right_layout = QVBoxLayout()
         default_right_layout.addWidget(self.full_zen_app.zen_group)
         default_right_layout.addWidget(self.inj_parameter_group)
+        default_right_layout.addWidget(self.workflow_group)
         default_right_layout.addStretch()
         self.default_right_page.setLayout(default_right_layout)
 

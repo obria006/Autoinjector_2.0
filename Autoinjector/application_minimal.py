@@ -344,18 +344,37 @@ class ControlWindow(QMainWindow):
     """
     def make_data_generator_widgets(self):
         ''' Creates widgets for data generation and specifies layout '''
-        self.save_tip_annot = QCheckBox("Save tip annotation")
-        self.save_tiss_annot = QCheckBox("Save tissue annotation")
-        data_gen_layout = QVBoxLayout()
-        data_gen_layout.addWidget(self.save_tip_annot)
-        data_gen_layout.addWidget(self.save_tiss_annot)
+        save_tip_annot_label = QLabel('Save tip:')
+        self.save_tip_annot_rbon = QRadioButton("On")
+        rboff1 = QRadioButton("Off")
+        save_tissue_annot_label = QLabel('Save tissue:')
+        self.save_tiss_annot_rbon = QRadioButton("On")
+        rboff2 = QRadioButton("Off")
+        bg1 = QButtonGroup(self)
+        bg1.addButton(self.save_tip_annot_rbon)
+        bg1.addButton(rboff1)
+        bg2 = QButtonGroup(self)
+        bg2.addButton(self.save_tiss_annot_rbon)
+        bg2.addButton(rboff2)
+        rboff1.setChecked(True)
+        rboff2.setChecked(True)
+        hl1 = QHBoxLayout()
+        hl1.addWidget(self.save_tip_annot_rbon)
+        hl1.addWidget(rboff1)
+        hl2 = QHBoxLayout()
+        hl2.addWidget(self.save_tiss_annot_rbon)
+        hl2.addWidget(rboff2)
+        form = QFormLayout()
+        form.addRow(save_tip_annot_label, hl1)
+        form.addRow(save_tissue_annot_label, hl2)
+
         self.data_gen_group = QGroupBox('GUI Data Acquisition')
-        self.data_gen_group.setLayout(data_gen_layout)
+        self.data_gen_group.setLayout(form)
 
     def stateify_data_generator_widgets(self):
         ''' Set initial states for data generator widgets '''
-        self.save_tip_annot.setChecked(True)
-        self.save_tiss_annot.setChecked(False)
+        self.save_tip_annot_rbon.setChecked(True)
+        self.save_tiss_annot_rbon.setChecked(False)
 
 
     """
@@ -765,7 +784,7 @@ class ControlWindow(QMainWindow):
         '''
         Queries whether checkbox selected to save tip data, and saves data if checked
         '''
-        if self.save_tip_annot.isChecked():
+        if self.save_tip_annot_rbon.isChecked():
             tip_dict = {'x':tip_position.x(), 'y':tip_position.y()}
             self.save_pip_cal_data(tip_dict)
 
@@ -773,7 +792,7 @@ class ControlWindow(QMainWindow):
         '''
         Queries whether checkbox selected to save tissue data, and saves data if checked
         '''
-        if self.save_tiss_annot.isChecked():
+        if self.save_tiss_annot_rbon.isChecked():
             raw = np.asarray(raw_edge_coord)
             inter = np.asarray(inter_edge_coord)
             self.save_tiss_anot_data(raw_annot=raw, interpolate_annot=inter)
@@ -966,7 +985,7 @@ class ControlWindow(QMainWindow):
             man_pos = dev.get_pos()
             self.pip_cal.data.add_cal_position(ex=ex_pos, man=man_pos)
             self.cal_pos_added.emit()
-            if self.save_tip_annot.isChecked():
+            if self.save_tip_annot_rbon.isChecked():
                 tip_dict = {'x':x_click, 'y':y_click}
                 self.save_pip_cal_data(tip_dict)
         if self.update_calibration_but.isChecked():
@@ -1357,7 +1376,7 @@ class ControlWindow(QMainWindow):
                 self.show_exception_box(msg)
                 self._annotation_complete.emit(False)
             else:
-                if self.save_tiss_annot.isChecked():
+                if self.save_tiss_annot_rbon.isChecked():
                     raw = np.asarray(drawn_pixels)
                     inter = np.asarray(self.interpolated_pixels)
                     self.save_tiss_anot_data(raw_annot=raw, interpolate_annot=inter)

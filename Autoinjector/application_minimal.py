@@ -18,7 +18,7 @@ from src.video_control.video import MMCamera, VideoDisplay
 from src.motorcontrol.motorlocationThread import motorpositionThread
 from src.pythonarduino.injectioncontrolmod import injection
 from src.cfg_mgmt.cfg_mngr import CfgManager
-from src.Qt_utils.gui_objects import QHLine
+from src.GUI_utils.gui_objects import QHLine
 from src.miscellaneous.standard_logger import StandardLogger as logr
 from src.miscellaneous import validify as val
 from src.data_generation.data_generators import PipTipData, TissueEdgeData

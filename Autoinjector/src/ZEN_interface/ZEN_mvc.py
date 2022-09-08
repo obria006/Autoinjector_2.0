@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (QApplication,
                             QComboBox,
                             QLineEdit,)
 from PyQt6.QtGui import QPalette, QColor
-from src.Qt_utils.gui_objects import QHLine
+from src.GUI_utils.gui_objects import QHLine
 from src.miscellaneous.standard_logger import StandardLogger
 from src.miscellaneous import validify as val
 

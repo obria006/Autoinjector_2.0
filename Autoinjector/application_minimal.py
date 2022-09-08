@@ -261,7 +261,7 @@ class ControlWindow(QMainWindow):
         self.master_layout.addLayout(self.bottom_layout,1,0,1,3)
 
         # Set main window details
-        self.setWindowTitle('Autoinjector')
+        self.setWindowTitle('Autoinjector 2.0')
         self._central_widget.setLayout(self.master_layout)
         self.show()
         self.setWindowIcon(QIcon('favicon.png'))
@@ -1225,40 +1225,55 @@ class ControlWindow(QMainWindow):
     Functions to control the annotation of injection targets on the GUI display.
     ============================================================================================
     """
+
+    def make_edge_mask(self, edge_df:pd.DataFrame, edge_cc:np.ndarray, edge_type:str):
+        """
+        Create binary mask image of desired edge.
+
+        Args:
+            edge_df (pd.DataFrame): Dataframe containing edge numerical label
+                and semantic labels.
+            edge_cc (np.ndarray): Connected component labeled edge image.
+            edge_type (str): type of mask to create like ['apical', 'basal']
+        
+        Returns:
+            np.ndarray of binary edge mask
+        """
+        # Validate proper edge type
+        if edge_type not in ['apical', 'basal']:
+            raise ValueError(f"`edge_type` must be in ['apical','basal']")
+        # Extract the numerical edge labels associated with desired semantic edge type
+        edge_num_labels = edge_df.loc[edge_df['semantic']==edge_type,'edge'].to_numpy()
+        # Boolean binary mask of edges matching the numerical (therefore semantic) label
+        bin_mask = np.zeros(edge_cc.shape, dtype=np.uint8)
+        for ind, label in enumerate(edge_num_labels):
+            bin_mask = np.bitwise_or(bin_mask, edge_cc == label)
+        # Dilate the single pixel width edge for increased visibility
+        kernel = cv2.getStructuringElement(shape=cv2.MORPH_RECT, ksize=(11, 11))
+        bin_mask = cv2.dilate(bin_mask, kernel)
+        
+        return bin_mask
+
     def automatic_tissue_annotation(self):
         annot_mode = self.annotation_combo_box.currentText()
         edge_type = self.edge_type_combo_box.currentText().lower()
         if annot_mode == "Automatic":
             try:
-                image = np.copy(self.vid_display.frame)
-                # image = np.copy(self.vid_display.test_img)
+                # Make detection of tissue edge
                 detection_dict = self.tissue_model.detect(image, edge_type)
+                # Extract detection data
                 df = detection_dict['detection_data']
-                tissue_mask = detection_dict['segmentation_image']>0
-                apical_labels = df.loc[df['semantic']=='apical','edge'].to_numpy()
-                apical_mask=None
-                basal_labels = df.loc[df['semantic']=='basal','edge'].to_numpy()
-                basal_mask=None
-                kernel = cv2.getStructuringElement(shape=cv2.MORPH_RECT, ksize=(11, 11))
-                for ind, label in enumerate(apical_labels):
-                    if ind == 0:
-                        apical_mask = detection_dict['edge_image'] == label
-                    else:
-                        apical_mask = np.bitwise_or(apical_mask, detection_dict['edge_image'] == label)
-                if apical_mask is not None:
-                    apical_mask = cv2.dilate(apical_mask.astype(np.uint8),kernel)
-                for ind, label in enumerate(basal_labels):
-                    if ind == 0:
-                        basal_mask = detection_dict['edge_image'] == label
-                    else:
-                        basal_mask = np.bitwise_or(basal_mask, detection_dict['edge_image'] == label)
-                if basal_mask is not None:
-                    basal_mask = cv2.dilate(basal_mask.astype(np.uint8), kernel)
-                self.vid_display.set_masks(tissue_mask=tissue_mask, apical_mask=apical_mask, basal_mask=basal_mask)
-
+                edge_cc = detection_dict['edge_image']
                 edge_pixels = detection_dict['edge_coordinates']
+                # Construct binary masks of tissue/edge detection for display
+                tissue_mask = detection_dict['segmentation_image']>0
+                basal_mask = self.make_edge_mask(edge_df=df, edge_cc=edge_cc, edge_type='basal')
+                apical_mask = self.make_edge_mask(edge_df=df, edge_cc=edge_cc, edge_type='apical')
+                self.vid_display.set_masks(tissue_mask=tissue_mask, apical_mask=apical_mask, basal_mask=basal_mask)
+                # Raise error if no edge for desired edge is found
                 if edge_pixels is None:
                     raise EdgeNotFoundError(f"Edge not found: {edge_type}.")
+                # Set the anntoation for injection
                 # self.interpolated_pixels = edge_pixels
                 self.handle_drawn_edge(edge_pixels)
             except EdgeNotFoundError as e:

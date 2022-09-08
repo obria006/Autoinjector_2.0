@@ -19,6 +19,7 @@ from src.motorcontrol.motorlocationThread import motorpositionThread
 from src.pythonarduino.injectioncontrolmod import injection
 from src.cfg_mgmt.cfg_mngr import CfgManager
 from src.GUI_utils.gui_objects import QHLine
+import src.GUI_utils.display_modifier_mvc as disp_mod_mvc
 from src.miscellaneous.standard_logger import StandardLogger as logr
 from src.miscellaneous import validify as val
 from src.data_generation.data_generators import PipTipData, TissueEdgeData
@@ -134,10 +135,7 @@ class ControlWindow(QMainWindow):
 
         # Instantiate imported widgets
         self.vid_display = VideoDisplay(self.cam_MM, height=900, fps=50)
-        zen_model = ModelZEN()
-        self.zen_controller = ControllerZEN(zen_model)
-        self.full_zen_app = ViewZENComplete(self.zen_controller)
-        self.focus_zen_app = ViewZENFocus(self.zen_controller)
+        self.instantiate_mvcs()
 
         # Create main gui widgets
         self.make_widgets()
@@ -186,6 +184,17 @@ class ControlWindow(QMainWindow):
         if os.path.isdir(self.cal_arr_dir) is False:
             os.makedirs(self.cal_arr_dir)
             self.logger.info(f'Created calibration array directory: {self.cal_arr_dir}')
+
+    def instantiate_mvcs(self):
+        """ Instantiate imported model view controllers """
+        # Zeiss zen controller
+        zen_model = ModelZEN()
+        self.zen_controller = ControllerZEN(zen_model)
+        self.full_zen_app = ViewZENComplete(self.zen_controller)
+        self.focus_zen_app = ViewZENFocus(self.zen_controller)
+        # Display modification mvc
+        self.disp_mod_controller = disp_mod_mvc.Controller()
+        self.disp_mod_view = disp_mod_mvc.View(self.disp_mod_controller)
 
     def make_widgets(self):
         """ Create the GUI's widgets """
@@ -411,6 +420,7 @@ class ControlWindow(QMainWindow):
         default_layout.addLayout(form1)
         default_layout.addWidget(self.annotation_button)
         self.default_annotation_group.setLayout(default_layout)
+        # Specify alt annotation layout and group
         alt_layout = QVBoxLayout()
         form2 = QFormLayout()
         form2.addRow(mode_label2, self.annotation_mode_display)
@@ -443,7 +453,7 @@ class ControlWindow(QMainWindow):
     """
     def make_display_modification_widgets(self):
         """ Make widgets to modify the video display and specifies widget layout """
-        layout = QVBoxLayout()
+        # Make default widgets
         exposure_label = QLabel("Camera Exposure")
         self.exposure_slider = QSlider(Qt.Orientation.Horizontal)
         self.exposure_slider.setMinimum(15)
@@ -451,42 +461,23 @@ class ControlWindow(QMainWindow):
         self.exposure_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         self.exposure_slider.setTickInterval(0)
         display_tip_label = QLabel('Show tip:')
-        self.display_tip_rbon = QRadioButton("On")
-        rboff1 = QRadioButton("Off")
         display_annotation_label = QLabel('Show annotation:')
-        self.display_annotation_rbon = QRadioButton("On")
-        rboff2 = QRadioButton("Off")
         display_segmentation_label = QLabel('Show tissue:')
-        self.display_segmentation_rbon = QRadioButton("On")
-        rboff3 = QRadioButton("Off")
         display_edge_label = QLabel('Show edge:')
-        self.display_edges_rbon = QRadioButton("On")
-        rboff4 = QRadioButton("Off")
-        bg1 = QButtonGroup(self)
-        bg1.addButton(self.display_tip_rbon)
-        bg1.addButton(rboff1)
-        bg2 = QButtonGroup(self)
-        bg2.addButton(self.display_annotation_rbon)
-        bg2.addButton(rboff2)
-        bg3 = QButtonGroup(self)
-        bg3.addButton(self.display_segmentation_rbon)
-        bg3.addButton(rboff3)
-        bg4 = QButtonGroup(self)
-        bg4.addButton(self.display_edges_rbon)
-        bg4.addButton(rboff4)
-
+        # default layout
+        layout = QVBoxLayout()
         hl1 = QHBoxLayout()
-        hl1.addWidget(self.display_tip_rbon)
-        hl1.addWidget(rboff1)
+        hl1.addWidget(self.disp_mod_view.display_calibration_rbon)
+        hl1.addWidget(self.disp_mod_view.display_calibration_rboff)
         hl2 = QHBoxLayout()
-        hl2.addWidget(self.display_annotation_rbon)
-        hl2.addWidget(rboff2)
+        hl2.addWidget(self.disp_mod_view.display_annotation_rbon)
+        hl2.addWidget(self.disp_mod_view.display_annotation_rboff)
         hl3 = QHBoxLayout()
-        hl3.addWidget(self.display_segmentation_rbon)
-        hl3.addWidget(rboff3)
+        hl3.addWidget(self.disp_mod_view.display_segmentation_rbon)
+        hl3.addWidget(self.disp_mod_view.display_segmentation_rboff)
         hl4 = QHBoxLayout()
-        hl4.addWidget(self.display_edges_rbon)
-        hl4.addWidget(rboff4)
+        hl4.addWidget(self.disp_mod_view.display_edges_rbon)
+        hl4.addWidget(self.disp_mod_view.display_edges_rboff)
         form = QFormLayout()
         form.addRow(display_tip_label, hl1)
         form.addRow(display_annotation_label, hl2)
@@ -498,22 +489,22 @@ class ControlWindow(QMainWindow):
         self.display_modification_group = QGroupBox('Display Settings')
         self.display_modification_group.setLayout(layout)
         
+        
     def stateify_display_modification_widgets(self):
         """ Sets initial states for dispaly modification widgets """
+        # Default widget connections
         exposure = int(float(self.cam_MM.get_exposure())*10)
         self.exposure_slider.setValue(exposure)
-        self.display_tip_rbon.setChecked(True)
-        self.display_annotation_rbon.setChecked(True)
-        self.display_segmentation_rbon.setChecked(True)
-        self.display_edges_rbon.setChecked(True)
+        self.disp_mod_view.stateify_widgets()
 
     def set_display_modification_connections(self):
         """ Sets signal slot connections for display modification widgets """
         self.exposure_slider.valueChanged.connect(self.exposure_value_change)
-        self.display_tip_rbon.toggled.connect(self.display_calibration)
-        self.display_annotation_rbon.toggled.connect(self.display_annotation)
-        self.display_segmentation_rbon.toggled.connect(self.display_tissue_mask)
-        self.display_edges_rbon.toggled.connect(self.display_edge_mask)
+        self.disp_mod_controller
+        self.disp_mod_view.display_calibration_rbon.toggled.connect(self.display_calibration)
+        self.disp_mod_view.display_annotation_rbon.toggled.connect(self.display_annotation)
+        self.disp_mod_view.display_segmentation_rbon.toggled.connect(self.display_tissue_mask)
+        self.disp_mod_view.display_edges_rbon.toggled.connect(self.display_edge_mask)
         self.pip_disp_timer = QTimer()
         self.pip_disp_timer.timeout.connect(self.display_calibration)
         self.pip_disp_timeout = 25
@@ -1435,7 +1426,7 @@ class ControlWindow(QMainWindow):
     """
     def display_annotation(self):
         """ Tells video display whether to display annotated coordinates """
-        if self.display_annotation_rbon.isChecked():
+        if self.disp_mod_controller.display_annotation_bool is True:
             self.vid_display.show_interpolated_annotation(True)
         else:
             self.vid_display.show_interpolated_annotation(False)
@@ -1443,7 +1434,7 @@ class ControlWindow(QMainWindow):
     def display_calibration(self):
         ''' Send computed tip positoin (in camera) to video to be displayed.
         Calls itself on timer to update tip position in video'''
-        if self.display_tip_rbon.isChecked():
+        if self.disp_mod_controller.display_calibration_bool is True:
             if self.pip_disp_timer.isActive() is False:
                 self.pip_disp_timer.start(self.pip_disp_timeout)
             if self.pip_cal.model.is_calibrated is True:
@@ -1460,14 +1451,14 @@ class ControlWindow(QMainWindow):
 
     def display_tissue_mask(self):
         """ Tells video display whether to display annotated coordinates """
-        if self.display_segmentation_rbon.isChecked():
+        if self.disp_mod_controller.display_segmentation_bool is True:
             self.vid_display.show_tissue_mask(True)
         else:
             self.vid_display.show_tissue_mask(False)
 
     def display_edge_mask(self):
         """ Tells video display whether to display annotated coordinates """
-        if self.display_edges_rbon.isChecked():
+        if self.disp_mod_controller.display_edges_bool is True:
             self.vid_display.show_edge_mask(True)
         else:
             self.vid_display.show_edge_mask(False)

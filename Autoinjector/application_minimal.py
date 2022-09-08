@@ -46,6 +46,7 @@ class ControlWindow(QMainWindow):
     _calibration_complete = pyqtSignal(bool)
     _annotation_complete = pyqtSignal(bool)
     _parameter_complete = pyqtSignal(bool)
+    leaving_calibration = pyqtSignal()
     cal_pos_added = pyqtSignal()
 
     def __init__(self,cam,brand,val,bins,rot,imagevals,scale,com, parent=None):
@@ -113,6 +114,9 @@ class ControlWindow(QMainWindow):
         creating widgets, laying out the gui, setting widget connections, initializeing
         the widget states, and finally assessing startup errors.
         '''
+        # Initialize attributes
+        self.initialize_attributes()
+
         # Load the configuration values
         self.get_gui_cfg()
 
@@ -151,6 +155,11 @@ class ControlWindow(QMainWindow):
         
         # Assess any erros from startup
         self.assess_startup_errors()
+
+    def initialize_attributes(self):
+        """ Initialize constants and variables used in GUI """
+        self.conducting_calibration = False
+        self.updating_calibration = False
 
     def get_gui_cfg(self):
         ''' Loads the configuration values for the GUI '''
@@ -191,7 +200,8 @@ class ControlWindow(QMainWindow):
         zen_model = ModelZEN()
         self.zen_controller = ControllerZEN(zen_model)
         self.full_zen_app = ViewZENComplete(self.zen_controller)
-        self.focus_zen_app = ViewZENFocus(self.zen_controller)
+        self.focus_zen_app1 = ViewZENFocus(self.zen_controller)
+        self.focus_zen_app2 = ViewZENFocus(self.zen_controller)
         # Display modification mvc
         self.disp_mod_controller = disp_mod_mvc.Controller()
         self.disp_mod_view = disp_mod_mvc.View(self.disp_mod_controller)
@@ -214,6 +224,8 @@ class ControlWindow(QMainWindow):
         self.make_default_right_page_widget()
         self.make_annotation_mode_left_page_widget()
         self.make_annotation_mode_right_page_widget()
+        self.make_calibration_mode_left_page_widget()
+        self.make_calibration_mode_right_page_widget()
 
     def set_connections(self):
         """ Set the signal/slot connections for the GUI's widgets """
@@ -247,8 +259,10 @@ class ControlWindow(QMainWindow):
         # Add the different pages to the stacked layout
         self.left_stacked_layout.addWidget(self.default_left_page)
         self.left_stacked_layout.addWidget(self.annotation_mode_left_page)
+        self.left_stacked_layout.addWidget(self.calibration_mode_left_page)
         self.right_stacked_layout.addWidget(self.default_right_page)
         self.right_stacked_layout.addWidget(self.annotation_mode_right_page)
+        self.right_stacked_layout.addWidget(self.calibration_mode_right_page)
 
         # Define the center layout widgets (places in `center_widget` so aligns with stacked pages)
         center_widget = QWidget()
@@ -305,17 +319,12 @@ class ControlWindow(QMainWindow):
         cal_mode_label = QLabel("Calibration Mode:")
         self.cal_mode_box = QComboBox(parent=self)
         self.cal_mode_box.setPlaceholderText('Mode')
-        new_cal_label = QLabel('New Calibration:')
-        upd_cal_label = QLabel('Update Calibration:')
-        show_cal_label = QLabel('Show Calibration:')
-        self.conduct_calibration_but = QCheckBox("")
-        self.update_calibration_but = QCheckBox("")
+        self.conduct_calibration_but = QPushButton("Conduct Calibration")
+        self.update_calibration_but = QPushButton("Update Calibration")
         self.save_calibration_but = QPushButton("Save Calibration", self)
         self.load_calibration_but = QPushButton("Load Calibration", self)
         form = QFormLayout()
         form.addRow(cal_mode_label,self.cal_mode_box)
-        form.addRow(new_cal_label,self.conduct_calibration_but)
-        form.addRow(upd_cal_label,self.update_calibration_but)
         h_layout2 = QHBoxLayout()
         h_layout2.addWidget(self.save_calibration_but)
         h_layout2.addWidget(self.load_calibration_but)
@@ -325,14 +334,40 @@ class ControlWindow(QMainWindow):
         pip_cal_layout.addLayout(h_layout_angio)
         pip_cal_layout.addWidget(h_sep1)
         pip_cal_layout.addLayout(form)
+        pip_cal_layout.addWidget(self.conduct_calibration_but)
+        pip_cal_layout.addWidget(self.update_calibration_but)
         pip_cal_layout.addLayout(h_layout2)
         self.pip_cal_group = QGroupBox('Pipette Calibration')
         self.pip_cal_group.setLayout(pip_cal_layout)
+
+        # alternate calibration 
+        cal_mode_label2 = QLabel("Calibration Mode:")
+        self.cal_mode_display = QLabel("")
+        cal_type_label = QLabel("Calibration Type:")
+        self.cal_type_display = QLabel("")
+        self.complete_calibration_but = QPushButton("Complete Calibration")
+        self.save_complete_calibration_but = QPushButton("Save and Complete Calibration")
+        self.exit_calibration_but = QPushButton("Exit")
+        h_sep2 = QHLine()
+        self.calibration_guidance = QLabel("")
+        self.calibration_guidance.setWordWrap(True)
+        alt_form = QFormLayout()
+        alt_form.addRow(cal_mode_label2,self.cal_mode_display)
+        alt_form.addRow(cal_type_label,self.cal_type_display)
+        alt_layout = QVBoxLayout()
+        alt_layout.addLayout(alt_form)
+        alt_layout.addWidget(self.complete_calibration_but)
+        alt_layout.addWidget(self.save_complete_calibration_but)
+        alt_layout.addWidget(self.exit_calibration_but)
+        alt_layout.addWidget(h_sep2)
+        alt_layout.addWidget(self.calibration_guidance)
+        self.alt_pip_cal_group = QGroupBox('Pipette Calibration')
+        self.alt_pip_cal_group.setLayout(alt_layout)
     
     def set_pipette_calibrator_connections(self):
         """ Set the signal/slot connections for the pipette calibrator widgets """
-        self.conduct_calibration_but.clicked.connect(self.handle_calibration_button_clicked)
-        self.update_calibration_but.clicked.connect(self.update_calibration)
+        self.conduct_calibration_but.clicked.connect(self.conduct_calibration_pressed)
+        self.update_calibration_but.clicked.connect(self.update_calibration_pressed)
         self.save_calibration_but.clicked.connect(self.save_calibration)
         self.load_calibration_but.clicked.connect(self.load_calibration)
         self.angle_mode_box.currentTextChanged.connect(self.set_angle_mode)
@@ -340,6 +375,10 @@ class ControlWindow(QMainWindow):
         self.set_angle_button.clicked.connect(self.set_pipette_angle)
         self.save_angle_button.clicked.connect(self.save_pipette_angle)
         self.load_angle_button.clicked.connect(self.load_pipette_angle)
+        # Alt connections
+        self.complete_calibration_but.clicked.connect(self.complete_calibration_pressed)
+        self.save_complete_calibration_but.clicked.connect(self.save_complete_calibration_pressed)
+        self.exit_calibration_but.clicked.connect(self.exit_calibration_pressed)
 
     def stateify_pipette_calibrator_widgets(self):
         ''' Set initial states for the pipette calibrator widgets '''
@@ -743,9 +782,25 @@ class ControlWindow(QMainWindow):
         """ Define annotation mode left page for stacked layout """
         self.annotation_mode_right_page = QWidget()
         layout = QVBoxLayout()
-        layout.addWidget(self.focus_zen_app.zen_group)
+        layout.addWidget(self.focus_zen_app1.zen_group)
         layout.addStretch()
         self.annotation_mode_right_page.setLayout(layout)
+    
+    def make_calibration_mode_left_page_widget(self):
+        """ Define calibration mode left page for stacked layout """
+        self.calibration_mode_left_page = QWidget()
+        layout = QVBoxLayout()
+        layout.addWidget(self.alt_pip_cal_group)
+        layout.addStretch()
+        self.calibration_mode_left_page.setLayout(layout)
+
+    def make_calibration_mode_right_page_widget(self):
+        """ Define calibration mode left page for stacked layout """
+        self.calibration_mode_right_page = QWidget()
+        layout = QVBoxLayout()
+        layout.addWidget(self.focus_zen_app2.zen_group)
+        layout.addStretch()
+        self.calibration_mode_right_page.setLayout(layout)
 
 
     """
@@ -1007,7 +1062,7 @@ class ControlWindow(QMainWindow):
     def add_cal_positions(self,pixel):
         ''' Adds clicked calibration positions to calibration data '''
         x_click, y_click = pixel
-        if self.conduct_calibration_but.isChecked():
+        if self.conducting_calibration is True:
             z_scope = self.zen_controller.get_focus_um()
             ex_pos = [x_click, y_click, z_scope]
             dev = SensapexDevice(1)
@@ -1017,7 +1072,8 @@ class ControlWindow(QMainWindow):
             if self.save_tip_annot_rbon.isChecked():
                 tip_dict = {'x':x_click, 'y':y_click}
                 self.save_pip_cal_data(tip_dict)
-        if self.update_calibration_but.isChecked():
+
+        if self.updating_calibration is True:
             self.pip_cal.data.rm_all()
             z_scope = self.zen_controller.get_focus_um()
             ex_pos = [x_click, y_click, z_scope]
@@ -1025,6 +1081,100 @@ class ControlWindow(QMainWindow):
             man_pos = dev.get_pos()
             self.pip_cal.data.add_cal_position(ex=ex_pos, man=man_pos)
             self.cal_pos_added.emit()
+
+    def conduct_calibration_pressed(self):
+        self.conducting_calibration = True
+        # Update display labels
+        cal_mode = self.cal_mode_box.currentText()
+        self.cal_mode_display.setText(cal_mode)
+        self.cal_type_display.setText("New")
+        self.modify_calibration_guidance()
+        # Switch to the calibraiton mode pane
+        self.switch_to_calibration_mode()
+        # Start the calibratino
+        self.start_calibration_process()
+
+    def update_calibration_pressed(self):
+        # Doesn't permit calibrtion if non existent calibration
+        if self.pip_cal.model.is_calibrated is False:
+            msg = "System is not calibrated. Can not update non-existent calibration.\n\nConduct a new calibration or load an exsisting calibration before updating."
+            self.show_warning_box(msg)
+        else:
+            self.updating_calibration = True
+            # Update display labels
+            self.cal_mode_display.setText("NA")
+            self.cal_type_display.setText("Update")
+            self.modify_calibration_guidance()
+            # Switch to the calibraiton mode pane
+            self.switch_to_calibration_mode()
+            
+    def complete_calibration_pressed(self):
+        # Compute the calibration
+        if self.conducting_calibration:
+            self.compute_calibration()
+        elif self.updating_calibration:
+            self.update_calibration()
+        # Switch to the default GUI
+        self.leave_calibration_mode()
+
+    def exit_calibration_pressed(self):
+        # Switch to the default GUI
+        self.leave_calibration_mode()
+
+    def save_complete_calibration_pressed(self):
+        # Compute the calibration
+        if self.conducting_calibration:
+            self.compute_calibration()
+        elif self.updating_calibration:
+            self.update_calibration()
+        # Save the calibration
+        self.save_calibration()
+        # Switch to the default GUI
+        self.leave_calibration_mode()
+
+    def switch_to_calibration_mode(self):
+        self.left_stacked_layout.setCurrentWidget(self.calibration_mode_left_page)
+        self.right_stacked_layout.setCurrentWidget(self.calibration_mode_right_page)
+
+    def leave_calibration_mode(self):
+        self.leaving_calibration.emit()
+        self.conducting_calibration = False
+        self.updating_calibration = False
+        self.switch_to_default_mode()
+
+    def modify_calibration_guidance(self):
+        cal_mode = self.cal_mode_box.currentText()
+        cal_notes = ("Notes:\n"
+            "1. 'Exit' will return to the main screen without computing the calibration")
+        if self.updating_calibration is True:
+            msg = ("Process:\n1. Using the focus knob/widgets or manipulator wheels, bring tip "
+            "into focus\n2. Click on the in-focus tip to register the manipulator position. "
+            "(Multiple clicks will overwrite the last click.)\n3. 'Complete Calibration' or "
+            "'Save and Complete Calibration' to finish and return to the main screen.")
+        else:
+            if cal_mode.lower() == 'manual':
+                msg = ("Process:\n1. Using the focus knob/widgets or manipulator wheels, bring "
+                "tip into focus\n2. Click ONCE on the in-focus tip to register the manipulator "
+                "position. (Do not click multiple times in the same spot.)\n3. Use the "
+                "manipulator wheels to move the tip to a new position in the field-of-view.\n"
+                "4. Repeat step 2-3 until you've registered at least 3 calibration positions. "
+                "(The 3+ positions must not be co-linear.)\n5. 'Complete Calibration' or "
+                "'Save and Complete Calibration' to finish and return to the main screen.")
+            elif cal_mode.lower() == 'semi-auto.':
+                msg = ("Process:\n1. Ensure the field-of-view is free of obstructions. (The "
+                "pipette will automatically move to the edges of the field-of-view.)\n2. Using "
+                "the focus knob/widgets or manipulator wheels, bring tip into focus near center.\n"
+                "2. Click ONCE on the in-focus tip to register the manipulator position. (Do not "
+                "click multiple times in the same spot.)\n3. The pipette will automatically move "
+                "to a new position. Click ONCE on the tip after it stops moving.\n4. Repeat step "
+                "3 as the pipette automatically moves to the four corners before returning to the "
+                "center.\n5. 'Complete Calibration' or 'Save and Complete Calibration' to finish "
+                "and return to the main screen.")
+            elif cal_mode.lower() == 'automatic':
+                msg = ("Prcess:\nNot implimented.")
+        msg = f"{msg}\n\n{cal_notes}"
+        self.calibration_guidance.setText(msg)
+
 
     def conduct_manual_calibration(self):
         ''' Conducts manual calibration process '''
@@ -1041,76 +1191,37 @@ class ControlWindow(QMainWindow):
         _, _, opto_mag = self.zen_controller.get_current_optovar()
         self.cal_trajectory = SemiAutoCalibrationTrajectory(dev=dev, cal=self.pip_cal, img_w=img_width, img_h=img_height, ex_z=z_scope,z_polarity=-1,pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
         self.cal_pos_added.connect(self.cal_trajectory.next_cal_position)
-        self.cal_trajectory.finished.connect(self.conduct_calibration_but.toggle)
-        self.cal_trajectory.finished.connect(self.compute_calibration)
         self.cal_trajectory.finished.connect(self.cal_trajectory.deleteLater)
-        self.conduct_calibration_but.clicked.connect(self.cal_trajectory.deleteLater)
+        self.leaving_calibration.connect(self.cal_trajectory.deleteLater)
 
     def conduct_auto_calibration(self):
         ''' Conducts automatic calibration process '''
-        self.conduct_calibration_but.setChecked(False)
         self.cal_mode_box.setCurrentText('Semi-Auto.')
         msg = "Automatic calibration not yet implimented. Defaulting to 'Semi-Auto.' calibration mode."
         self.show_warning_box(msg)
 
-    def handle_calibration_button_clicked(self):
-        """
-        Handles when the state of the calibration button clicked. When checked, starts
-        doing the calibration process. When unchecked, computes the calibration.
-        """
-        if self.conduct_calibration_but.isChecked() is True:
-            self.start_calibration_process()
-        else:
-            self.compute_calibration()
 
     def start_calibration_process(self):
         """
         Starts the calibration process if proper conditions are met (update calibration 
         must be unchecked and a calibration mode must be selected).
         """
-        # Untoggles calibration button if update calibration is selected
-        if self.update_calibration_but.isChecked():
-            self.conduct_calibration_but.setChecked(False)
-            msg = 'Cannot conduct calibration while updating. Complete update calibration process (and uncheck the box) before conducting a new calibration.'
-            self.show_warning_box(msg)
-            return None
         # Asks user to if conditions valid for calibrating
-        else:
-            try:
-                cal_mode = self.cal_mode_box.currentText()
-                self._ask_to_calibrate(cal_mode=cal_mode)
-            except ValueError as e:
-                msg = str(e)
-                self.show_error_box(msg)
-            except Exception as e:
-                msg = f"Error while calibrating: {str(e)}.\n\nSee logs for more info."
-                self.show_exception_box(msg)
+        try:
+            cal_mode = self.cal_mode_box.currentText()
+            if cal_mode == "Automatic":
+                self.conduct_auto_calibration()
+            elif cal_mode == 'Manual':
+                self.conduct_manual_calibration()
+            elif cal_mode == 'Semi-Auto.':
+                self.conduct_semi_auto_calibration()
+        except ValueError as e:
+            msg = str(e)
+            self.show_error_box(msg)
+        except Exception as e:
+            msg = f"Error while calibrating: {str(e)}.\n\nSee logs for more info."
+            self.show_exception_box(msg)
 
-    def _ask_to_calibrate(self, cal_mode:str):
-        """ Ask user if conditions for calibration are set before calibrating """
-        # Validate calibration mode
-        if cal_mode not in ["Automatic", "Manual", "Semi-Auto."]:
-            raise ValueError(f'Invalid calibration mode: {cal_mode}.\n\nSelect valid calibration mode before calibrating.')
-
-        # Query user for correct calibraiton positions
-        if cal_mode == 'Manual':
-            qm = QMessageBox()
-            ret = qm.question(self,'Valid calibration conditions?','Confirm the following conditions:\n\n1. Is the pipette tip in-focus?')
-            proceed = ret == QMessageBox.StandardButton.Yes
-        if cal_mode == 'Semi-Auto.' or cal_mode == 'Automatic':
-            qm = QMessageBox()
-            ret = qm.question(self,'Valid calibration conditions?','Confirm the following conditions:\n\n1. Is the pipette tip in-focus?\n2. Is the pipette tip near the center of the FOV?\n3. The pipette will move to the edges of the FOV. Are the FOV edges clear of obstructions?')
-            proceed = ret == QMessageBox.StandardButton.Yes
-
-        # Conduct calibration 
-        if proceed is False:
-            self.conduct_calibration_but.setChecked(False)
-        elif proceed is True and cal_mode == "Automatic":
-            self.conduct_auto_calibration()
-        elif proceed is True and cal_mode == 'Manual':
-            self.conduct_manual_calibration()
-        elif proceed is True and cal_mode == 'Semi-Auto.':
-            self.conduct_semi_auto_calibration()
 
     def compute_calibration(self):
         ''' Computes calibration from calibration data '''
@@ -1140,31 +1251,19 @@ class ControlWindow(QMainWindow):
 
     def update_calibration(self):
         ''' Updates calibration by setting new reference position '''
-        if self.update_calibration_but.isChecked():
-            # Untoggles calibration button if no calibraiton exists
-            if self.pip_cal.model.is_calibrated is False:
-                self.update_calibration_but.setChecked(False)
-                msg = "System is not calibrated. Can not update non-existent calibration.\n\nConduct a new calibration or load an exsisting calibration before updating."
-                self.show_warning_box(msg)
-            # Untoggles calibration button if calibraiton button is checked
-            if self.conduct_calibration_but.isChecked():
-                self.update_calibration_but.setChecked(False)
-                msg = 'Cannot update calibration while already conducting calibration.\n\nComplete calibration process (and uncheck the box) before updating a calibration.'
-                self.show_warning_box(msg)
-        else:
-            try:
-                _, _, obj_mag = self.zen_controller.get_current_objective()
-                _, _, opto_mag = self.zen_controller.get_current_optovar()
-                self.pip_cal.update(obj_mag=obj_mag, opto_mag=opto_mag, pip_angle=self.pip_angle)
-            except CalibrationDataError as e:
-                msg = f"Calibration not updated. Error: {e}\n\nMake sure you click on the tip to register the calibration point before unchecking 'Update'."
-                self.show_warning_box(msg)
-            except Exception as e:
-                msg = f"Error while updating calibration: {e}\n\nSee logs for more information."
-                self.show_exception_box(msg)
-            finally:
-                self.logger.info('Calibration unchecked. Deleting calibration points.')
-                self.pip_cal.data.rm_all()
+        try:
+            _, _, obj_mag = self.zen_controller.get_current_objective()
+            _, _, opto_mag = self.zen_controller.get_current_optovar()
+            self.pip_cal.update(obj_mag=obj_mag, opto_mag=opto_mag, pip_angle=self.pip_angle)
+        except CalibrationDataError as e:
+            msg = f"Calibration not updated. Error: {e}\n\nMake sure you click on the tip to register the calibration point before unchecking 'Update'."
+            self.show_warning_box(msg)
+        except Exception as e:
+            msg = f"Error while updating calibration: {e}\n\nSee logs for more information."
+            self.show_exception_box(msg)
+        finally:
+            self.logger.info('Calibration unchecked. Deleting calibration points.')
+            self.pip_cal.data.rm_all()
 
     def save_calibration(self):
         ''' Saves calibration to a file '''
@@ -1582,14 +1681,6 @@ class ControlWindow(QMainWindow):
         self.pressure_display.setText(str(self.displaypressure)+'%')
         
     def run_3D_trajectory(self):
-        if self.conduct_calibration_but.isChecked():
-            msg = "Cannot start injections while calibration button is checked. Complete calibration before starting."
-            self.show_warning_box(msg)
-            return
-        if self.update_calibration_but.isChecked():
-            msg = "Cannot start injections while update calibration button is checked. Complete calibration update before starting."
-            self.show_warning_box(msg)
-            return
         try:
             #get values from GUI
             um2nm = 1000

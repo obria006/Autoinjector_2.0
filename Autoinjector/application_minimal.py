@@ -195,6 +195,7 @@ class ControlWindow(QMainWindow):
         # Display modification mvc
         self.disp_mod_controller = disp_mod_mvc.Controller()
         self.disp_mod_view = disp_mod_mvc.View(self.disp_mod_controller)
+        self.disp_mod_view_alt = disp_mod_mvc.View(self.disp_mod_controller)
 
     def make_widgets(self):
         """ Create the GUI's widgets """
@@ -488,6 +489,33 @@ class ControlWindow(QMainWindow):
         layout.addLayout(form)
         self.display_modification_group = QGroupBox('Display Settings')
         self.display_modification_group.setLayout(layout)
+        # Make alt widgets
+        display_tip_label_alt = QLabel('Show tip:')
+        display_annotation_label_alt = QLabel('Show annotation:')
+        display_segmentation_label_alt = QLabel('Show tissue:')
+        display_edge_label_alt = QLabel('Show edge:')
+        # default layout
+        layout_alt = QVBoxLayout()
+        hl1_alt = QHBoxLayout()
+        hl1_alt.addWidget(self.disp_mod_view_alt.display_calibration_rbon)
+        hl1_alt.addWidget(self.disp_mod_view_alt.display_calibration_rboff)
+        hl2_alt = QHBoxLayout()
+        hl2_alt.addWidget(self.disp_mod_view_alt.display_annotation_rbon)
+        hl2_alt.addWidget(self.disp_mod_view_alt.display_annotation_rboff)
+        hl3_alt = QHBoxLayout()
+        hl3_alt.addWidget(self.disp_mod_view_alt.display_segmentation_rbon)
+        hl3_alt.addWidget(self.disp_mod_view_alt.display_segmentation_rboff)
+        hl4_alt = QHBoxLayout()
+        hl4_alt.addWidget(self.disp_mod_view_alt.display_edges_rbon)
+        hl4_alt.addWidget(self.disp_mod_view_alt.display_edges_rboff)
+        form_alt = QFormLayout()
+        form_alt.addRow(display_tip_label_alt, hl1_alt)
+        form_alt.addRow(display_annotation_label_alt, hl2_alt)
+        form_alt.addRow(display_segmentation_label_alt, hl3_alt)
+        form_alt.addRow(display_edge_label_alt, hl4_alt)
+        layout_alt.addLayout(form_alt)
+        self.display_modification_group_alt = QGroupBox('Display Settings')
+        self.display_modification_group_alt.setLayout(layout_alt)
         
         
     def stateify_display_modification_widgets(self):
@@ -496,15 +524,15 @@ class ControlWindow(QMainWindow):
         exposure = int(float(self.cam_MM.get_exposure())*10)
         self.exposure_slider.setValue(exposure)
         self.disp_mod_view.stateify_widgets()
+        self.disp_mod_view_alt.stateify_widgets()
 
     def set_display_modification_connections(self):
         """ Sets signal slot connections for display modification widgets """
         self.exposure_slider.valueChanged.connect(self.exposure_value_change)
-        self.disp_mod_controller
-        self.disp_mod_view.display_calibration_rbon.toggled.connect(self.display_calibration)
-        self.disp_mod_view.display_annotation_rbon.toggled.connect(self.display_annotation)
-        self.disp_mod_view.display_segmentation_rbon.toggled.connect(self.display_tissue_mask)
-        self.disp_mod_view.display_edges_rbon.toggled.connect(self.display_edge_mask)
+        self.disp_mod_controller.display_calibration_toggled.connect(self.display_calibration)
+        self.disp_mod_controller.display_annotation_toggled.connect(self.display_annotation)
+        self.disp_mod_controller.display_segmentation_toggled.connect(self.display_tissue_mask)
+        self.disp_mod_controller.display_edges_toggled.connect(self.display_edge_mask)
         self.pip_disp_timer = QTimer()
         self.pip_disp_timer.timeout.connect(self.display_calibration)
         self.pip_disp_timeout = 25
@@ -704,6 +732,7 @@ class ControlWindow(QMainWindow):
         self.annotation_mode_left_page = QWidget()
         layout = QVBoxLayout()
         layout.addWidget(self.alt_annotation_group)
+        layout.addWidget(self.display_modification_group_alt)
         layout.addStretch()
         self.annotation_mode_left_page.setLayout(layout)
 

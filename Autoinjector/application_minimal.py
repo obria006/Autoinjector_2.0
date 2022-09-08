@@ -400,6 +400,7 @@ class ControlWindow(QMainWindow):
         self.edge_type_combo_box = QComboBox()
         self.edge_type_combo_box.setPlaceholderText('Type')
         self.annotation_button = QPushButton("Annotate Target")
+        self.rm_annotation_button = QPushButton("Remove Annotation")
         self.default_annotation_group = QGroupBox("Trajectory Annotation")
         # Make alternate annotation widgets
         mode_label2 = QLabel(mode_label1.text())
@@ -420,6 +421,7 @@ class ControlWindow(QMainWindow):
         form1.addRow(edge_label1, self.edge_type_combo_box)
         default_layout.addLayout(form1)
         default_layout.addWidget(self.annotation_button)
+        default_layout.addWidget(self.rm_annotation_button)
         self.default_annotation_group.setLayout(default_layout)
         # Specify alt annotation layout and group
         alt_layout = QVBoxLayout()
@@ -437,6 +439,7 @@ class ControlWindow(QMainWindow):
     def set_annotation_connections(self):
         """ Set signal/slot connections for annotation widgets """
         self.annotation_button.clicked.connect(self.annotate_trajectory_pressed)
+        self.rm_annotation_button.clicked.connect(self.rm_annotation_pressed)
         self.complete_annotation_button.clicked.connect(self.annotation_complete_pressed)
         self.exit_annotation_button.clicked.connect(self.exit_annotation_mode)
         self.annotation_combo_box.currentTextChanged.connect(self.annotation_combo_changed)
@@ -1336,6 +1339,10 @@ class ControlWindow(QMainWindow):
         self.switch_to_annotation_mode()
         self.automatic_tissue_annotation()
 
+    def rm_annotation_pressed(self):
+        """ Handle what to do when user clicks remove annotation """
+        self.clear_annotation()
+
     def exit_annotation_mode(self):
         """
         Exit the annotation mode by stop showing the drawn edge and change
@@ -1394,6 +1401,11 @@ class ControlWindow(QMainWindow):
         image = np.copy(self.vid_display.frame)
         tis_data_saver.save_data(image=image, raw_annot=raw_annot, interpolate_annot=interpolate_annot)
 
+    def clear_annotation(self):
+        """ Remove annotation and show annotation complete as false """
+        self.interpolated_pixels = []
+        self.vid_display.reset_interpolated_annotation()
+        self._annotation_complete.emit(False)
 
     def handle_drawn_edge(self, drawn_pixels:list):
         ''' Handles events when video display returns the drawn edge '''
@@ -1405,17 +1417,13 @@ class ControlWindow(QMainWindow):
                 self.vid_display.set_interpolated_annotation(self.interpolated_pixels)
                 self._annotation_complete.emit(True)
             except AnnotationError as e:
-                self.interpolated_pixels = []
-                self.vid_display.reset_interpolated_annotation()
+                self.clear_annotation()
                 msg = "Error while interpolating annotation. The annotation must go in one direction: either top-to-bottom or bottom-to-top.\n\nTry annotating again."
                 self.show_warning_box(msg)
-                self._annotation_complete.emit(False)
             except Exception as e:
-                self.interpolated_pixels = []
-                self.vid_display.reset_interpolated_annotation()
+                self.clear_annotation()
                 msg = "Error while interpolating annotation.\n\nSee logs for more info."
                 self.show_exception_box(msg)
-                self._annotation_complete.emit(False)
             else:
                 if self.save_tiss_annot_rbon.isChecked():
                     raw = np.asarray(drawn_pixels)

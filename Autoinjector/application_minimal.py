@@ -1186,10 +1186,9 @@ class ControlWindow(QMainWindow):
         dev = SensapexDevice(1)
         img_width = self.cam_MM.width
         img_height = self.cam_MM.height
-        z_scope = self.zen_controller.get_focus_um()
         _, _, obj_mag = self.zen_controller.get_current_objective()
         _, _, opto_mag = self.zen_controller.get_current_optovar()
-        self.cal_trajectory = SemiAutoCalibrationTrajectory(dev=dev, cal=self.pip_cal, img_w=img_width, img_h=img_height, ex_z=z_scope,z_polarity=-1,pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
+        self.cal_trajectory = SemiAutoCalibrationTrajectory(dev=dev, cal=self.pip_cal, img_w=img_width, img_h=img_height, z_polarity=-1,pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
         self.cal_pos_added.connect(self.cal_trajectory.next_cal_position)
         self.cal_trajectory.finished.connect(self.cal_trajectory.deleteLater)
         self.leaving_calibration.connect(self.cal_trajectory.deleteLater)

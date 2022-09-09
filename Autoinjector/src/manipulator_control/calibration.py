@@ -39,7 +39,7 @@ class Calibrator():
         self._ang_tol_deg = ang_tol_deg
         self.tmp_storage = ModelStorage(ang_tol_deg=self._ang_tol_deg)
 
-    def compute(self, z_polarity=-1, pip_angle:float=np.deg2rad(45), obj_mag:float=None, opto_mag:float=None):
+    def compute(self, z_polarity=-1, pip_angle:float=np.deg2rad(45), obj_mag:float=None, opto_mag:float=None, save:bool = True):
         '''
         Use CalibrationModel to compute the transformation matrices
         
@@ -57,7 +57,8 @@ class Calibrator():
             T_mxyzd_to_mxyz = self.model.T_mxyzd_to_mxyz
             T_mxyz_to_exxyz = self.model.T_mxyz_to_exxyz
             x_0 = self.model.x_0
-            self.tmp_storage.save(obj_mag=obj_mag, opto_mag=opto_mag, ang_deg = np.rad2deg(pip_angle),T_mxyzd_to_mxyz=T_mxyzd_to_mxyz,T_mxyz_to_exxyz=T_mxyz_to_exxyz,x_0=x_0)
+            if save is True:
+                self.tmp_storage.save(obj_mag=obj_mag, opto_mag=opto_mag, ang_deg = np.rad2deg(pip_angle),T_mxyzd_to_mxyz=T_mxyzd_to_mxyz,T_mxyz_to_exxyz=T_mxyz_to_exxyz,x_0=x_0)
 
     def update(self,pip_angle:float, obj_mag:float, opto_mag:float):
         '''

@@ -2,7 +2,6 @@
 import os
 from datetime import datetime
 from pathlib import Path
-import traceback
 from src.cfg_mgmt.cfg_io import YamlIOHandler
 from src.miscellaneous import validify as val
 from src.miscellaneous.standard_logger import StandardLogger as logr
@@ -67,7 +66,6 @@ class CfgPointer():
         # Error while loading pointer file so use hardcoded values
         except Exception as e:
             self.logger.exception(f'Error loading config pointer: {self.ptr_path}')
-            print(traceback.format_exc())
             # TODO load defaults
         # Try loading the configuration file that was pointed to
         else:
@@ -81,7 +79,6 @@ class CfgPointer():
             self.ptr_io.write_to_yaml_cfg(data=self.ptr_data)
         except Exception as e:
             self.logger.exception(f'Error saving configuration pointer: {self.ptr_path}')
-            print(traceback.format_exc())
         else:
             self.logger.info("Saved config pointer: "+self.ptr_path)
             self.logger.info(self.ptr_path + " --> " + self.ptr_data["Latest config path"])
@@ -126,6 +123,8 @@ class CfgGUI():
         self.values = {
             'data directory':'C:/Users/Public/Documents/envs/Autoinjector_2/Autoinjector/data',
             'micromanager path':'C:/Program Files/Micro-Manager-2.0',
+            'z polarity':-1,
+            'pullout nm':200000,
         }
         self.logger.info('Set config values to defaults')
     
@@ -142,7 +141,6 @@ class CfgGUI():
             self.logger.info(f'Loaded configuration from {self.cfg_io.filepath}')
         except:
             self.logger.exception(f'Failed to load cfg: {self.cfg_io.filepath}')
-            print(traceback.format_exc())
 
     def save_cfg(self, filename:str):
         ''' Save config values to a file '''
@@ -158,6 +156,5 @@ class CfgGUI():
             self.logger.info(f'Saved configuration to {self.cfg_io.filepath}')
         except:
             self.logger.exception(f'Failed to save cfg: {self.cfg_io.filepath}')
-            print(traceback.format_exc())
         
 

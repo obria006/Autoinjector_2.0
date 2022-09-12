@@ -175,12 +175,13 @@ class SurfacePointTrajectory3D(QThread):
         depth_nm (int): Distance (in nm) along image x-axis that manipulator will surpass annotated
             injection position during injection trajectory
         speed_ums (int): Speed of manipulator movement in um/s.
+        pullout_nm (int): Distance along (in nm) x-axis to retract manipulator
         _stop_pressed (bool): Indicator that stop button is pressed
         _move_complete (bool): Inidcator that movement is complete and can go to next position.
         n_injected (int): Number of injections completed
     """
 
-    def __init__(self, dev:SensapexDevice, cal:Calibrator, ex_points_3D:list, approach_nm:int, depth_nm:int, speed_ums:int):
+    def __init__(self, dev:SensapexDevice, cal:Calibrator, ex_points_3D:list, approach_nm:int, depth_nm:int, speed_ums:int, pullout_nm:int):
         """
         Arguments:
             dev (SensapexDevice): Object that manipulates the sensapex manipulator
@@ -192,6 +193,7 @@ class SurfacePointTrajectory3D(QThread):
             depth_nm (int): Distance (in nm) along image x-axis that manipulator will surpass annotated
                 injection position during injection trajectory
             speed_ums (int): Speed of manipulator movement in um/s.
+            pullout_nm (int): Distance along (in nm) x-axis to retract manipulator
         """
         super().__init__()
         self._logr = StandardLogger(__name__)
@@ -201,6 +203,7 @@ class SurfacePointTrajectory3D(QThread):
         self.approach_nm = approach_nm
         self.depth_nm = depth_nm
         self.speed_ums = speed_ums
+        self.pullout_nm = pullout_nm
         self._stop_pressed = False
         self._move_complete = True
         self.n_injected = 0
@@ -232,37 +235,33 @@ class SurfacePointTrajectory3D(QThread):
         del_d = del_4axis[3]
         return del_d
 
-    def _compute_fin_position(self, des_pos_ex:list, pullout_nm:int=400000)->list:
+    def _compute_fin_position(self, des_pos_ex:list)->list:
         '''
         Copmute manipulator position of pullout position in external CSYS using the calibration
         and pullout displacement
         
         Arguments:
             des_pos_ex (list): Desired injection position in external CSYS [x, y, z]
-            pullout_nm (int): Displacement (in nm) along x-axis to retract manipulator
 
         Returns
             list of computed manipulator position as [x, y, z, d]
         '''
         # Compute the position of the manipulator at this position without chanigng d axis
         des_pos_m = self.cal.model.inverse(des_pos_ex, man_axis_const='d')
-        des_pos_m[0] -= pullout_nm
+        des_pos_m[0] -= self.pullout_nm
         return des_pos_m
 
-    def _compute_estop_pos(self, pullout_nm:int=400000)->list:
+    def _compute_estop_pos(self)->list:
         '''
         Copmute manipulator position of emergency stop position in external CSYS using the
         calibration and pullout displacement and current position
-        
-        Arguments:
-            pullout_nm (int): Distance along (in nm) x-axis to retract manipulator
 
         Returns
             list of computed manipulator position as [x, y, z, d]
         '''
         cur_pos_m = self.dev.get_pos()
         des_pos_m = cur_pos_m[:]
-        des_pos_m[0] -= pullout_nm
+        des_pos_m[0] -= self.pullout_nm
         self._logr.debug(f"Computed e-stop position: {des_pos_m}")
         return des_pos_m
         
@@ -341,12 +340,13 @@ class SurfaceLineTrajectory3D(SurfacePointTrajectory3D):
         depth_nm (int): Distance (in nm) along image x-axis that manipulator will surpass annotated
             injection position during injection trajectory
         speed_ums (int): Speed of manipulator movement in um/s.
+        pullout_nm (int): Distance along (in nm) x-axis to retract manipulator
         _stop_pressed (bool): Indicator that stop button is pressed
         _move_complete (bool): Inidcator that movement is complete and can go to next position.
         n_injected (int): Number of injections completed
     """
 
-    def __init__(self, dev:SensapexDevice, cal:Calibrator, edge_3D:list, approach_nm:int, depth_nm:int, spacing_nm:int, speed_ums:int):
+    def __init__(self, dev:SensapexDevice, cal:Calibrator, edge_3D:list, approach_nm:int, depth_nm:int, spacing_nm:int, speed_ums:int, pullout_nm:int):
         """
         Arguments:
             dev (SensapexDevice): Object that manipulates the sensapex manipulator
@@ -359,11 +359,12 @@ class SurfaceLineTrajectory3D(SurfacePointTrajectory3D):
                 injection position during injection trajectory
             spacing_nm (int): Distance between injection positions along line
             speed_ums (int): Speed of manipulator movement in um/s.
+            pullout_nm (int): Distance along (in nm) x-axis to retract manipulator
         """
         self._logr = StandardLogger(__name__)
         self.edge_3D = edge_3D
         ex_points_3D = self._line_to_points(cal, spacing_nm)
-        super().__init__(dev, cal, ex_points_3D, approach_nm, depth_nm, speed_ums)
+        super().__init__(dev, cal, ex_points_3D, approach_nm, depth_nm, speed_ums, pullout_nm)
 
     def _line_to_points(self, cal:Calibrator, spacing_nm:int)->list:
         """

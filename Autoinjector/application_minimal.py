@@ -1216,7 +1216,8 @@ class ControlWindow(QMainWindow):
         img_height = self.cam_MM.height
         _, _, obj_mag = self.zen_controller.get_current_objective()
         _, _, opto_mag = self.zen_controller.get_current_optovar()
-        self.cal_trajectory = SemiAutoCalibrationTrajectory(dev=dev, cal=self.pip_cal, img_w=img_width, img_h=img_height, z_polarity=-1,pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
+        z_polarity = self.cfg.cfg_gui.values['z polarity']
+        self.cal_trajectory = SemiAutoCalibrationTrajectory(dev=dev, cal=self.pip_cal, img_w=img_width, img_h=img_height, z_polarity=z_polarity,pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
         self.cal_pos_added.connect(self.cal_trajectory.next_cal_position)
         self.cal_trajectory.finished.connect(self.cal_trajectory.deleteLater)
         self.leaving_calibration.connect(self.cal_trajectory.deleteLater)
@@ -1258,7 +1259,8 @@ class ControlWindow(QMainWindow):
             _, _, obj_mag = self.zen_controller.get_current_objective()
             _, _, opto_mag = self.zen_controller.get_current_optovar()
             self.logger.info(f"Computing calibration with data\n{self.pip_cal.data.data_df}")
-            self.pip_cal.compute(z_polarity=-1, pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
+            z_polarity = self.cfg.cfg_gui.values['z polarity']
+            self.pip_cal.compute(z_polarity=z_polarity, pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
         except CalibrationDataError as e:
             msg = f"Calibration not completed. Error: {e}\n\nMake sure you click on the tip to register at least 3 points (that don't lie on a line) before unchecking 'Calibrate'."
             self.show_warning_box(msg)
@@ -1715,6 +1717,7 @@ class ControlWindow(QMainWindow):
             depth_nm = int(float(self.depthintissue)*um2nm)
             spacing_nm = int(float(self.stepsize)*um2nm)
             speed_ums = int((self.motorspeed))
+            pullout_nm = self.cfg.cfg_gui.values['pullout nm']
             dev = SensapexDevice(1)
             cal = self.pip_cal
             edge = self.interpolated_pixels
@@ -1722,7 +1725,7 @@ class ControlWindow(QMainWindow):
             edge_arr = np.array(edge)
             z_arr = z_scope*np.ones((edge_arr.shape[0],1))
             edge_3D = np.concatenate((edge_arr,z_arr),axis=1).tolist()
-            self.inj_trajectory = SurfaceLineTrajectory3D(dev, cal, edge_3D, approach_nm, depth_nm, spacing_nm, speed_ums)
+            self.inj_trajectory = SurfaceLineTrajectory3D(dev, cal, edge_3D, approach_nm, depth_nm, spacing_nm, speed_ums, pullout_nm)
             self.inj_trajectory.start()
             self.inj_trajectory.finished.connect(self.show_n_injected)
         except:

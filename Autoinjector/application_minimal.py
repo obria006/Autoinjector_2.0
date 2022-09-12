@@ -33,6 +33,7 @@ from src.manipulator_control.error_utils import (CalibrationError,
 from src.manipulator_control.sensapex_utils import SensapexDevice
 from src.manipulator_control.injection_trajectory import SurfaceLineTrajectory3D
 from src.manipulator_control.calibration_trajectory import SemiAutoCalibrationTrajectory
+from src.manipulator_control.aux_trajectories import SwapTrajectory
 from src.ZEN_interface.ZEN_mvc import ModelZEN, ControllerZEN, ViewZENComplete, ViewZENFocus
 from src.deep_learning.tissue_detection import ModelTissueDetection
 from src.deep_learning.edge_utils.error_utils import EdgeNotFoundError
@@ -70,8 +71,7 @@ class ControlWindow(QMainWindow):
 
         # initiate thread to poll position of motors and report error if they are not found
         try:
-            self.getposition = motorpositionThread()
-            self.getposition.start()
+            dev = SensapexDevice(1)
             self.motorfound = True
         except:
             msg = "Manipulators not detected. Wait 2 minutes then relaunch the app. If this does not work, replug manipulators into computer."
@@ -134,6 +134,8 @@ class ControlWindow(QMainWindow):
         self.angle_io = AngleIO(ang_data_dir=self.cal_data_dir)
         ckpt_path = "Autoinjector/src/deep_learning/weights/20220824_180000_Colab_gpu/best.pth"
         self.tissue_model = ModelTissueDetection(ckpt_path)
+        dev = SensapexDevice(1)
+        self.swap_trajectory= SwapTrajectory(dev=dev)
 
         # Instantiate the imported camera
         try:
@@ -222,6 +224,7 @@ class ControlWindow(QMainWindow):
         self.make_display_modification_widgets()
         self.make_video_display_widgets()
         self.make_injection_parameter_widgets()
+        self.make_manipulator_control_widgets()
         self.make_workflow_widgets()
         self.make_system_status_widgets()
         # Create pages for the stacked layout with different modes (like calibration
@@ -240,6 +243,7 @@ class ControlWindow(QMainWindow):
         self.set_display_modification_connections()
         self.set_video_display_connections()
         self.set_inject_parameter_connections()
+        self.set_manipulator_control_connections()
         self.set_workflow_connections()
         self.set_zeiss_connections()
 
@@ -670,6 +674,23 @@ class ControlWindow(QMainWindow):
         self.speed_entry.insert('1000')
         self.pressure_slider.setValue(20)
 
+    """
+    Initialize manipulator widgets ---------------------------------------------------------
+    """
+    def make_manipulator_control_widgets(self):
+        ''' Creates widgets for controlling manipulator '''
+        self.unload_button = QPushButton("Unload Pipette")
+        self.reload_button = QPushButton("Reload Pipette")
+        layout = QVBoxLayout()
+        layout.addWidget(self.unload_button)
+        layout.addWidget(self.reload_button)
+        self.manipulator_group = QGroupBox('Manipulator Control')
+        self.manipulator_group.setLayout(layout)
+
+    def set_manipulator_control_connections(self):
+        '''Sets signal/slot connnections for manipulator control widgets '''
+        self.unload_button.clicked.connect(self.moveto_unload_position)
+        self.reload_button.clicked.connect(self.moveto_reload_position)
 
     """
     Initialize injection workflow widgets ---------------------------------------------------------
@@ -770,6 +791,7 @@ class ControlWindow(QMainWindow):
         self.default_right_page = QWidget()
         default_right_layout = QVBoxLayout()
         default_right_layout.addWidget(self.full_zen_app.zen_group)
+        default_right_layout.addWidget(self.manipulator_group)
         default_right_layout.addWidget(self.inj_parameter_group)
         default_right_layout.addWidget(self.workflow_group)
         default_right_layout.addStretch()
@@ -1718,6 +1740,24 @@ class ControlWindow(QMainWindow):
             msg = "You have to start the trajectory in order to be able to stop it...\nPython error = \n" + str(sys.exc_info()[1])
             self.show_error_box(msg)
             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
+
+    def moveto_unload_position(self):
+        """ move pipette to unload position so user can change pipette"""
+        try:
+            self.swap_trajectory.unload_pipette()
+        except TrajectoryError as e:
+            self.show_error_box(e)
+        except:
+            self.show_exception_box("Error while unloading pipette.\n\nSee log for more info.")
+
+    def moveto_reload_position(self):
+        """ Move pipette to reload position after user changed pipette """
+        try:
+            self.swap_trajectory.reload_pipette()
+        except TrajectoryError as e:
+            self.show_error_box(e)
+        except:
+            self.show_exception_box("Error while reloading pipette.\n\nSee log for more info.")
 
     
 

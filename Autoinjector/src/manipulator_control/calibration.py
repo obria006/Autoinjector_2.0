@@ -6,6 +6,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import traceback
+from src.manipulator_control.error_utils import (CalibrationError,
+                                                CalibrationDataError,
+                                                CalibrationDNEError,
+                                                CalibrationFileError,
+                                                AngleFileError)
 from src.miscellaneous.standard_logger import StandardLogger
 from src.miscellaneous import validify as val
 
@@ -1006,63 +1011,6 @@ class CalibrationModel():
             return man_1.reshape(-1).tolist()
         else:
             raise CalibrationError('Cannot compute inverse kinematics because calibration is incomplete')
-
-
-class CalibrationError(Exception):
-    '''
-    Exception raised for errors with calibration process
-
-    Attributes:
-        msg (str): Explanation of error
-    '''
-    def __init__(self, msg="Calibration error occured"):
-        self.msg = msg
-        super().__init__(self.msg)
-
-class CalibrationDataError(Exception):
-    '''
-    Exception raised for errors with calibration data
-
-    Attributes:
-        msg (str): Explanation of error
-    '''
-    def __init__(self, msg="Error occured with calibration data"):
-        self.msg = msg
-        super().__init__(self.msg)
-
-class CalibrationDNEError(Exception):
-    '''
-    Exception raised for errors when calibration doesn't exist
-
-    Attributes:
-        msg (str): Explanation of error
-    '''
-    def __init__(self, msg="Calibration doesn't exist"):
-        self.msg = msg
-        super().__init__(self.msg)
-
-class CalibrationFileError(Exception):
-    '''
-    Exception raised for errors when calibration file doesn't exist
-
-    Attributes:
-        msg (str): Explanation of error
-    '''
-    def __init__(self, msg="Calibration file doesn't exist"):
-        self.msg = msg
-        super().__init__(self.msg)
-
-class AngleFileError(Exception):
-    '''
-    Exception raised for errors when Angle file doesn't exist
-
-    Attributes:
-        msg (str): Explanation of error
-    '''
-    def __init__(self, msg="Angle file doesn't exist"):
-        self.msg = msg
-        super().__init__(self.msg)
-
 
 def _val_positions(ex:list=None, man:list=None):
     '''

@@ -23,7 +23,13 @@ import src.GUI_utils.display_modifier_mvc as disp_mod_mvc
 from src.miscellaneous.standard_logger import StandardLogger as logr
 from src.miscellaneous import validify as val
 from src.data_generation.data_generators import PipTipData, TissueEdgeData
-from src.manipulator_control.calibration import Calibrator, AngleIO, CalibrationError, CalibrationDNEError, CalibrationFileError, CalibrationDataError, AngleFileError
+from src.manipulator_control.calibration import Calibrator, AngleIO
+from src.manipulator_control.error_utils import (CalibrationError,
+                                                CalibrationDataError,
+                                                CalibrationDNEError,
+                                                CalibrationFileError,
+                                                AngleFileError,
+                                                TrajectoryError)
 from src.manipulator_control.sensapex_utils import SensapexDevice
 from src.manipulator_control.injection_trajectory import SurfaceLineTrajectory3D
 from src.manipulator_control.calibration_trajectory import SemiAutoCalibrationTrajectory

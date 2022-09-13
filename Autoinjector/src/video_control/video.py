@@ -24,7 +24,7 @@ from PyQt6.QtWidgets import (QApplication,
                             QWidget,
                             QLineEdit,
                             )
-from PyQt6.QtGui import QImage, QPixmap
+from PyQt6.QtGui import QImage, QPixmap, QColorConstants
 from src.video_control import video_utils as utils
 from src.miscellaneous.standard_logger import StandardLogger
 
@@ -354,11 +354,22 @@ class VideoDisplay(QWidget):
             basal_mask (np.ndarray): 0-1 binary mask of basal edge to display
         """
         if tissue_mask is not None:
-            self.canvas.painter.tissue_mask = cv2.resize(tissue_mask.astype(np.uint8), (self.width, self.height), cv2.INTER_AREA)
+            tissue_mask = cv2.resize(tissue_mask.astype(np.uint8), (self.width, self.height), cv2.INTER_AREA)
+            self.canvas.painter.tissue_mask = utils.make_rgb_mask(tissue_mask, color = self.canvas.painter.TISSUE)
         if apical_mask is not None:    
-            self.canvas.painter.apical_mask = cv2.resize(apical_mask.astype(np.uint8), (self.width, self.height), cv2.INTER_AREA)
+            apical_mask = cv2.resize(apical_mask.astype(np.uint8), (self.width, self.height), cv2.INTER_AREA)
+            self.canvas.painter.apical_mask = utils.make_rgb_mask(apical_mask, color = self.canvas.painter.APICAL)
         if basal_mask is not None:
-            self.canvas.painter.basal_mask = cv2.resize(basal_mask.astype(np.uint8), (self.width, self.height), cv2.INTER_AREA)
+            basal_mask = cv2.resize(basal_mask.astype(np.uint8), (self.width, self.height), cv2.INTER_AREA)
+            self.canvas.painter.basal_mask = utils.make_rgb_mask(basal_mask, color = self.canvas.painter.BASAL)
+
+    def display_masks(self):
+        """ Show the tissue/edge masks in the video display """
+        self.canvas.show_overlay()
+
+    def hide_masks(self):
+        """ Hide the tissue/edge_masks in the video display """
+        self.canvas.hide_overlay()
 
     def reset_masks(self):
         """
@@ -461,6 +472,12 @@ class Canvas(QLabel):
     pixel coordinates. These pixel coordinates are relative to the canvas (not
     the image which can be a different size).
 
+    Uses 2 "canvases". The `dynamic_canvas` is for frequently updating display
+    information like the video feed. The `overlay_canvas` is a semi- to fully-
+    transparent overlay for showing information that is computationally expensive
+    to display frequently (with every new frame from the camera) or information
+    that is infrequnelty updated (like the tissue and edge masks).
+
     Signals:
         mouse_moved_pixel(list): [x, y] pixel coordinates of a click-and-drag
             event in the canvas. 
@@ -485,8 +502,14 @@ class Canvas(QLabel):
         self.height = height
         self.painter = Painter()
         pixmap = QPixmap(self.width, self.height)
+        pixmap.fill(QColorConstants.Transparent)
         self.setFixedSize(self.width, self.height)
-        self.setPixmap(pixmap)
+        self.dynamic_canvas = QLabel(self)
+        self.dynamic_canvas.setFixedSize(self.width, self.height)
+        self.dynamic_canvas.setPixmap(pixmap)
+        self.overlay_canvas = QLabel(self)
+        self.overlay_canvas.setFixedSize(self.width, self.height)
+        self.overlay_canvas.setPixmap(pixmap)
 
     def mouseMoveEvent(self, event):
         """
@@ -526,14 +549,40 @@ class Canvas(QLabel):
         """
         # Convert image to rgb and resize to canvas dimensison
         rgb = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-        resized_img = cv2.resize(src=image, dsize=(self.width, self.height), interpolation = cv2.INTER_AREA)
         resized_rgb = cv2.resize(src=rgb, dsize=(self.width, self.height), interpolation = cv2.INTER_AREA)
         # Draw on the image to show annotations
-        resized_rgb = self.painter.paint_image(resized_img, resized_rgb)
+        resized_rgb = self.painter.paint_image(resized_rgb)
         # Convert to pixmap and set canvas's pixmap
         canvas_img = QImage(resized_rgb, self.width, self.height, self.width*3, QImage.Format.Format_RGB888)
         pixmap = QPixmap.fromImage(canvas_img)
-        self.setPixmap(pixmap)
+        self.dynamic_canvas.setPixmap(pixmap)
+
+    def show_overlay(self):
+        """
+        Show the overlay canvas if masks are present to display
+        """
+        # Initialize a image with the same size as the canvas of zeros
+        resized_rgb = np.zeros((self.height,self.width,3), np.uint8)
+        # Paint the masks onto the zero rgb image
+        resized_rgb = self.painter.paint_masks(resized_rgb)
+        # Convert to rgb -alpha image (for transparency)
+        resized_rgba = cv2.cvtColor(resized_rgb, cv2.COLOR_RGB2RGBA)
+        # Where the mask image is non-zero set alpha to 15% else 0% alpha (transparent)
+        resized_rgba[...,3] = int(255*0.15)*np.any(resized_rgba[:,:,:3]>0, axis=2)
+        # Convert to pixmap and set canvas's pixmap
+        canvas_img = QImage(resized_rgba, self.width, self.height, self.width*4, QImage.Format.Format_RGBA8888)
+        pixmap = QPixmap.fromImage(canvas_img)
+        # Display the image
+        self.overlay_canvas.setPixmap(pixmap)
+
+    def hide_overlay(self):
+        """
+        Hide the overlay canvas. (make fully transparent to see video display)
+        """
+        pixmap = QPixmap(self.width, self.height)
+        pixmap.fill(QColorConstants.Transparent)
+        self.overlay_canvas.setPixmap(pixmap)
+
 
 class Painter():
     """
@@ -564,9 +613,9 @@ class Painter():
         self.RED = [255, 0, 0]
         self.GREEN = [0, 255, 0]
         self.BLUE = [0, 0, 255]
-        self.TISSUE = [255, 170, 187]
-        self.APICAL = [153, 221, 255]
-        self.BASAL = [238, 221, 136]
+        self.TISSUE = [238, 102, 119]
+        self.APICAL = [102, 204, 238]
+        self.BASAL = [204, 187, 68]
 
     def show_calibration_points(self, bool_:bool):
         """
@@ -631,19 +680,30 @@ class Painter():
         """
         self._show_segmented_edges_bool = bool_
 
-    def paint_image(self,image: np.ndarray, image_rgb:np.ndarray)->np.ndarray:
+    def paint_masks(self,rgb:np.ndarray)->np.ndarray:
+        """
+        Modify rgb image with tisue/edge masks
+
+        Args:
+            rgb (np.ndarray): rgb image to modify and display
+
+        Returns
+            np.ndarray of modified image
+        """
+        rgb = self.draw_tissue_mask(rgb)
+        rgb = self.draw_edge_mask(rgb)
+        return rgb
+
+    def paint_image(self, image_rgb:np.ndarray)->np.ndarray:
         """
         Modifies image with annotations.
 
         Args:
-            image (np.ndarray): 2d grayscale image for drawing masks
             image_rgb (np.ndarray): rgb image to modify and display
 
         Returns
             np.ndarray of modified image
         """
-        image_rgb = self.draw_tissue_mask(image, image_rgb)
-        image_rgb = self.draw_edge_mask(image, image_rgb)
         image_rgb = self.draw_calibration_points(image_rgb)
         image_rgb = self.draw_calibrated_tip_points(image_rgb)
         image_rgb = self.draw_clicked_points(image_rgb)
@@ -763,42 +823,35 @@ class Painter():
                     )
         return image
 
-    def draw_tissue_mask(self, image:np.ndarray, rgb:np.ndarray)->np.ndarray:
+    def draw_tissue_mask(self,rgb:np.ndarray)->np.ndarray:
         """
-        Modifies image by displaying transparent mask of tissue
+        Draw the tissue mask on the rgb image (if tissue mask exists)
 
         Args:
-            image (np.ndarray): 2d grayscale image instensity scaling colored mask
-            irgb (np.ndarray): rgb image to modify and display
+            rgb (np.ndarray): rgb image to modify and display
 
         Returns
             np.ndarray of modified image
         """
-        if self._show_segmented_tissue_bool is True:
-            if self.tissue_mask is not None:
-                rgb = utils.display_transparent_mask(image, rgb, self.tissue_mask, self.TISSUE)
-
+        if self.tissue_mask is not None:
+            rgb = utils.alpha_compost_A_over_B(self.tissue_mask, rgb, 1)
         return rgb
 
-    def draw_edge_mask(self, image:np.ndarray, rgb:np.ndarray)->np.ndarray:
+    def draw_edge_mask(self,rgb:np.ndarray)->np.ndarray:
         """
-        Modifies image by displaying transparent mask of edge
+        Draw the edge masks on the rgb image (if edge masks exists)
 
         Args:
-            image (np.ndarray): 2d grayscale image instensity scaling colored mask
-            irgb (np.ndarray): rgb image to modify and display
+            rgb (np.ndarray): rgb image to modify and display
 
         Returns
             np.ndarray of modified image
         """
-        if self._show_segmented_edges_bool is True:
-            if self.apical_mask is not None:
-                rgb = utils.display_transparent_mask(image, rgb, self.apical_mask, self.APICAL)
-            if self.basal_mask is not None:
-                rgb = utils.display_transparent_mask(image, rgb, self.basal_mask, self.BASAL)
-
+        if self.apical_mask is not None:
+            rgb = utils.alpha_compost_A_over_B(self.apical_mask, rgb, 1)
+        if self.basal_mask is not None:
+            rgb = utils.alpha_compost_A_over_B(self.basal_mask, rgb, 1)
         return rgb
-
 if __name__ == "__main__":
     mm_path = os.path.join('C:', os.path.sep, 'Program Files','Micro-Manager-2.0')
     cam = 'HamamatsuHam_DCAM'

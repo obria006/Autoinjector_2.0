@@ -1421,6 +1421,7 @@ class ControlWindow(QMainWindow):
                 basal_mask = self.make_edge_mask(edge_df=df, edge_cc=edge_cc, edge_type='basal')
                 apical_mask = self.make_edge_mask(edge_df=df, edge_cc=edge_cc, edge_type='apical')
                 self.vid_display.set_masks(tissue_mask=tissue_mask, apical_mask=apical_mask, basal_mask=basal_mask)
+                self.vid_display.display_masks()
                 # Raise error if no edge for desired edge is found
                 if edge_pixels is None:
                     raise EdgeNotFoundError(f"Edge not found: {edge_type}.")
@@ -1453,6 +1454,7 @@ class ControlWindow(QMainWindow):
         # Stop showing the raw drawn edge
         self.vid_display.show_drawn_annotation(False)
         self.vid_display.reset_masks()
+        self.vid_display.hide_masks()
         # Switch GUI to default mode
         self.switch_to_default_mode()
 
@@ -1482,6 +1484,7 @@ class ControlWindow(QMainWindow):
         self.interpolated_pixels = []
         self.vid_display.reset_interpolated_annotation()
         self.vid_display.reset_masks()
+        self.vid_display.hide_masks()
         self._annotation_complete.emit(False)
         # Switch GUI to default mode
         self.switch_to_default_mode()

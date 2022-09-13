@@ -71,6 +71,65 @@ def display_x(image, center_xy, radius, color, thickness):
 def display_point(image, center_xy, color):
     return cv2.circle(image, center_xy, radius=1, color=color, thickness=-1)
 
+def make_rgb_mask(mask:np.ndarray,color:list)->np.ndarray:
+    """
+    Convert binary mask to rgb mask with the mask as `color`
+
+    Args:
+        mask (np.ndarray): 0-1 valued binary mask array
+        color (list): 3 element list of uint8 colored values
+
+    Returns:
+        rgb image with colored mask
+    """
+    # Validate arguments
+    if not isinstance(mask, np.ndarray):
+        raise TypeError("mask must be an np.ndarray")
+    if len(mask.shape) != 2:
+        raise ValueError(f"Invalid mask shape: {mask.shape}. Must be a 2d array.")
+    for val in np.unique(mask):
+        if val not in [0,1]:
+            raise ValueError("mask must be a 0-1 binary valued image")
+    if len(color) !=3:
+        raise ValueError(f"Invalid `color`: {color}. `color` must be a 3 element rgb triplet")
+    for ele in color:
+        assert ele>=0 and ele<=255 and isinstance(ele, int)
+    # Make a rgb image of zeros
+    rgb_shape = (mask.shape[0], mask.shape[1], 3)
+    rgb = np.zeros(rgb_shape, np.uint8)
+    # Where mask is 1 (positive) set rgb image to be the color
+    rgb[mask==1] = color
+    return rgb
+
+def alpha_compost_A_over_B(rgb_A:np.ndarray, rgb_B:np.ndarray, alpha:float):
+    """
+    Alpha compost "A over B". Performs A over B compositng according to:
+
+    alpha_out = alpha_a + alpha_b*(1 - alpha_a)
+    composite = (rgb_A*alpha_a + rgb_B*alpha_b*(1-alpha_a)) / alpha_out
+
+    Args:
+        rgb_A (np.ndarray): rgb mask to overlay where 0 values get 0 alpha
+            nonzero values get alpha value
+        rgb_B (np.ndarray): rgb image to be overlaid upon
+        alpha (float): Alpha value for non-zero pixels in rgb_A
+
+    """
+    # Compute alpha values
+    a_b = np.ones((img_B.shape[0], img_B.shape[1]))
+    # Non-zero  values in image get alpha value, else 0
+    a_a = alpha * np.any(rgb_A>0,axis=2).astype(float)
+    a_o = a_a + a_b * (1 - a_a)
+    # Images
+    C_a = rgb_A
+    C_b = rgb_B
+    # Compute composite image
+    C_o = C_a*a_a[...,np.newaxis] + C_b*a_b[...,np.newaxis] * (1 - a_a[...,np.newaxis]) / a_o[...,np.newaxis]
+    output = C_o.astype(np.uint8)
+
+    return output
+
+
 def display_transparent_mask(image:np.ndarray, rgb:np.ndarray, mask:np.ndarray, color:list):
     """
     Display transparent mask on image with color. Returns RGB image with colored
@@ -181,3 +240,18 @@ def interpolate_horizontal(drawn_pixels:list):
                 return interpolated_pixels
     except Exception as e:
         raise AnnotationError(f'Error while interpolating annotation: {e}')
+
+if __name__ == "__main__":
+    import tifffile
+    import matplotlib.pyplot as plt
+    img_path = "T:/Autoinjector/latop_to_desktop_transfer/deep_learning/data/uncropped/test/images/E4d_000013_crop00.tif"
+    msk_path = "T:/Autoinjector/latop_to_desktop_transfer/deep_learning/data/uncropped/test/masks/E4d_000013_crop00.tif"
+    img = tifffile.imread(img_path)
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+    mask = tifffile.imread(msk_path)
+    mask_rgb = make_rgb_mask(mask, [255,0,0])
+    t1 = time.time()
+    composite = alpha_compost_A_over_B(img_rgb,mask_rgb, alpha=0.3)
+    print(time.time() - t1)
+    plt.imshow(composite)
+    plt.show()

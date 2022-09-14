@@ -12,11 +12,15 @@ from PyQt6.QtWidgets import (QApplication,
                             QHBoxLayout,
                             QGroupBox,
                             QComboBox,
-                            QLineEdit,)
+                            QLineEdit,
+                            QSlider,
+                            QRadioButton,
+                            QFormLayout)
 from PyQt6.QtGui import QPalette, QColor
 from src.GUI_utils.gui_objects import QHLine
 from src.miscellaneous.standard_logger import StandardLogger
 from src.miscellaneous import validify as val
+from src.miscellaneous.utils import str_to_bool, df_compare_to_dict
 
 class ModelZEN(QObject):
     """
@@ -38,6 +42,9 @@ class ModelZEN(QObject):
     obj_position_changed = pyqtSignal()
     opto_position_changed = pyqtSignal()
     ref_position_changed = pyqtSignal()
+    lamp_intensity_changed = pyqtSignal(float)
+    lamp_shutter_changed = pyqtSignal(str)
+    led_changed = pyqtSignal(dict)
 
     def __init__(self):
         super().__init__()
@@ -52,11 +59,14 @@ class ModelZEN(QObject):
         self.objectives = self._connected_objectives()
         self.optovars = self._connected_optovars()
         self.reflectors = self._connected_reflectors()
+        self.leds = self._connected_leds()
         # Initial starting positions for hardware
         self._focus_position = self.get_focus_um()
         self._objective_position = self.get_obj_info('position')
         self._optovar_position = self.get_opto_info('position')
         self._reflector_position = self.get_ref_info('position')
+        self._lamp_intensity = self.get_lamp_intensity()
+        self._shutter_position = self.get_shutter_position()
         # Timer to periodically sample microscope positions
         self._timer = QTimer()
         TIMEOUT_MS = 500
@@ -73,6 +83,8 @@ class ModelZEN(QObject):
         self._sample_objective_position()
         self._sample_optovar_position()
         self._sample_reflector_position()
+        self._sample_lamp_intensity()
+        self._sample_hw_setting()
 
     def _sample_focus_position(self):
         """
@@ -137,6 +149,52 @@ class ModelZEN(QObject):
             else:
                 self._logger.error(f"Reflectors dataframe doesn't have position: {ref_pos}. reflectors {self._model.reflectors}")
                 raise KeyError(f"Reflectors dataframe doesn't have position: {ref_pos}")
+
+    def _sample_lamp_intensity(self):
+        """
+        Compares microscope lamp intensity against internal attribute and emit
+        signal if dont match and update intensity
+        """
+        inten = self.get_lamp_intensity()
+        if inten != self._lamp_intensity:
+            self._lamp_intensity = inten
+            self.lamp_intensity_changed.emit(inten)
+    
+    def _sample_hw_setting(self):
+        hw_set = self._zen.Devices.ReadHardwareSetting()
+        self._sample_shutter_position(hw_set)
+        self._sample_leds(hw_set)
+
+    def _sample_shutter_position(self, hw_set=None):
+        """
+        Compares microscope shutter postion against internal attribute and emit
+        signal if dont match
+
+        If no `hw_set` provided, then reads the current hardware setting
+
+        Args:
+            hw_set: zeiss hardware setting to query for shutter status
+        """
+        shutter_pos = self.get_shutter_position(hw_set=hw_set)
+        if shutter_pos != self._shutter_position:
+            self._shutter_position = shutter_pos
+            self.lamp_shutter_changed.emit(shutter_pos)
+
+    def _sample_leds(self, hw_set=None):
+        """
+        Compares microscope led against internal attribute and emit
+        signal if dont matchy
+
+        If no `hw_set` provided, then reads the current hardware setting
+
+        Args:
+            hw_set: zeiss hardware setting to query for shutter status
+        """
+        leds = self._connected_leds()
+        if not leds.equals(self.leds):
+            diff_dict = df_compare_to_dict(self.leds, leds)
+            self.leds = leds
+            self.led_changed.emit(diff_dict)
 
     def get_focus_um(self)->float:
         '''Returns position of focus in um (consistent w/ ZEN software)'''
@@ -479,6 +537,170 @@ class ModelZEN(QObject):
         self._zen.Devices.Reflector.TargetPosition = pos
         self._zen.Devices.Reflector.Apply()
 
+    def get_lamp_intensity(self)->float:
+        """ Returns lamp intensity as float between 0 - 100 """
+        return round(self._zen.Devices.Lamp.ActualIntensity)
+
+    def set_lamp_intensity(self, inten:float)->None:
+        """
+        Sets lamp intensity
+
+        Arguments:
+            inten (float): Float between 0-100 for lamp intensity
+        """
+        if inten <0 or inten> 100:
+            raise ValueError(f"Invalid lamp intensity: {inten}. Must be 0-100.")
+        self._zen.Devices.Lamp.TargetIntensity = inten
+        self._zen.Devices.Lamp.Apply()
+
+    def get_shutter_position(self, hw_set=None)->str:
+        """
+        Returns 'open' if shutter is open else 'closed'
+        
+        If no `hw_set` provided, then reads the current hardware setting
+
+        Args:
+            hw_set: zeiss hardware setting to query for shutter status
+        """
+        if hw_set is None:
+            hw_set = self._zen.Devices.ReadHardwareSetting()
+        is_closed = str_to_bool(self.get_hw_parameter(comp_id='MTBTLShutter', param='IsClosed', hw_set=hw_set))
+        if is_closed:
+            return 'closed'
+        else:
+            return 'open'
+
+    def set_shutter_position(self, val:str):
+        """
+        Sets shutter position. If true, closes shutter else opens shutter.
+        
+        Args:
+            val (str): 'open' or 'closed' position for shutter
+        """
+        if val not in ['open','closed']:
+            raise ValueError(f"Invalid shutter close value: {val}. Must be ['open', 'closed']")
+        hw_set = self._zen.Devices.ReadHardwareSetting()
+        if val == 'open':
+            is_closed = 'false'
+        else:
+            is_closed = 'true'
+        self.set_hw_parameter(comp_id='MTBTLShutter', param='IsClosed', val=is_closed)
+
+    def _connected_leds(self,start_pos:int=1, end_pos:int=6) -> pd.DataFrame:
+        '''
+        Returns dataframe of leds pos, intensity and active
+
+        Arguments:
+            start_pos (int): Starting position in Zeiss software to start listing leds
+            end_pos (int): Ending positoin in Zeiss software to stop listing leds
+
+        '''
+        if not val.is_of_types(start_pos,[int,float]):
+            raise ValueError(f"LED start position must be a number type. {type(start_pos)} is invalid.")
+        if not val.is_of_types(end_pos,[int,float]):
+            raise ValueError(f"LED end position must be a number type. {type(start_pos)} is invalid.")
+        hw_set = self._zen.Devices.ReadHardwareSetting()
+        led_dict = {}
+        for pos in range(start_pos, end_pos+1):
+            comp_id = f"MTBLED{pos}"
+            inten = int(round(float(self.get_hw_parameter(comp_id=comp_id, param='Intensity',hw_set=hw_set))))
+            enab = str_to_bool(self.get_hw_parameter(comp_id=comp_id, param='IsEnabled',hw_set=hw_set))
+            led_dict[pos] = {'position':pos,'intensity':inten,'active':enab, 'comp_id':comp_id}
+        led_df = pd.DataFrame(led_dict).transpose()
+        return led_df
+
+    def get_hw_parameter(self, comp_id:str, param:str, hw_set=None):
+        """
+        Return hardware setting parameter. If `hw_set` is None, reads a new
+        hardware setting from ZEN.
+
+        Args:
+            comp_id (str): ZEN component id name
+            param (str): ZEN parameter name
+            hw_set: ZEN hardware setting
+
+        Returns:
+            parameter value
+        """
+        # Read hardware setting if none
+        if hw_set is None:
+            hw_set = self._zen.Devices.ReadHardwareSetting()
+        # Validate
+        if comp_id not in hw_set.GetAllComponentIds():
+            raise KeyError(f"Invalid component ID: {comp_id}. Valid IDs: {hw_set.GetAllComponentIds()}")
+        if param not in hw_set.GetAllParameterNames(comp_id):
+            raise KeyError(f"Invalid parameter: {param}. Valid parameters: {hw_set.GetAllParameterNames(comp_id)}")
+        # Get parameter from hardware setting
+        val = hw_set.GetParameter(comp_id, param)
+        return val
+
+    def set_hw_parameter(self, comp_id:str, param:str, val:str):
+        """
+        Return hardware setting parameter. If `hw_set` is None, reads a new
+        hardware setting from ZEN.
+
+        Args:
+            comp_id (str): ZEN component id name
+            param (str): ZEN parameter name
+            val (str): Value to set
+        """
+        hw_set = self._zen.Devices.ReadHardwareSetting()
+        # Validate
+        if comp_id not in hw_set.GetAllComponentIds():
+            raise KeyError(f"Invalid component ID: {comp_id}. Valid IDs: {hw_set.GetAllComponentIds()}")
+        if param not in hw_set.GetAllParameterNames(comp_id):
+            raise KeyError(f"Invalid parameter: {param}. Valid parameters: {hw_set.GetAllParameterNames(comp_id)}")
+        if not isinstance(val, str):
+            raise TypeError(f'Invalid type of value: type={type(val)}, value={val}. Must be a string.')
+        hw_set.SetParameter(comp_id, param, val)
+        self._zen.Devices.ApplyHardwareSetting(hw_set)
+
+    def get_led_info(self, led_pos:int, key:str):
+        """
+        Returns led info about led at position.
+
+        Args:
+            led_pos (int): Position of led that information is desired
+            key (str): Type of information to return in ['intensity','active']
+
+        Returns:
+            queried information from led
+        """
+        # Validate args
+        if led_pos not in list(self.leds['position']):
+            raise KeyError(f"Invalid led position key: {led_pos}. Valid keys are {list(self.leds['position'])}.")
+        if key not in ['intensity','active']:
+            raise KeyError(f"Invalid led info key: {key}. Valid keys are ['intensity','active']")
+        # Get queried info
+        if key == 'intensity':
+            comp_id = self.leds.loc[led_pos,'comp_id']
+            return int(round(float(self.get_hw_parameter(comp_id,'Intensity'))))
+        if key == 'active':
+            comp_id = self.leds.loc[led_pos,'comp_id']
+            return str_to_bool(self.get_hw_parameter(comp_id,'IsEnabled'))
+
+    def set_led_intensity(self, led_pos:int, inten:float):
+        """
+        Sets led intensity for led at position
+
+        Args:
+            led_pos (int): Position of led to set intensity
+            inten (float): 0-100 value of intensity
+        """
+        comp_id = self.leds.loc[led_pos,'comp_id']
+        self.set_hw_parameter(comp_id,'Intensity', str(round(inten)))
+    
+    def set_led_active(self, led_pos:int, active:bool):
+        """
+        Sets led active for led at position
+
+        Args:
+            led_pos (int): Position of led to set intensity
+            active (bool): True to turn led on else false
+        """
+        comp_id = self.leds.loc[led_pos,'comp_id']
+        self.set_hw_parameter(comp_id,'IsEnabled', str(active).lower())
+
 
 class ControllerZEN(QObject):
     """
@@ -492,6 +714,10 @@ class ControllerZEN(QObject):
     ex_obj_position_changed = pyqtSignal(str)
     ex_opto_position_changed = pyqtSignal(str)
     ex_ref_position_changed = pyqtSignal(str)
+    ex_lamp_intensity_changed = pyqtSignal(float)
+    ex_shutter_position_opened = pyqtSignal(bool)
+    ex_led_intensity_changed = pyqtSignal(dict)
+    ex_led_active_changed = pyqtSignal(dict)
 
     focus_changed = pyqtSignal([str])
     obj_changed = pyqtSignal([float])
@@ -517,6 +743,9 @@ class ControllerZEN(QObject):
         self._model.obj_position_changed.connect(self.objective_model_change)
         self._model.opto_position_changed.connect(self.optovar_model_change)
         self._model.ref_position_changed.connect(self.reflector_model_change)
+        self._model.lamp_intensity_changed.connect(self.lamp_model_change)
+        self._model.lamp_shutter_changed.connect(self.lamp_shutter_model_change)
+        self._model.led_changed.connect(self.led_model_change)
 
     def objective_model_change(self):
         """
@@ -669,6 +898,113 @@ class ControllerZEN(QObject):
         """
         pos = self._model.get_focus_um()
         return pos
+
+    def lamp_model_change(self, inten:float):
+        """
+        Handles when lamp intensity changes in model (like user changed it
+        in ZEN software). Emits signal of change so view can reflect change
+
+        Args:
+            inten (float): Lamp intensity value
+        """
+        self.ex_lamp_intensity_changed.emit(inten)
+
+    def get_lamp_intensity(self)->float:
+        """ Returns lamp intesnity on 0-100 """
+        return self._model.get_lamp_intensity()
+
+    def set_lamp_intensity(self, inten:float)->None:
+        """
+        Set the lamp intensity
+        
+        Args:
+            inten (float): 0-100 value of intensity
+        """
+        self._model.set_lamp_intensity(inten)
+
+    def lamp_shutter_model_change(self, position:str):
+        """
+        Handles when lamp shutter changes in model (like user changed it
+        in ZEN software). Emits signal of change so view can reflect change
+
+        Args:
+            position (str): 'open' if shutter opened else 'closed'
+        """
+        if position == 'open':
+            opened = True
+        else:
+            opened = False
+        self.ex_shutter_position_opened.emit(opened)
+
+    def get_lamp_on(self)->bool:
+        """ Return true if shutter is open else false """
+        position = self._model.get_shutter_position()
+        if position == 'open':
+            return True
+        else:
+            return False
+
+    def set_lamp_on(self,on:bool)->None:
+        """
+        Sets whether lamp is on. True for on else false
+        
+        Args:
+            on (bool): True for on else false
+        """
+        if on is True:
+            position = 'open'
+        else:
+            position = 'closed'
+        self._model.set_shutter_position(position)
+
+    def led_model_change(self, change_dict:dict):
+        """
+        Handles when a led status chagnes in model (liek user changed it in
+        the ZEN software). Emits signal of change so view can reflect change.
+
+        Args:
+            change_dict (dict): dictionary of change values as {pos: {chagnes}}
+        """
+        intensity_changes = {}
+        active_changes = {}
+        for key, sub_dict in change_dict.items():
+            for param, val in sub_dict.items():
+                if param == 'intensity':
+                    intensity_changes[key] = val
+                elif param == 'active':
+                    active_changes[key] = val
+        if intensity_changes != {}:
+            self.ex_led_intensity_changed.emit(intensity_changes)
+        if active_changes != {}:
+            self.ex_led_active_changed.emit(active_changes)
+
+    def get_led_on(self, led_pos:int)->bool:
+        """ Return true if led at `led_pos` is on """
+        return self._model.get_led_info(led_pos=led_pos, key='active')
+
+    def set_led_on(self, led_pos:int, on:bool)->bool:
+        """
+        Sets led at `led_pos` to on if `on` is true else turns off
+
+        Args:
+            led_pos (int): Led to turn off/on
+            on (bool): whether to turn led on or off
+        """
+        self._model.set_led_active(led_pos=led_pos, active=on)
+
+    def get_led_intensity(self, led_pos:int)->float:
+        """ Return intensity as float for led at `led_pos` """
+        return self._model.get_led_info(led_pos=led_pos, key='intensity')
+
+    def set_led_intensity(self, led_pos:int, inten:float):
+        """
+        Sets led intensity for led at position
+
+        Args:
+            led_pos (int): Position of led to set intensity
+            inten (float): 0-100 value of intensity
+        """
+        self._model.set_led_intensity(led_pos=led_pos, inten=inten)
     
     def parse_to_combobox(self, box_name:str) -> str:
         """
@@ -905,6 +1241,53 @@ class ViewZEN(QObject):
         # Reflector selector combobox
         self.ref_selector = QComboBox()
         self.ref_selector.setPlaceholderText('Name')
+
+        # LED values for each position (copied from ZEN software)
+        self.led_wavelengths = {1: 385, 
+                                2: 430, 
+                                3: 475,
+                                4: 511, 
+                                5: 555, 
+                                6: 630}
+
+        # Light source buttons
+        self.lamp_button = QRadioButton('Lamp')
+        self.lamp_button.setAutoExclusive(False)
+        self.led1_button = QRadioButton(str(self.led_wavelengths[1]))
+        self.led1_button.setAutoExclusive(False)
+        self.led2_button = QRadioButton(str(self.led_wavelengths[2]))
+        self.led2_button.setAutoExclusive(False)
+        self.led3_button = QRadioButton(str(self.led_wavelengths[3]))
+        self.led3_button.setAutoExclusive(False)
+        self.led4_button = QRadioButton(str(self.led_wavelengths[4]))
+        self.led4_button.setAutoExclusive(False)
+        self.led5_button = QRadioButton(str(self.led_wavelengths[5]))
+        self.led5_button.setAutoExclusive(False)
+        self.led6_button = QRadioButton(str(self.led_wavelengths[6]))
+        self.led6_button.setAutoExclusive(False)
+        self.led_button_dict = {1: self.led1_button,
+                                2: self.led2_button,
+                                3: self.led3_button,
+                                4: self.led4_button,
+                                5: self.led5_button,
+                                6: self.led6_button,}
+        self.inv_led_button_dict = {v:k for k, v in self.led_button_dict.items()}
+        
+        # Lamp intensity slider
+        self.lamp_slider = QSlider(Qt.Orientation.Horizontal)
+        self.lamp_slider.setMinimum(0)
+        self.lamp_slider.setMaximum(100)
+        self.lamp_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.lamp_slider.setTickInterval(10)
+
+        # LED intensity combobox and slider
+        self.led_selector = QComboBox()
+        self.led_selector.setPlaceholderText('LED')
+        self.led_slider = QSlider(Qt.Orientation.Horizontal)
+        self.led_slider.setMinimum(0)
+        self.led_slider.setMaximum(100)
+        self.led_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.led_slider.setTickInterval(10)
     
     def _stateify_widgets(self):
         """
@@ -932,6 +1315,35 @@ class ViewZEN(QObject):
         self.ref_selector.insertItems(0, ref_vals)
         self.update_combobox(self.ref_selector, cur_ref)
 
+        # Initialize lamp slider
+        lamp_val = self._controller.get_lamp_intensity()
+        self.lamp_slider.setValue(lamp_val)
+
+        # Intialize lamp shutter
+        is_on = self._controller.get_lamp_on()
+        self.lamp_button.setChecked(is_on)
+
+        # Initialize led buttons
+        led1_val = self._controller.get_led_on(self.inv_led_button_dict[self.led1_button])
+        self.led1_button.setChecked(led1_val)
+        led2_val = self._controller.get_led_on(self.inv_led_button_dict[self.led2_button])
+        self.led2_button.setChecked(led2_val)
+        led3_val = self._controller.get_led_on(self.inv_led_button_dict[self.led3_button])
+        self.led3_button.setChecked(led3_val)
+        led4_val = self._controller.get_led_on(self.inv_led_button_dict[self.led4_button])
+        self.led4_button.setChecked(led4_val)
+        led5_val = self._controller.get_led_on(self.inv_led_button_dict[self.led5_button])
+        self.led5_button.setChecked(led5_val)
+        led6_val = self._controller.get_led_on(self.inv_led_button_dict[self.led6_button])
+        self.led6_button.setChecked(led6_val)
+
+        # Initilaize led combobox
+        combovals = [f"{key}: {wav}" for key, wav in self.led_wavelengths.items()]
+        self.led_selector.insertItems(0,combovals)
+
+        # # Initialize led slider
+        # lamp_val = self._controller.get_led_intensity()
+        # self.led_slider.setValue(lamp_val)
 
     def _set_connections(self):
         """
@@ -940,6 +1352,16 @@ class ViewZEN(QObject):
         # Set view's signals' connections with view slots
         self.btn_minus.clicked.connect(self.minus_focus)
         self.btn_plus.clicked.connect(self.plus_focus)
+        self.lamp_slider.sliderReleased.connect(self.change_lamp_intensity)
+        self.led_slider.sliderReleased.connect(self.change_led_intensity)
+        self.lamp_button.clicked.connect(lambda lamp_on: self.change_lamp_active(lamp_on))
+        self.led1_button.clicked.connect(lambda but_on: self.change_led_active(but_on, self.led1_button))
+        self.led2_button.clicked.connect(lambda but_on: self.change_led_active(but_on, self.led2_button))
+        self.led3_button.clicked.connect(lambda but_on: self.change_led_active(but_on, self.led3_button))
+        self.led4_button.clicked.connect(lambda but_on: self.change_led_active(but_on, self.led4_button))
+        self.led5_button.clicked.connect(lambda but_on: self.change_led_active(but_on, self.led5_button))
+        self.led6_button.clicked.connect(lambda but_on: self.change_led_active(but_on, self.led6_button))
+        self.led_selector.currentTextChanged.connect(self.led_combobox_change)
         # Set view's signals' connection with controller slots.
         self.obj_selector.currentTextChanged.connect(self._controller.objective_view_change)
         self.opto_selector.currentTextChanged.connect(self._controller.optovar_view_change)
@@ -951,6 +1373,10 @@ class ViewZEN(QObject):
         self._controller.ex_obj_position_changed.connect(lambda combo_str: self.update_combobox(self.obj_selector, combo_str))
         self._controller.ex_opto_position_changed.connect(lambda combo_str: self.update_combobox(self.opto_selector, combo_str))
         self._controller.ex_ref_position_changed.connect(lambda combo_str: self.update_combobox(self.ref_selector, combo_str))
+        self._controller.ex_lamp_intensity_changed.connect(lambda inten: self.update_lamp_slider(inten))
+        self._controller.ex_shutter_position_opened.connect(lambda opened: self.update_lamp_button(opened))
+        self._controller.ex_led_intensity_changed.connect(lambda inten: self.update_led_slider(inten))
+        self._controller.ex_led_active_changed.connect(lambda led_active_dict: self.update_led_buttons(led_active_dict))
 
     def update_combobox(self, combo_box:QComboBox, combo_str:str):
         """
@@ -975,6 +1401,131 @@ class ViewZEN(QObject):
         """
         self.foc_disp.clear()
         self.foc_disp.insert(str(pos))
+
+    def update_lamp_slider(self, inten:float):
+        """
+        Updates the view's lamp intensity slider to show the intensity
+
+        Args:
+            inten (float): Lamp intensity
+        """
+        self.lamp_slider.setValue(int(round(inten)))
+
+    def update_led_slider(self, led_dict:float):
+        """
+        Updates the view's led intensity slider to show the intensity
+
+        Args:
+            led_dict (dict): dictionary of {led_num: intensity, ...}
+        """
+        for led_num, inten in led_dict.items():
+            selector_text = self.led_selector.currentText()
+            selector_led_num, _ = self._parse_from_led_combobox(selector_text)
+            if led_num == selector_led_num:
+                self.led_slider.setValue(int(round(inten)))
+
+    def update_lamp_button(self, is_opened:bool):
+        """
+        Updates the view's lamp button to show whether on or off
+
+        Args:
+            is_opened (bool): if shutter is opened
+        """
+        self.lamp_button.setChecked(is_opened)
+
+    def update_led_buttons(self, led_dict:dict):
+        """
+        Updates the view's led button to show whether on or off
+
+        Args:
+            led_dict (dict): dictionary of {led_num: is_on, ...}
+        """
+        for led_num, val in led_dict.items():
+            self.led_button_dict[led_num].setChecked(val)
+
+    def change_lamp_intensity(self):
+        """
+        Sets new lamp inensity when the lamp slider is changed
+        """
+        inten = self.lamp_slider.value()
+        self._controller.set_lamp_intensity(inten)
+
+    def change_led_intensity(self):
+        """
+        Sets new led inensity when the led slider is changed
+        """
+        selector_text = self.led_selector.currentText()
+        led_num, led_wave = self._parse_from_led_combobox(selector_text)
+        if led_num is not None:
+            inten = self.led_slider.value()
+            self._controller.set_led_intensity(led_num,inten)
+
+    def change_lamp_active(self, lamp_on:bool):
+        """
+        Sets new shutter position when lamp button clicked
+
+        Args:
+            lamp_on (bool): state of the lamp button (true for checked)
+        """
+        self._controller.set_lamp_on(lamp_on)
+
+    def change_led_active(self, led_on:bool, led_but:QRadioButton):
+        """
+        Turns led on/off when led button clicked
+
+        Args:
+            led_on (bool): state of the led button (true for checked)
+            led_but (QRadioButton): the led button that was clicked
+        """
+        led_pos = int(self.inv_led_button_dict[led_but])
+        if led_on is True:
+            combostr = self._parse_to_led_combobox(led_pos)
+            self.led_selector.setCurrentText(combostr)
+        self._controller.set_led_on(led_pos, led_on)
+
+    def led_combobox_change(self, led_combo:str):
+        """
+        Handles when the text of the led selector changes
+
+        Args:
+            led_combo (str): text from led combobox
+        """
+        led_num, led_wav = self._parse_from_led_combobox(led_combo)
+        if led_num is not None:
+            inten = self._controller.get_led_intensity(led_num)
+            self.led_slider.setValue(inten)
+
+    def _parse_to_led_combobox(self, led_pos:int)->str:
+        """
+        Makes led combobox string from led position
+
+        Args:
+            led_pos (int): led positoin
+
+        Returns:
+            string as f"{led_pos}: {wavelength}"
+        """
+        combo_str = f"{led_pos}: {self.led_wavelengths[led_pos]}"
+        return combo_str
+
+    def _parse_from_led_combobox(self, combo_str:str):
+        """
+        Parses led combobox to led positoin and wavelength. Returns None
+        if combo_str is emtpy
+
+        Args:
+            combo_str (str): string form combobox as f"{led_pos}: {wavelength}"
+
+        Returns:
+            (int) led positon
+            (int) led wavelength
+        """
+        if combo_str == '':
+            return None, None
+        else:
+            led_pos = int(combo_str.split(":")[0])
+            led_wav = int(combo_str.split(":")[0].strip())
+            return led_pos, led_wav
 
     def plus_focus(self):
         '''
@@ -1065,27 +1616,41 @@ class ViewZENComplete(ViewZEN):
         h_separator = QHLine()
         v_layout.addWidget(h_separator)
 
-        # Objective widgets
+        # Objective, optovar, and reflector widgets
         obj_selector_label = QLabel('Objective:')        
-        h_layout4 = QHBoxLayout()
-        h_layout4.addWidget(obj_selector_label)
-        h_layout4.addWidget(self.obj_selector)
-        v_layout.addLayout(h_layout4)
-
-        # Optovar widgets
         opto_selector_label = QLabel('Optovar:')       
-        h_layout5 = QHBoxLayout()
-        h_layout5.addWidget(opto_selector_label)
-        h_layout5.addWidget(self.opto_selector)
-        v_layout.addLayout(h_layout5)
-
-        # Reflector widgets
         ref_selector_label = QLabel('Reflector:')        
-        h_layout6 = QHBoxLayout()
-        h_layout6.addWidget(ref_selector_label)
-        h_layout6.addWidget(self.ref_selector)
-        v_layout.addLayout(h_layout6)
+        form1 = QFormLayout()
+        form1.addRow(obj_selector_label, self.obj_selector)
+        form1.addRow(opto_selector_label, self.opto_selector)
+        form1.addRow(ref_selector_label, self.ref_selector)
+        v_layout.addLayout(form1)
 
+        # Lightsource widgets
+        lamp_slider_label = QLabel("Lamp:")
+        source_label = QLabel("Light\nSources:")
+        h_layout7 = QHBoxLayout()
+        h_layout8 = QHBoxLayout()
+        h_layout9 = QHBoxLayout()
+        h_layout7.addWidget(self.led1_button)
+        h_layout7.addWidget(self.led2_button)
+        h_layout7.addWidget(self.led3_button)
+        h_layout8.addWidget(self.led4_button)
+        h_layout8.addWidget(self.led5_button)
+        h_layout8.addWidget(self.led6_button)
+        v_layout2 = QVBoxLayout()
+        v_layout2.addWidget(self.lamp_button)
+        v_layout2.addLayout(h_layout7)
+        v_layout2.addLayout(h_layout8)
+        v_layout2.setAlignment(self.lamp_button,Qt.AlignmentFlag.AlignHCenter)
+        h_layout9.addWidget(source_label)
+        h_layout9.addLayout(v_layout2)
+        form = QFormLayout()
+        form.addRow(lamp_slider_label, self.lamp_slider)
+        form.addRow(self.led_selector, self.led_slider)
+        v_layout.addWidget(QHLine())
+        v_layout.addLayout(h_layout9)
+        v_layout.addLayout(form)
         # Create groupbox
         self.zen_group.setLayout(v_layout)
 

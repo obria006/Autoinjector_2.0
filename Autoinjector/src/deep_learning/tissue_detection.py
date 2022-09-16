@@ -45,12 +45,13 @@ class ModelTissueDetection():
         if not isinstance(image, np.ndarray):
             raise TypeError(f"Invalid image type: {type(image)}. It must be numpy ndarray.")
         edge_cc, mask_cc, edge_df, new_mask = self._classifier.classify_img(image)
-        edge_coords = self._postprocess_edges(edge_cc=edge_cc, edge_df=edge_df, edge_type=edge_type)
+        edge_coords, errs = self._postprocess_edges(mask_cc = mask_cc, edge_cc=edge_cc, edge_df=edge_df, edge_type=edge_type)
         detection_dict = {
             'detection_data': edge_df,
             'segmentation_image': mask_cc,
             'edge_image': edge_cc,
-            'edge_coordinates': edge_coords
+            'edge_coordinates': edge_coords,
+            'error': errs
         }
 
         return detection_dict

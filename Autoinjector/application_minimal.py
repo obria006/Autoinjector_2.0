@@ -1416,6 +1416,7 @@ class ControlWindow(QMainWindow):
                 df = detection_dict['detection_data']
                 edge_cc = detection_dict['edge_image']
                 edge_pixels = detection_dict['edge_coordinates']
+                errs = detection_dict['error']
                 # Construct binary masks of tissue/edge detection for display
                 tissue_mask = detection_dict['segmentation_image']>0
                 basal_mask = self.make_edge_mask(edge_df=df, edge_cc=edge_cc, edge_type='basal')
@@ -1423,6 +1424,8 @@ class ControlWindow(QMainWindow):
                 self.vid_display.set_masks(tissue_mask=tissue_mask, apical_mask=apical_mask, basal_mask=basal_mask)
                 self.vid_display.display_masks()
                 # Raise error if no edge for desired edge is found
+                if errs is not None:
+                    raise errs
                 if edge_pixels is None:
                     raise EdgeNotFoundError(f"Edge not found: {edge_type}.")
                 # Set the anntoation for injection

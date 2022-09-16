@@ -1,5 +1,6 @@
 ''' Functions for miscellaneous validations (for arugments/ inputs) '''
 import math
+import numpy as np
 
 def is_valid_number(val, inc_nan:bool=False)->bool:
     '''
@@ -42,3 +43,19 @@ def is_of_types(obj, types:list) -> bool:
         if isinstance(obj,type_):
             is_types = True
     return is_types
+
+def val_binary_image(mask:np.ndarray):
+    """
+    Returns true if binary image else false
+
+    Args:
+        mask (np.ndarray): image to evaluate
+    """
+    if not isinstance(mask, np.ndarray):
+        raise TypeError(f"Invalid mask type: {type(mask)}. Must be np.ndarray")
+    if len(mask.shape)>2:
+        raise ValueError("Mask image must have depth=1.")
+    vals = np.unique(mask)
+    for val in vals:
+        if val not in [0, 1]:
+            raise ValueError("Mask must be binary image")

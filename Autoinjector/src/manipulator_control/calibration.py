@@ -1,5 +1,6 @@
 ''' Scripts for handling manipulator to coordinate system calibration '''
 import time
+import math
 import os
 from datetime import datetime
 from pathlib import Path
@@ -826,6 +827,30 @@ class CalibrationModel():
         pix_per_nm = np.mean(np.array([x_pixels_per_nm, y_pixels_per_nm]))
         pix_size_nm = 1/pix_per_nm
         return pix_size_nm
+
+    def compute_pipette_rotation_deg(self)->float:
+        """
+        Computes the angle between the pipette direction (of the x-axis) and the
+        external coordinate system.
+
+        From the calibration matrix, the manipulator to external calbration matrix dictates:
+        ex_x = T11 * m_x
+        ex_Y = T21 * m_x
+
+        Therefore unit change in manipulator x (m_x) causes a T11 change in external x (ex_x)
+        and T21 change in external y (ex_y). So angle between pipette x and external coord
+        sys is arctan(T21/T11)
+
+        Returns:
+            (float) rotation angle between pipettee and ex CSYS in degrees
+        """
+        print("Matrix",self.T_mxyz_to_exxyz)
+        if self.is_calibrated is False:
+            raise CalibrationError('Cannot pipette rotation because calibration is incomplete')
+        dy_ex = self.T_mxyz_to_exxyz[1][0]
+        dx_ex = self.T_mxyz_to_exxyz[0][0]
+        ang = math.degrees(math.atan2(dy_ex,dx_ex))
+        return ang
 
     def set_x_0(self, data:pd.DataFrame):
         '''

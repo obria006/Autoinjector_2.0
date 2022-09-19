@@ -116,7 +116,7 @@ def alpha_compost_A_over_B(rgb_A:np.ndarray, rgb_B:np.ndarray, alpha:float):
 
     """
     # Compute alpha values
-    a_b = np.ones((img_B.shape[0], img_B.shape[1]))
+    a_b = np.ones((rgb_B.shape[0], rgb_B.shape[1]))
     # Non-zero  values in image get alpha value, else 0
     a_a = alpha * np.any(rgb_A>0,axis=2).astype(float)
     a_o = a_a + a_b * (1 - a_a)

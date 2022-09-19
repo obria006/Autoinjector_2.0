@@ -2,9 +2,10 @@
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
+from src.deep_learning.edge_utils.error_utils import EdgeNotFoundError
 from src.miscellaneous.validify import val_binary_image
 
-def reachable_edges(edge_mask:np.ndarray, tiss_mask:np.ndarray, rot_ang:float, ang_thresh:float=20, bound_perc:float=0.1)-> np.ndarray:
+def reachable_edges(edge_mask:np.ndarray, tiss_mask:np.ndarray, rot_ang:float, edge_type:str, ang_thresh:float=20, bound_perc:float=0.1)-> np.ndarray:
     """
     Extract the reachable edges from the edge mask. Reachable meaning that
     the edges make a desired angle w/ the pipette (like 90 deg), don't 
@@ -19,6 +20,7 @@ def reachable_edges(edge_mask:np.ndarray, tiss_mask:np.ndarray, rot_ang:float, a
         tiss_mask (np.ndarray): 0-1 binary tissue mask
         rot_ang (float): rotation angle in degrees between current pipette
             and pipette pointing to left
+        edge_type (str): name of edge to be detected
         ang_thresh (float): Mininum appropriate angle between the pipette and the
             edges in degrees. Edges below the angle will be removed
         bound_perc (np.ndarray): Perecentage of width/height to set to 0
@@ -41,10 +43,6 @@ def reachable_edges(edge_mask:np.ndarray, tiss_mask:np.ndarray, rot_ang:float, a
     dil = cv2.dilate(edge_mask, kern)
     edge_mask_rsz = cv2.resize(dil, (SQ_DIM, SQ_DIM), interpolation=cv2.INTER_AREA)
     tiss_mask_rsz = cv2.resize(tiss_mask, (SQ_DIM, SQ_DIM), interpolation=cv2.INTER_AREA)
-    # Evaluate connectivity (aka that edge is single pixel width so each True pixel
-    # has at most 3 instances of 8-point connectivity)
-    if not is_single_pixel_width(edge_mask_rsz):
-        raise ValueError("Edge mask is not single pixel width")
     # Rotate to pipette
     edge_mask_rsz, tiss_mask_rsz = rotate_masks_to_pipette(edge_mask_rsz, tiss_mask_rsz)
     # Threshold to edge that makes angels with pipette
@@ -62,6 +60,8 @@ def reachable_edges(edge_mask:np.ndarray, tiss_mask:np.ndarray, rot_ang:float, a
     # Resize to original
     reachable = cv2.resize(edge_mask_rsz.astype(np.uint8),edge_mask.shape,interpolation=cv2.INTER_LINEAR)
     reachable = np.logical_and(reachable, edge_mask)
+    # Evaluate connectivity (aka that edge is single pixel width so each True pixel
+    # has at most 3 instances of 8-point connectivity)
     if not is_single_pixel_width(reachable):
         raise ValueError("Edge mask is not single pixel width")
     return reachable
@@ -202,6 +202,8 @@ def contiguous_rightmost_edges(mask:np.ndarray, alt_mask:np.ndarray=None)->np.nd
     # Create mask fo only rightmost (and left connected) pixels
     new_mask = np.zeros_like(mask)
     np.put(new_mask,rightmost_inds,1)
+    # Supress all detected edges on the left boundary (spurious results from np.max)
+    new_mask[:,0] = 0
     return new_mask.astype(bool)
 
 def maintain_left_conn(mask:np.ndarray, inds:np.ndarray)->np.ndarray:

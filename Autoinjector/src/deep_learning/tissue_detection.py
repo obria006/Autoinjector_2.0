@@ -69,7 +69,9 @@ class ModelTissueDetection():
         # Validate that desired edge was detected
         existing_edges = np.unique(edge_df['semantic'].to_numpy())
         if edge_type not in existing_edges:
-            return None
+            e = EdgeNotFoundError(f"Could not find {edge_type} edge in tissue.")
+            edge_coords = None
+            return edge_coords, e
         # Get the longest edge label
         desired_edge_df = edge_df[edge_df['semantic']==edge_type]
         largest_edge_size = np.amax(desired_edge_df['size'].to_numpy())
@@ -78,7 +80,10 @@ class ModelTissueDetection():
 
         # Only return reachable edges
         try:
-            edge_mask = reachable_edges(edge_cc==desired_edge_label, mask_cc>0, None)
+            edge_mask = reachable_edges(edge_cc==desired_edge_label, mask_cc>0, None, edge_type=edge_type)
+        except EdgeNotFoundError as e:
+            edge_coords = None
+            return edge_coords, e
         except Exception as e:
             self._logger.exception(f"Error while processing reachable edges: {e}")
             edge_coords = None

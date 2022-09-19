@@ -59,7 +59,7 @@ def sort_path_along_binary_trajectory(img:np.ndarray)->list:
     # delete one of its nearest neighbors to turn it into an extremum point)
     if extremum_found is False:
         x = pnts[0][1]
-        y = p[0][0]
+        y = pnts[0][0]
         neighbors = get_neighbors_4way(img, x, y)
         # compute distance between current pixel and its neighbors
         norms = [np.linalg.norm(np.array([y,x]) - np.array([ele[0],ele[1]])) for ele in neighbors]

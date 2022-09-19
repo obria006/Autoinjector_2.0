@@ -137,7 +137,7 @@ $$\Delta{z_{ex}} = 0 \times \Delta{x_m}\prime + 0 \times \Delta{y_m}\prime \pm \
 
 Putting these equations into matrix form, we define the structure of the $\hat{T}_{m_3 \leftarrow m_4}$ matrix.
 
-$$\begin{bmatrix} \Delta{x_{ex}}\\ \Delta{y_{ex}}\\ \Delta{z_{ex}} \end{bmatrix}
+$$\begin{bmatrix} \Delta{x_{ex}}\\ \Delta{y_{ex}}\\ \Delta{z_{ex}} \end{bmatrix} = 
 
 \begin{bmatrix} \alpha_{1,1} & \alpha_{1,2} & 0  \\ \alpha_{2,1} & \alpha_{2,2} & 0  \\ 0 & 0 & \pm \alpha_{z}  \end{bmatrix}
 

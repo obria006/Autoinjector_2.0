@@ -40,67 +40,106 @@ class ModelTissueDetection():
             dictionary of:
                 {'detection_data': pd.DataFrame,
                 'segmentation_image': np.ndarray,
-                'edge_image': np.ndarray,
-                'edge_coordinates': np.ndarray}
+                'edge_image': np.ndarray}
         """
         if not isinstance(image, np.ndarray):
             raise TypeError(f"Invalid image type: {type(image)}. It must be numpy ndarray.")
         edge_cc, mask_cc, edge_df, new_mask = self._classifier.classify_img(image)
-        edge_coords, errs = self._postprocess_edges(mask_cc = mask_cc, edge_cc=edge_cc, edge_df=edge_df, edge_type=edge_type)
         detection_dict = {
             'detection_data': edge_df,
             'segmentation_image': mask_cc,
-            'edge_image': edge_cc,
-            'edge_coordinates': edge_coords,
-            'error': errs
-        }
-
+            'edge_image': edge_cc}
         return detection_dict
-
-    def _postprocess_edges(self, mask_cc:np.ndarray, edge_cc:np.ndarray, edge_df:pd.DataFrame, edge_type:str):
+    
+    def longest_reachable_edge_of_type(self, detection_dict:dict, edge_type:str, pip_orient_RH:float=None):
         """
-        Process the detected edges and return the longest desired edge.
+        Post-process the detected edge and return the longest edge of a specific
+        type (like 'apical' or 'basal') that can be reached by the pipette
 
         Args:
-            edge_cc (np.ndarray): Labeled image of detected edges
-            edge_df (pd.DataFrame): Data of detection
-            edge_type (str): Semantic label of edge to extract (like 'basal' or 'apical')
+            detection_dict (dict): Dictionary output from `detect` as:
+                {'detection_data': pd.DataFrame,
+                'segmentation_image': np.ndarray,
+                'edge_image': np.ndarray}
+            edge_type (str): type of edge to return (like 'apical' or 'basal')
+            pip_orient_RH (float): Orientation of pipette x-axis (projecting out and
+            away from pipette tip) in degrees relative to RH coordinate system (positve is
+            CCW from pointing to the right)
+
+        Returns:
+            edge_coords (np.ndarray): numpy array of pixel coordinates as [[x,y],...] (or None)
+            err: Error raised during post-processing (or None)
         """
+        # Get edge mask
+        edge_mask = self._edge_mask_of_type(detection_dict, edge_type)
+        # Only return reachable edges
+        mask_cc = detection_dict['segmentation_image']
+        edge_mask = reachable_edges(edge_mask=edge_mask,
+                                    tiss_mask=mask_cc>0,
+                                    pip_orient_RH=pip_orient_RH,
+                                    edge_type=edge_type,
+                                    ang_thresh=20,
+                                    bound_perc=0.1)
+        # Get coordinates of edge from connected component edge image
+        edge_coords = np.asarray(sort_path_along_binary_trajectory(edge_mask))
+        # Convert from [rows (y), columns (x)] to [x, y] array
+        edge_coords[:,[0,1]] = edge_coords[:,[1,0]]
+        return edge_coords
+
+    def longest_edge_of_type(self, detection_dict:dict, edge_type:str):
+        """
+        Post-process the detected edge and return the longest edge of a specific
+        type (like 'apical' or 'basal')
+
+        Args:
+            detection_dict (dict): Dictionary output from `detect` as:
+                {'detection_data': pd.DataFrame,
+                'segmentation_image': np.ndarray,
+                'edge_image': np.ndarray}
+            edge_type (str): type of edge to return (like 'apical' or 'basal')
+
+        Returns:
+            edge_coords (np.ndarray): numpy array of pixel coordinates as [[x,y],...] (or None)
+            err: Error raised during post-processing (or None)
+        """
+        # Get edge mask
+        edge_mask = self._edge_mask_of_type(detection_dict, edge_type)
+        # Get coordinates of edge from connected component edge image
+        edge_coords = np.asarray(sort_path_along_binary_trajectory(edge_mask))
+        # Convert from [rows (y), columns (x)] to [x, y] array
+        edge_coords[:,[0,1]] = edge_coords[:,[1,0]]
+        return edge_coords
+
+    def _edge_mask_of_type(self, detection_dict:dict, edge_type:str):
+        """
+        Return binary mask of the longest edge of specific type.
+
+        Args:
+            detection_dict (dict): Dictionary output from `detect` as:
+                {'detection_data': pd.DataFrame,
+                'segmentation_image': np.ndarray,
+                'edge_image': np.ndarray}
+            edge_type (str): type of edge to return (like 'apical' or 'basal')
+
+        Returns:
+            edge_mask (np.ndarray): Binary mask containing longest edge of type
+        """
+        # Unpack dictionary
+        edge_df = detection_dict['detection_data']
+        edge_cc = detection_dict['edge_image']
         # Validate that desired edge was detected
         existing_edges = np.unique(edge_df['semantic'].to_numpy())
         if edge_type not in existing_edges:
-            e = EdgeNotFoundError(f"Could not find {edge_type} edge in tissue.")
-            edge_coords = None
-            return edge_coords, e
+            raise EdgeNotFoundError(f"Could not find {edge_type} edge in tissue.")
         # Get the longest edge label
         desired_edge_df = edge_df[edge_df['semantic']==edge_type]
         largest_edge_size = np.amax(desired_edge_df['size'].to_numpy())
         ind = desired_edge_df.index[desired_edge_df['size']==largest_edge_size].tolist()[0]
         desired_edge_label = desired_edge_df.loc[ind,'edge']
+        # make mask 
+        edge_mask = edge_cc==desired_edge_label
 
-        # Only return reachable edges
-        try:
-            edge_mask = reachable_edges(edge_cc==desired_edge_label, mask_cc>0, None, edge_type=edge_type)
-        except EdgeNotFoundError as e:
-            edge_coords = None
-            return edge_coords, e
-        except Exception as e:
-            self._logger.exception(f"Error while processing reachable edges: {e}")
-            edge_coords = None
-            return edge_coords, e
-        # Get coordinates of edge from connected component edge image
-        try:
-            # edge_coords = np.transpose(np.where(edge_cc==desired_edge_label)) # first column is row index and second column i
-            # edge_mask = edge_cc==desired_edge_label
-            edge_coords = np.asarray(sort_path_along_binary_trajectory(edge_mask))
-            # Convert from [rows (y), columns (x)] to [x, y] array
-            edge_coords[:,[0,1]] = edge_coords[:,[1,0]]
-        except Exception as e:
-            self._logger.exception("Error while sorting detected edges.")
-            edge_coords = None
-            return edge_coords, e
-
-        return edge_coords, None
+        return edge_mask
 
 if __name__ == "__main__":
     ckpt_path = "Autoinjector/src/deep_learning/weights/20220824_180000_Colab_gpu/best.pth"

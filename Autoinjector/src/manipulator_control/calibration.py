@@ -844,7 +844,6 @@ class CalibrationModel():
         Returns:
             (float) rotation angle between pipettee and ex CSYS in degrees
         """
-        print("Matrix",self.T_mxyz_to_exxyz)
         if self.is_calibrated is False:
             raise CalibrationError('Cannot pipette rotation because calibration is incomplete')
         dy_ex = self.T_mxyz_to_exxyz[1][0]

@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from src.deep_learning.edge_utils.error_utils import EdgeNotFoundError
 from src.miscellaneous.validify import val_binary_image
 
-def reachable_edges(edge_mask:np.ndarray, tiss_mask:np.ndarray, rot_ang:float, edge_type:str, ang_thresh:float=20, bound_perc:float=0.1)-> np.ndarray:
+def reachable_edges(edge_mask:np.ndarray, tiss_mask:np.ndarray, pip_orient_RH:float, edge_type:str, ang_thresh:float=20, bound_perc:float=0.1)-> np.ndarray:
     """
     Extract the reachable edges from the edge mask. Reachable meaning that
     the edges make a desired angle w/ the pipette (like 90 deg), don't 
@@ -18,8 +18,9 @@ def reachable_edges(edge_mask:np.ndarray, tiss_mask:np.ndarray, rot_ang:float, e
     Args:
         edge_mask (np.ndarray): 0-1 binary edge mask
         tiss_mask (np.ndarray): 0-1 binary tissue mask
-        rot_ang (float): rotation angle in degrees between current pipette
-            and pipette pointing to left
+        pip_orient_RH (float): Orientation of pipette x-axis (projecting out and
+            away from pipette tip) in degrees relative to RH coordinate system (positve is
+            CCW from pointing to the right)
         edge_type (str): name of edge to be detected
         ang_thresh (float): Mininum appropriate angle between the pipette and the
             edges in degrees. Edges below the angle will be removed
@@ -43,18 +44,23 @@ def reachable_edges(edge_mask:np.ndarray, tiss_mask:np.ndarray, rot_ang:float, e
     dil = cv2.dilate(edge_mask, kern)
     edge_mask_rsz = cv2.resize(dil, (SQ_DIM, SQ_DIM), interpolation=cv2.INTER_AREA)
     tiss_mask_rsz = cv2.resize(tiss_mask, (SQ_DIM, SQ_DIM), interpolation=cv2.INTER_AREA)
-    # Rotate to pipette
-    edge_mask_rsz, tiss_mask_rsz = rotate_masks_to_pipette(edge_mask_rsz, tiss_mask_rsz)
-    # Threshold to edge that makes angels with pipette
-    edge_mask_rsz = edge_angle_thresholding(edge_mask_rsz, min_ang_deg = ang_thresh)
-    # Remove edges near boundary
-    edge_mask_rsz = zeroify_boundaries(edge_mask_rsz, perc=bound_perc)
+    # Rotate image as if the pipette was at the right side of the screen point left
+    rot_ang = 180-pip_orient_RH
+    edge_mask_rsz_rot, inv = rotate_image(edge_mask_rsz, rot_ang)
+    tiss_mask_rsz_rot, inv = rotate_image(tiss_mask_rsz, rot_ang)
+    # Threshold to edge that makes angles with pipette
+    edge_mask_rsz_rot = edge_angle_thresholding(edge_mask_rsz_rot, min_ang_deg = ang_thresh)
     # Get only edges that are not obscurred by tissue or mask
-    edge_mask_rsz = unobscurred_rightmost_edges(edge_mask_rsz, tiss_mask_rsz)
-    if len(np.unique(edge_mask_rsz)) == 1:
-        raise EdgeNotFoundError(f"Could not find 'reachable' {edge_type} edge that could be injected from the right side.")
+    edge_mask_rsz_rot = unobscurred_rightmost_edges(edge_mask_rsz_rot, tiss_mask_rsz_rot)
+    # Rotate back to the original orientaion
+    edge_mask_rsz = invert_rotation(edge_mask_rsz_rot, inv, SQ_DIM, SQ_DIM)
+    # Elminate edges near image boundary
+    edge_mask_rsz = zeroify_boundaries(edge_mask_rsz, perc=bound_perc)
     # Get the longest contigous edge
+    if len(np.unique(edge_mask_rsz)) == 1:
+        raise EdgeNotFoundError(f"Could not find 'reachable' {edge_type} edge given the orientation between the tissue and pipette.")
     edge_mask_rsz = largest_connected_component(edge_mask_rsz)
+    # Dialate the smaller image so when intersect upsized version and orignal edge, there will definintly be an intersection
     kern = cv2.getStructuringElement(shape=cv2.MORPH_RECT, ksize=(3,3))
     edge_mask_rsz = cv2.dilate(edge_mask_rsz.astype(np.uint8), kern)
     # Resize to original
@@ -82,21 +88,6 @@ def is_single_pixel_width(mask:np.ndarray)->bool:
     kernel = np.ones((2,2))
     conn_img = cv2.filter2D(mask.astype(np.int16), ddepth=-1, kernel=kernel, borderType=cv2.BORDER_CONSTANT)
     return np.all(conn_img<4)
-
-def rotate_masks_to_pipette(edge_mask:np.ndarray, tiss_mask:np.ndarray)-> np.ndarray:
-    """
-    Rotate the mask images to face the pipette
-
-    Args:
-        edge_mask (np.ndarray): 0-1 binary edge mask
-        tiss_mask (np.ndarray): 0-1 binary tissue mask
-
-    Returns:
-        (np.ndarray) 0-1 binary mask of reachable edges
-    """
-    val_binary_image(edge_mask)
-    val_binary_image(tiss_mask)
-    return edge_mask, tiss_mask
 
 def edge_angle_thresholding(edge_mask:np.ndarray, min_ang_deg:float = 20)->np.ndarray:
     """
@@ -253,3 +244,68 @@ def largest_connected_component(mask:np.ndarray)->np.ndarray:
     mask_size = {area: label for label, area in enumerate(mask_areas, start=1)}
     longest = mask_cc == mask_size[max_area]
     return longest
+
+def rotate_image(image:np.ndarray, angle:float, bound:bool = True):
+    '''
+    Rotates an image by desired angle where positive angle is CW rotation
+    Args:
+        image: Single channel 8-bit image (numpy array)
+        angle: Rotaion angle in degrees
+        bound: Boolean whether image is kept at orignal size (False) or bounded in larger image (True)
+
+    Returns:
+        rot: Rotated image
+        inv_rot_matrix: Inverse of rotation matrix used to originally rotate the image
+    '''
+
+    # Dimensions of the image and then determine the center
+    (h, w) = image.shape[:2]
+    (cX, cY) = (w // 2, h // 2)
+    # grab the rotation matrix (applying the negative of the
+    # angle to rotate clockwise), then grab the sine and cosine
+    # (i.e., the rotation components of the matrix)
+    M = cv2.getRotationMatrix2D((cX, cY), angle, 1.0)
+    Mp = M
+    cos = np.abs(M[0, 0])
+    sin = np.abs(M[0, 1])
+    # compute the new bounding dimensions of the image
+    nW = int((h * sin) + (w * cos))
+    nH = int((h * cos) + (w * sin))
+    # adjust the rotation matrix to take into account translation
+    M[0, 2] += (nW / 2) - cX
+    M[1, 2] += (nH / 2) - cY
+
+    # Construct the inverse rotation matrix
+    # Rotate about the new image center, aka (nW/2, nH/2), in the
+    # opposite direction as the initial rotation.
+    M2 = cv2.getRotationMatrix2D((nW//2, nH//2), -angle, 1.0)
+    # Translate the re-rotated image center back to the original image center
+    M2[0, 2] += (w/2) - nW//2
+    M2[1, 2] += (h/2) - nH//2
+    inv_rot_mat = M2
+    
+    # perform the actual rotation and return the image
+    if bound is True:
+        rot = cv2.warpAffine(image, M, (nW, nH))
+    # Unbounded image
+    else:
+        rot = cv2.warpAffine(image, Mp, (w, h))
+    
+    return rot, inv_rot_mat
+
+def invert_rotation(image:np.ndarray,inv_rot_matrix:np.ndarray,w:int,h:int):
+    '''
+    Function to undo rotation of the rotated image.
+
+    Keyword Arguements:
+        image: Single channel 8-bit image (numpy array)
+        inv_rot_matrix: Inverse of rotation matrix used to originally rotate the image
+        w: Desired width of output image in pixels
+        h: Desired height of output image in pixels
+
+    Returns:
+        inv_rot: Rotated single channel image from input image
+    '''
+
+    inv_rot = cv2.warpAffine(image.astype(np.uint8), inv_rot_matrix, (w, h))
+    return inv_rot

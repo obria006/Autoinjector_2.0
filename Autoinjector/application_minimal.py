@@ -3,9 +3,7 @@
 import time
 import os
 import sys
-import traceback
 from datetime import datetime
-from functools import partial
 import cv2
 import serial
 import numpy as np
@@ -1415,21 +1413,22 @@ class ControlWindow(QMainWindow):
                 # Extract detection data
                 df = detection_dict['detection_data']
                 edge_cc = detection_dict['edge_image']
-                edge_pixels = detection_dict['edge_coordinates']
-                errs = detection_dict['error']
                 # Construct binary masks of tissue/edge detection for display
                 tissue_mask = detection_dict['segmentation_image']>0
                 basal_mask = self.make_edge_mask(edge_df=df, edge_cc=edge_cc, edge_type='basal')
                 apical_mask = self.make_edge_mask(edge_df=df, edge_cc=edge_cc, edge_type='apical')
                 self.vid_display.set_masks(tissue_mask=tissue_mask, apical_mask=apical_mask, basal_mask=basal_mask)
                 self.vid_display.display_masks()
-                # Raise error if no edge for desired edge is found
-                if errs is not None:
-                    raise errs
-                if edge_pixels is None:
-                    raise EdgeNotFoundError(f"Edge not found: {edge_type}.")
+                # Return the pixels of the detected edge
+                if self.pip_cal.model.is_calibrated is True:
+                    # Because image coordinate system has y axis in opposite direction of
+                    # right hand coordinate system, negate the angle of the pipette rotation to
+                    # compute the angel of the pipette realtive to a RH coordinate system
+                    ang_RH = -self.pip_cal.model.compute_pipette_rotation_deg()
+                    edge_pixels = self.tissue_model.longest_reachable_edge_of_type(detection_dict=detection_dict, edge_type=edge_type, pip_orient_RH=ang_RH)
+                else:
+                    edge_pixels = self.tissue_model.longest_edge_of_type(detection_dict=detection_dict, edge_type=edge_type)
                 # Set the anntoation for injection
-                # self.interpolated_pixels = edge_pixels
                 self.handle_drawn_edge(edge_pixels)
             except EdgeNotFoundError as e:
                 msg = f"{e}\n\nManually annotate the edge."

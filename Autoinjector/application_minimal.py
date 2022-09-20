@@ -677,24 +677,24 @@ class ControlWindow(QMainWindow):
     """
     def make_manipulator_control_widgets(self):
         ''' Creates widgets for controlling manipulator '''
-        self.unload_button = QPushButton("Unload Pipette")
-        self.reload_button = QPushButton("Reload Pipette")
-        self.away_button = QPushButton("To non-inject")
-        self.center_button = QPushButton("To center")
+        self.unload_button = QPushButton("Go to 'unload'")
+        self.displace_button = QPushButton("Go to 'right'")
+        self.undo_button = QPushButton("Undo previous")
+        # self.center_button = QPushButton("To center")
         layout = QGridLayout()
         layout.addWidget(self.unload_button,0,0,1,1)
-        layout.addWidget(self.reload_button,0,1,1,1)
-        layout.addWidget(self.away_button,1,0,1,1)
-        layout.addWidget(self.center_button,1,1,1,1)
+        layout.addWidget(self.displace_button,0,1,1,1)
+        # layout.addWidget(self.center_button,1,1,1,1)
+        layout.addWidget(self.undo_button,1,0,1,2)
         self.manipulator_group = QGroupBox('Manipulator Control')
         self.manipulator_group.setLayout(layout)
 
     def set_manipulator_control_connections(self):
         '''Sets signal/slot connnections for manipulator control widgets '''
         self.unload_button.clicked.connect(self.moveto_unload_position)
-        self.reload_button.clicked.connect(self.moveto_reload_position)
-        self.away_button.clicked.connect(self.moveto_displace_position)
-        self.center_button.clicked.connect(self.moveto_center_position)
+        self.displace_button.clicked.connect(self.moveto_displace_position)
+        # self.center_button.clicked.connect(self.moveto_center_position)
+        self.undo_button.clicked.connect(self.moveto_undo_position)
 
     """
     Initialize injection workflow widgets ---------------------------------------------------------
@@ -1764,17 +1764,6 @@ class ControlWindow(QMainWindow):
         except:
             self.show_exception_box("Error while unloading pipette.\n\nSee log for more info.")
 
-    def moveto_reload_position(self):
-        """ Move pipette to reload position after user changed pipette """
-        try:
-            self.convenience_trajectories.goto_reloaded()
-        except TrajectoryError as e:
-            self.show_error_box(e)
-        except NotImplementedError as e:
-            self.show_error_box(e)
-        except:
-            self.show_exception_box("Error while reloading pipette.\n\nSee log for more info.")
-
     def moveto_displace_position(self):
         try:
             self.convenience_trajectories.goto_displaced()
@@ -1797,6 +1786,14 @@ class ControlWindow(QMainWindow):
                 self.show_error_box(e)
             except:
                 self.show_exception_box("Error while centering pipette.\n\nSee log for more info.")
+
+    def moveto_undo_position(self):
+        try:
+            self.convenience_trajectories.goto_undo()
+        except TrajectoryError as e:
+            self.show_error_box(e)
+        except:
+            self.show_exception_box("Error while moving away pipette.\n\nSee log for more info.")
 
 
     

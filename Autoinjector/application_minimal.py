@@ -1618,7 +1618,9 @@ class ControlWindow(QMainWindow):
                 dev = SensapexDevice(1)
                 pos = dev.get_pos()
                 ex = self.pip_cal.model.forward(man=pos)
-                self.vid_display.set_tip_position(ex[0], ex[1])
+                z_scope = self.zen_controller.get_focus_um_approx()
+                delta_z = ex[2] - z_scope
+                self.vid_display.set_tip_position(ex[0], ex[1], delta_z)
             else:
                 self.vid_display.show_tip_position(False)
         else:

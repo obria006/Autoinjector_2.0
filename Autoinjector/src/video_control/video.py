@@ -27,7 +27,7 @@ from PyQt6.QtWidgets import (QApplication,
 from PyQt6.QtGui import QImage, QPixmap, QColorConstants
 from src.video_control import video_utils as utils
 from src.miscellaneous.standard_logger import StandardLogger
-
+from src.miscellaneous.utils import MplColorHelper
 
 class MMCamera():
     """ Interface for MicroManager camera. Permits functionality to get and set camera exposure,
@@ -274,19 +274,21 @@ class VideoDisplay(QWidget):
         """
         self.canvas.painter.show_calibrated_tip_points(bool_)
 
-    def set_tip_position(self, x:int, y:int):
+    def set_tip_position(self, x:int, y:int, delta_z_um:float):
         """
         Sets the `Painter`'s tip position coordinate
 
         Args:
             x (int): x coordiante of tip in camera image
             y (int): y coordinate of tip in camera image
+            delta_z_um (float): Deviation between tip z and focus plane in um (tip - focus)
         """
         # Covnert from camera pixel to canvas pixel location
         camera_pixel = [x,y]
-        canvas_pixel = self.convert_camera_to_canvas(camera_pixel)
+        canvas_position = self.convert_camera_to_canvas(camera_pixel)
+        canvas_position.append(delta_z_um)
         # Set painter coordinate
-        self.canvas.painter.calibrated_tip_points = [canvas_pixel]
+        self.canvas.painter.calibrated_tip_points = [canvas_position]
 
     def show_drawn_annotation(self, bool_:bool):
         """
@@ -616,6 +618,7 @@ class Painter():
         self.TISSUE = [238, 102, 119]
         self.APICAL = [102, 204, 238]
         self.BASAL = [204, 187, 68]
+        self.tip_cmap = MplColorHelper('bwr_r',start_val=-1, stop_val=1)
 
     def show_calibration_points(self, bool_:bool):
         """
@@ -742,12 +745,33 @@ class Painter():
             np.ndarray of modified image
         """
         if self._show_calibrated_tip_points_bool is True:
-            for pixel in self.calibrated_tip_points:
+            for point in self.calibrated_tip_points:
+                # Maximum deviation between tip and focal plane in um
+                MAX_DZ = 200
+                # Max and min radii of display circle in pixel
+                MAX_RAD = 50
+                MIN_RAD = 10
+                # Extract the x, y pixel coordinates
+                pixel = point[:2]
+                # Exctract delta z between tip and focal plane, and normalize -1 to 1
+                dz = point[-1]
+                norm_dz = np.clip(dz/MAX_DZ, -1, 1)
+                # Compute color and radis from delta z
+                col = self.tip_cmap.get_rgb(norm_dz)
+                rad = MIN_RAD + int(abs(norm_dz) * (MAX_RAD- MIN_RAD))
+                # Display in GUI
+                image = utils.display_filled_circle(
+                    image = image, 
+                    center_xy = pixel,
+                    radius = 1,
+                    color = self.BLACK
+                    )
                 image = utils.display_hollow_circle(
                     image = image, 
                     center_xy = pixel,
-                    radius = 5,
-                    color = self.BLACK,
+                    radius = rad,
+                    color = col,
+                    thickness=1
                     )
         return image
 

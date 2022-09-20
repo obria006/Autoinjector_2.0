@@ -31,7 +31,7 @@ from src.manipulator_control.error_utils import (CalibrationError,
 from src.manipulator_control.sensapex_utils import SensapexDevice
 from src.manipulator_control.injection_trajectory import SurfaceLineTrajectory3D
 from src.manipulator_control.calibration_trajectory import SemiAutoCalibrationTrajectory
-from src.manipulator_control.aux_trajectories import ConvenienceTrajectories
+from src.manipulator_control.convenience_trajectories import ConvenienceTrajectories
 from src.ZEN_interface.ZEN_mvc import ModelZEN, ControllerZEN, ViewZENComplete, ViewZENFocus
 from src.deep_learning.tissue_detection import ModelTissueDetection
 from src.deep_learning.edge_utils.error_utils import EdgeNotFoundError

@@ -5,11 +5,14 @@ from src.thread_manager.thread_manager import aQThreader, aQWorker
 from src.manipulator_control.error_utils import TrajectoryError
 import time
 
-class SwapTrajectoryModel(QObject):
-    unloaded = pyqtSignal()
-    reloaded = pyqtSignal()
+class TrajectoryModel(QObject):
+    """
+    Handles the micromanipulator control/movements for the convenience
+    trajectories.
+    """
+    moving = pyqtSignal(bool)
 
-    def __init__(self, dev, speed_ums:int=1000):
+    def __init__(self, dev, speed_ums:int=5000):
         """
         Arguments:
             dev (SensapexDevice): Object that manipulates the sensapex manipulator
@@ -20,87 +23,89 @@ class SwapTrajectoryModel(QObject):
         self.dev = dev
         self.speed_ums = speed_ums
         self.UM_TO_NM = 1000
-        self.RELOAD_ZOFFSET = 300*self.UM_TO_NM
 
-    def generate_positions(self):
+    def start_unload(self):
+        """ Start thread to move micromanipulator to 'unload' position """
+        # Generate positions (retract z to 1000um then d to 1000um)
+        pos1 = self.dev.get_pos()
+        pos1[2] = 1000*self.UM_TO_NM
+        pos2 = list(pos1)
+        pos2[3] = 1000*self.UM_TO_NM
+        poses = [pos1, pos2]
+        # Run the trajectory
+        self._worker = aQWorker(self._run_trajectory, poses)
+        self._threader = aQThreader(self._worker)
+        self._threader.start()
+
+    def start_reload(self):
+        """ Start thread to move micromanipulator to 'reload' position """
+        raise NotImplementedError("Reload trajectory not implimented")
+        self._worker = aQWorker(self._run_trajectory, poses)
+        self._threader = aQThreader(self._worker)
+        self._threader.start()
+    
+    def start_displace(self):
+        """ Start thread to move micromanipulator to 'displace' position """
+        # Generate positions (retract z by 1000um then x by 8000)
+        pos1 = self.dev.get_pos()
+        pos1[2] -= 1000*self.UM_TO_NM
+        pos2 = list(pos1)
+        pos2[0] -= 8000*self.UM_TO_NM
+        poses = [pos1, pos2]
+        # Run the trajectory
+        self._worker = aQWorker(self._run_trajectory, poses)
+        self._threader = aQThreader(self._worker)
+        self._threader.start()
+
+    def start_center(self, cal, center_pos:list):
         """
-        Generate the manipulator positions for the trajectory.
+        Start thread to move micromanipulator to 'center' position
         
-        Trajectory starts at the initial position of the pipette, retracts
-        the z to 1000, and retracts the d to 1000 to finish at the unload
-        position. User would remove the pipette and request the reload
-        position. The pipette would then advance to the original d, and to 
-        the original z (with an offset to not collide with stuff in FOV).
+        Args:
+            cal: Pipette calibration model to compute manipulator positoins
+            center_pos (list): Center of FOV as [x_pixel, y_pixel, focus_height]
         """
-        # Initial position
-        _starting_pos = self.dev.get_pos()
-        # rectract z
-        self._unload_1 = list(_starting_pos)
-        self._unload_1[2] = 1000 * self.UM_TO_NM
-        # retract d
-        self._unload_2 = list(self._unload_1)
-        self._unload_2[3] = 1000 * self.UM_TO_NM
-        # Advance d
-        self._reload_1 = list(self._unload_1) 
-        # Advance z
-        self._reload_2 = list(_starting_pos)
-        self._reload_2[2] = max(_starting_pos[2]-self.RELOAD_ZOFFSET, 1000 * self.UM_TO_NM)
-
-    def unload_pipette(self):
-        self._worker = aQWorker(self._goto_unload_position)
+        # Generate positions to move to center
+        starting_pos = self.dev.get_pos()
+        # Desired manipulator position
+        man_center_pos = cal.model.inverse(ex=center_pos, man_axis_const='d')
+        # Move z 1000um above desired z
+        pos1 = list(starting_pos)
+        pos1[2] = man_center_pos[2] - 1000*self.UM_TO_NM
+        # Move to desired positoin with the 1000um z offset
+        pos2 = list(man_center_pos)
+        pos2[2] = pos1[2]
+        # Finally move to desired position
+        pos3 = list(man_center_pos)
+        poses = [pos1, pos2, pos3]
+        # Run the trajectory
+        self._worker = aQWorker(self._run_trajectory, poses)
         self._threader = aQThreader(self._worker)
         self._threader.start()
 
-    def reload_pipette(self):
-        self._worker = aQWorker(self._goto_reload_position)
-        self._threader = aQThreader(self._worker)
-        self._threader.start()
+    def _run_trajectory(self, positions:list):
+        """
+        Guide pipette along trajectory of positions
 
-    def _goto_unload_position(self):
-        """ directs sensapex movements to unload position """
+        Args:
+            positions (list): List of manipulator positions as [[x1,y1,z1,d1],...]
+        """
+        self.moving.emit(True)
         self._mutex.lock()
-        # Move to first unload position
-        move_req = self.dev.goto_pos(self._unload_1, speed = self.speed_ums)
-        while move_req.finished is False:
-            time.sleep(0.1)
-        # move to second unload positoin
-        move_req = self.dev.goto_pos(self._unload_2, speed = self.speed_ums)
-        while move_req.finished is False:
-            time.sleep(0.1)
+        # Guide pipette along trajectory
+        for pos in positions:
+            move_req = self.dev.goto_pos(pos, speed = self.speed_ums)
+            while move_req.finished is False:
+                time.sleep(0.1)
+        # Emit signal of trajectory complete
         self._mutex.unlock()
-        # Emit unload signal
-        self.unloaded.emit()
+        self.moving.emit(False)
 
-    def _goto_reload_position(self):
-        """ directs sensapex movements to reload position """
-        self._mutex.lock()
-        # Move to first reload positoin
-        move_req = self.dev.goto_pos(self._reload_1, speed = self.speed_ums)
-        while move_req.finished is False:
-            time.sleep(0.1)
-        # move to second reload positoin
-        move_req = self.dev.goto_pos(self._reload_2, speed = self.speed_ums)
-        while move_req.finished is False:
-            time.sleep(0.1)
-        self._mutex.unlock()
-        # emti relaod posiiton
-        self.reloaded.emit()
-
-class SwapTrajectory():
+class ConvenienceTrajectories():
     """
-    Class to manage pipette movements for swapping the pipette. Moves pipette
-    automatically between a "unload" and "reload" position where the user can
-    easily remove and replace the pipette.
-
-    Attributes:
-        is_unloaded (bool): indicator whether pipette has finished move to
-            unload position
-        is_reloaded (bool): indicator whether pipette has finished move to 
-            reload position
-
-    Methods:
-        unload_pipette: Moves pipette to unload position
-        reload_pipette: Moves pipette to reload positoin
+    Class to manage trajectories of convienent control of micromanipulator
+    like moving the micromanipulator to the "unload" position, or centering
+    the micropipette in the field of view.
     """
 
     def __init__(self, dev, speed_ums:int=5000):
@@ -109,47 +114,47 @@ class SwapTrajectory():
             dev (SensapexDevice): Object that manipulates the sensapex manipulator
             speed_ums (int): Speed of pipette movements in um/s
         """
-        self._logger = StandardLogger(__name__)
-        self.is_unloaded = False
-        self.is_reloaded = False
         self.is_moving = False
-        self._model = SwapTrajectoryModel(dev, speed_ums)
-        self._model.unloaded.connect(self._trueify_unloaded)
-        self._model.reloaded.connect(self._trueify_reloaded)
+        self._model = TrajectoryModel(dev, speed_ums)
+        self._model.moving.connect(self._update_is_moving)
 
-    def _trueify_unloaded(self):
-        """ Sets `is_unloaded` attribute to true and `is_moving` to false """
-        self.is_unloaded = True
-        self.is_moving = False
-
-    def _trueify_reloaded(self):
-        """ Sets `is_reloaded` attribute to true and `is_moving` to false """
-        self.is_reloaded = True
-        self.is_moving = False
-
-    def unload_pipette(self):
-        """ Move the pipette to the 'unload' position """
+    def _update_is_moving(self, status:bool):
+        """ Sets `is_moving` to `status`.
+        
+        Args:
+            status (bool): Value for `is_moving`
+        """
+        self.is_moving = status
+    
+    def goto_unloaded(self):
+        """ Move micromanipulator to the 'unload' position """
         if self.is_moving is True:
-            raise TrajectoryError("Cannot unload pipette. Pipette currently moving.")
-        elif self.is_unloaded is True:
-            raise TrajectoryError("Cannot unload pipette. Pipette already unloaded.")
+            raise TrajectoryError("Cannot move micromanipulator to unload position. Micromanipulator is currently moving.")
         else:
-            self.is_reloaded = False
-            self.is_moving = True
-            self._model.generate_positions()
-            self._model.unload_pipette()
+            self._model.start_unload()
 
-    def reload_pipette(self):
-        """ Move the pipette to the 'reload' position """
+    def goto_reloaded(self):
+        """ Move micromanipulator to the 'reload' position """
         if self.is_moving is True:
-            raise TrajectoryError("Cannot reload pipette. Pipette currently moving.")
-        elif self.is_unloaded is False:
-            raise TrajectoryError("Cannot reload pipette. Pipette has not been unloaded.")
-        elif self.is_reloaded is True:
-            raise TrajectoryError("Cannot relaod pipette. Pipette has already been reloaded")
+            raise TrajectoryError("Cannot move micromanipulator to reload position. Micromanipulator is currently moving.")
         else:
-            self.is_unloaded = False
-            self.is_moving = True
-            self._model.reload_pipette()
+            self._model.start_reload()
 
+    def goto_displaced(self):
+        """ Move micromanipulator to the 'displaced' position """
+        if self.is_moving is True:
+            raise TrajectoryError("Cannot move micromanipulator to displaced position. Micromanipulator is currently moving.")
+        else:
+            self._model.start_displace()
 
+    def goto_centered(self, cal, center_pos:list):
+        """ Move micromanipulator (micropipette) to center of FOV 
+        
+        Args:
+            cal: Pipette calibration model to compute manipulator positoins
+            center_pos (list): Center of FOV as [x_pixel, y_pixel, focus_height]
+        """
+        if self.is_moving is True:
+            raise TrajectoryError("Cannot move micromanipulator to centered position. Micromanipulator is currently moving.")
+        else:
+            self._model.start_center(cal, center_pos)

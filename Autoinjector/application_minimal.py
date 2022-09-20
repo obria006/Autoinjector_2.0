@@ -31,7 +31,7 @@ from src.manipulator_control.error_utils import (CalibrationError,
 from src.manipulator_control.sensapex_utils import SensapexDevice
 from src.manipulator_control.injection_trajectory import SurfaceLineTrajectory3D
 from src.manipulator_control.calibration_trajectory import SemiAutoCalibrationTrajectory
-from src.manipulator_control.aux_trajectories import SwapTrajectory
+from src.manipulator_control.aux_trajectories import ConvenienceTrajectories
 from src.ZEN_interface.ZEN_mvc import ModelZEN, ControllerZEN, ViewZENComplete, ViewZENFocus
 from src.deep_learning.tissue_detection import ModelTissueDetection
 from src.deep_learning.edge_utils.error_utils import EdgeNotFoundError
@@ -133,7 +133,7 @@ class ControlWindow(QMainWindow):
         ckpt_path = "Autoinjector/src/deep_learning/weights/20220824_180000_Colab_gpu/best.pth"
         self.tissue_model = ModelTissueDetection(ckpt_path)
         dev = SensapexDevice(1)
-        self.swap_trajectory= SwapTrajectory(dev=dev)
+        self.convenience_trajectories = ConvenienceTrajectories(dev=dev)
 
         # Instantiate the imported camera
         try:
@@ -679,9 +679,13 @@ class ControlWindow(QMainWindow):
         ''' Creates widgets for controlling manipulator '''
         self.unload_button = QPushButton("Unload Pipette")
         self.reload_button = QPushButton("Reload Pipette")
-        layout = QVBoxLayout()
-        layout.addWidget(self.unload_button)
-        layout.addWidget(self.reload_button)
+        self.away_button = QPushButton("To non-inject")
+        self.center_button = QPushButton("To center")
+        layout = QGridLayout()
+        layout.addWidget(self.unload_button,0,0,1,1)
+        layout.addWidget(self.reload_button,0,1,1,1)
+        layout.addWidget(self.away_button,1,0,1,1)
+        layout.addWidget(self.center_button,1,1,1,1)
         self.manipulator_group = QGroupBox('Manipulator Control')
         self.manipulator_group.setLayout(layout)
 
@@ -689,6 +693,8 @@ class ControlWindow(QMainWindow):
         '''Sets signal/slot connnections for manipulator control widgets '''
         self.unload_button.clicked.connect(self.moveto_unload_position)
         self.reload_button.clicked.connect(self.moveto_reload_position)
+        self.away_button.clicked.connect(self.moveto_displace_position)
+        self.center_button.clicked.connect(self.moveto_center_position)
 
     """
     Initialize injection workflow widgets ---------------------------------------------------------
@@ -1752,7 +1758,7 @@ class ControlWindow(QMainWindow):
     def moveto_unload_position(self):
         """ move pipette to unload position so user can change pipette"""
         try:
-            self.swap_trajectory.unload_pipette()
+            self.convenience_trajectories.goto_unloaded()
         except TrajectoryError as e:
             self.show_error_box(e)
         except:
@@ -1761,11 +1767,37 @@ class ControlWindow(QMainWindow):
     def moveto_reload_position(self):
         """ Move pipette to reload position after user changed pipette """
         try:
-            self.swap_trajectory.reload_pipette()
+            self.convenience_trajectories.goto_reloaded()
         except TrajectoryError as e:
+            self.show_error_box(e)
+        except NotImplementedError as e:
             self.show_error_box(e)
         except:
             self.show_exception_box("Error while reloading pipette.\n\nSee log for more info.")
+
+    def moveto_displace_position(self):
+        try:
+            self.convenience_trajectories.goto_displaced()
+        except TrajectoryError as e:
+            self.show_error_box(e)
+        except:
+            self.show_exception_box("Error while moving away pipette.\n\nSee log for more info.")
+
+    def moveto_center_position(self):
+        if self.pip_cal.model.is_calibrated is False:
+            msg = "Calibration incomplete. Cannot move to center without calibration."
+            self.show_warning_box(msg)
+            return
+        else:
+            try:
+                z_scope = self.zen_controller.get_focus_um()
+                center_pos = [int(self.vid_display.cam.width/2), int(self.vid_display.cam.height/2), z_scope]
+                self.convenience_trajectories.goto_centered(self.pip_cal, center_pos)
+            except TrajectoryError as e:
+                self.show_error_box(e)
+            except:
+                self.show_exception_box("Error while centering pipette.\n\nSee log for more info.")
+
 
     
 

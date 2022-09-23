@@ -12,6 +12,7 @@ from PyQt6.QtCore import *
 from PyQt6.QtGui import QIcon, QPalette, QColor
 import pandas as pd
 from src.video_control.video_utils import interpolate, AnnotationError
+from src.video_control.annotations import AnnotationManager
 from src.video_control.camera import MMCamera
 from src.video_control.video import VideoDisplay
 from src.motorcontrol.motorlocationThread import motorpositionThread

@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (QApplication,
                             )
 from PyQt6.QtGui import QImage, QPixmap, QColorConstants
 from src.video_control.camera import MMCamera, VideoStreamer
+from src.video_control.annotations import AnnotationManager
 from src.video_control import video_utils as utils
 from src.miscellaneous.standard_logger import StandardLogger
 from src.miscellaneous.utils import MplColorHelper

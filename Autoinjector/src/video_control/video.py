@@ -197,9 +197,9 @@ class VideoDisplay(QWidget):
 
     def _make_widgets(self):
         self.canvas = Canvas(self.width, self.height)
-        self.canvas.mouse_pressed_pixel.connect(self.handle_mouse_press)
-        self.canvas.mouse_released_pixel.connect(self.handle_mouse_release)
-        self.canvas.mouse_moved_pixel.connect(self.handle_mouse_move)
+        self.canvas.lmb_mouse_pressed_pixel.connect(self.handle_lmb_press)
+        self.canvas.lmb_mouse_released_pixel.connect(self.handle_lmb_release)
+        self.canvas.lmb_mouse_moved_pixel.connect(self.handle_lmb_move)
         layout = QVBoxLayout()
         layout.addWidget(self.canvas)
         self.setLayout(layout)
@@ -214,9 +214,9 @@ class VideoDisplay(QWidget):
         self.frame = frame
         self.update_display()
 
-    def handle_mouse_press(self,canvas_pixel:list):
+    def handle_lmb_press(self,canvas_pixel:list):
         """
-        Handles what to do when `mouse_pressed_pixel` from `Canvas`.
+        Handles what to do when `lmb_mouse_pressed_pixel` from `Canvas`.
 
         Intializes a list of `moved_camera_pixels` of the drawn edge.
 
@@ -227,9 +227,9 @@ class VideoDisplay(QWidget):
         camera_pixel = self.convert_canvas_to_camera(canvas_pixel)
         self.moved_camera_pixels = []
 
-    def handle_mouse_release(self,canvas_pixel:list):
+    def handle_lmb_release(self,canvas_pixel:list):
         """
-        Handles what to do when `mouse_released_pixel` from `Canvas`.
+        Handles what to do when `lmb_mouse_released_pixel` from `Canvas`.
 
         Emits the clicked camera and canvas pixel coordiates as well as
         the list of `moved_camera_pixels` that have been acquired since the
@@ -245,9 +245,9 @@ class VideoDisplay(QWidget):
         self.clicked_canvas_pixel.emit([canvas_pixel[0], canvas_pixel[1]])
         self.drawn_camera_pixels.emit(self.moved_camera_pixels)
 
-    def handle_mouse_move(self,canvas_pixel:list):
+    def handle_lmb_move(self,canvas_pixel:list):
         """
-        Handles what to do when `mouse_moved_pixel` from `Canvas`.
+        Handles what to do when `lmb_mouse_moved_pixel` from `Canvas`.
 
         Adds the pixel coordinate to running list of `moved_camera_pixels`
 
@@ -481,17 +481,17 @@ class Canvas(QLabel):
     that is infrequnelty updated (like the tissue and edge masks).
 
     Signals:
-        mouse_moved_pixel(list): [x, y] pixel coordinates of a click-and-drag
-            event in the canvas. 
-        mouse_pressed_pixel(list): [x, y] pixel coordinates of the event when
+        lmb_mouse_moved_pixel(list): [x, y] pixel coordinates of a click-and-drag
+            left-mouse-button event in the canvas. 
+        lmb_mouse_pressed_pixel(list): [x, y] pixel coordinates of the event when
             the left-mouse-button initially depressed.
-        mouse_resleased_pixel(list):[x, y] pixel coordinates of the event when
+        lmb_mouse_released_pixel(list):[x, y] pixel coordinates of the event when
             the left-mouse-button is released after being depressed.
     """
 
-    mouse_moved_pixel = pyqtSignal(list)
-    mouse_pressed_pixel = pyqtSignal(list)
-    mouse_released_pixel = pyqtSignal(list)
+    lmb_mouse_moved_pixel = pyqtSignal(list)
+    lmb_mouse_pressed_pixel = pyqtSignal(list)
+    lmb_mouse_released_pixel = pyqtSignal(list)
 
     def __init__(self, width:int, height:int):
         """
@@ -502,6 +502,7 @@ class Canvas(QLabel):
         super().__init__()
         self.width = width
         self.height = height
+        self._lmb_track_mouse = False
         self.painter = Painter()
         pixmap = QPixmap(self.width, self.height)
         pixmap.fill(QColorConstants.Transparent)
@@ -518,28 +519,33 @@ class Canvas(QLabel):
         Emits pixel of the mouse when it is clicked-and-dragged Also, adds the
         pixel to the painter's list of coordinates to draw for a drawn edge.
         """
-        pixel = [event.pos().x(), event.pos().y()]
-        self.mouse_moved_pixel.emit(pixel)
-        self.painter.drawn_edge.append(pixel)
+        if self._lmb_track_mouse:
+            pixel = [event.pos().x(), event.pos().y()]
+            self.lmb_mouse_moved_pixel.emit(pixel)
+            self.painter.drawn_edge.append(pixel)
 
     def mousePressEvent(self, event):
         """
         Emits pixel of the mouse when mouse is depressed. Also initializes
         painter's list of coordinates for a drawn edge as empty.
         """
-        pixel = [event.pos().x(), event.pos().y()]
-        self.mouse_pressed_pixel.emit(pixel)
-        self.painter.drawn_edge = []
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._lmb_track_mouse = True
+            pixel = [event.pos().x(), event.pos().y()]
+            self.lmb_mouse_pressed_pixel.emit(pixel)
+            self.painter.drawn_edge = []
         
     def mouseReleaseEvent(self, event):
         """
         Emits pixel of the mouse when mouse button is released. Also sets the
         painter's clicked point and resets painter's drawn edge to empty.
         """
-        pixel = [event.pos().x(), event.pos().y()]
-        self.mouse_released_pixel.emit(pixel)
-        self.painter.clicked_points = [pixel]
-        self.painter.drawn_edge = []
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._lmb_track_mouse = False
+            pixel = [event.pos().x(), event.pos().y()]
+            self.lmb_mouse_released_pixel.emit(pixel)
+            self.painter.clicked_points = [pixel]
+            self.painter.drawn_edge = []
 
     def update_(self, image:np.ndarray):
         """

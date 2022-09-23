@@ -1,7 +1,7 @@
 """ Handles auxilliary trajectories of pipette """
 from PyQt6.QtCore import QObject, pyqtSignal, QMutex
 from src.miscellaneous.standard_logger import StandardLogger
-from src.thread_manager.thread_manager import aQThreader, aQWorker
+from src.miscellaneous.thread_manager import aQThreader, aQWorker
 from src.manipulator_control.error_utils import TrajectoryError
 import time
 

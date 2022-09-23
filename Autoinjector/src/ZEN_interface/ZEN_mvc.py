@@ -899,6 +899,14 @@ class ControllerZEN(QObject):
         pos = self._model.get_focus_um()
         return pos
 
+    def get_focus_um_approx(self)->float:
+        '''
+        Returns the position of the focus as saved from sampling the focus height.
+        It could be delayed from the actual focus level
+        '''
+        pos = self._model._focus_position
+        return pos
+
     def lamp_model_change(self, inten:float):
         """
         Handles when lamp intensity changes in model (like user changed it

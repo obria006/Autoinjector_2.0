@@ -20,6 +20,7 @@ from src.GUI_utils.gui_objects import QHLine
 import src.GUI_utils.display_modifier_mvc as disp_mod_mvc
 from src.miscellaneous.standard_logger import StandardLogger as logr
 from src.miscellaneous import validify as val
+from src.miscellaneous.error_utils import InjectionParameterError
 from src.data_generation.data_generators import PipTipData, TissueEdgeData
 from src.manipulator_control.calibration import Calibrator, AngleIO
 from src.manipulator_control.error_utils import (CalibrationError,
@@ -164,8 +165,14 @@ class ControlWindow(QMainWindow):
 
     def initialize_attributes(self):
         """ Initialize constants and variables used in GUI """
+        # Booleans of current calibration process
         self.conducting_calibration = False
         self.updating_calibration = False
+        # Booleans for injection workflow status
+        self._is_angle_set = False
+        self._is_calibration_set = False
+        self._is_annotation_set = False
+        self._is_parameters_set = False
 
     def get_gui_cfg(self):
         ''' Loads the configuration values for the GUI '''
@@ -1552,12 +1559,14 @@ class ControlWindow(QMainWindow):
         if self.left_stacked_layout.currentWidget() == self.annotation_mode_left_page:
             # Try to interpolate the drawn edge coordinates
             try:
+                if len(drawn_pixels) <=3:
+                    raise AnnotationError("Annotation is too short.")
                 self.interpolated_pixels = interpolate(drawn_pixels)
                 self.vid_display.set_interpolated_annotation(self.interpolated_pixels)
                 self._annotation_complete.emit(True)
             except AnnotationError as e:
                 self.clear_annotation()
-                msg = "Error while interpolating annotation. The annotation must go in one direction: either top-to-bottom or bottom-to-top.\n\nTry annotating again."
+                msg = f"Error while interpolating annotation: {e}\n\nTry annotating again."
                 self.show_warning_box(msg)
             except Exception as e:
                 self.clear_annotation()
@@ -1651,24 +1660,28 @@ class ControlWindow(QMainWindow):
     ============================================================================================
     """ 
     def _set_angle_ind(self,state:bool):
+        self._is_angle_set = state
         if state is True:
             self._set_complete(self.angle_indicator)
         else:
             self._set_incomplete(self.angle_indicator)
 
     def _set_calibration_ind(self,state:bool):
+        self._is_calibration_set = state
         if state is True:
             self._set_complete(self.calibration_indicator)
         else:
             self._set_incomplete(self.calibration_indicator)
 
     def _set_annotation_ind(self,state:bool):
+        self._is_annotation_set = state
         if state is True:
             self._set_complete(self.annotation_indicator)
         else:
             self._set_incomplete(self.annotation_indicator)
 
     def _set_parameter_ind(self,state:bool):
+        self._is_parameters_set = state
         if state is True:
             self._set_complete(self.parameter_indicator)
         else:
@@ -1721,9 +1734,22 @@ class ControlWindow(QMainWindow):
         self.pressureslidervalue= self.pressure_slider.value()
         self.displaypressure = int(self.pressureslidervalue/2.55)
         self.pressure_display.setText(str(self.displaypressure)+'%')
+
+    def validate_ready_for_injection(self):
+        """ Check that all conditions are met for injections to proceed """
+        if self._is_angle_set is False:
+            raise CalibrationError("Cannot conduct injection because pipette angle is not set.")
+        if self._is_calibration_set is False:
+            raise CalibrationError("Cannot conduct injection because pipette is not calibrated.")
+        if self._is_annotation_set is False:
+            raise AnnotationError("Cannot conduct injection because target annotation is incomplete.")
+        if self._is_parameters_set is False:
+            raise InjectionParameterError("Cannot conduct injection because injection parameters are not set.")
         
     def run_3D_trajectory(self):
         try:
+            # Validate that everything is ready for injections
+            self.validate_ready_for_injection()
             #get values from GUI
             um2nm = 1000
             approach_nm = int(float(self.approachdist)*um2nm)
@@ -1741,10 +1767,15 @@ class ControlWindow(QMainWindow):
             self.inj_trajectory = SurfaceLineTrajectory3D(dev, cal, edge_3D, approach_nm, depth_nm, spacing_nm, speed_ums, pullout_nm)
             self.inj_trajectory.start()
             self.inj_trajectory.finished.connect(self.show_n_injected)
+        except CalibrationError as e:
+            self.show_error_box(f"Error: {e}\n\nPlease conduct calibration before injecting.")
+        except AnnotationError as e:
+            self.show_error_box(f"Error: {e}\n\nPlease annotate targets before injecting.")
+        except InjectionParameterError as e:
+            self.show_error_box(f"Error: {e}\n\nPlease set injection parameters before injecting.")
         except:
-            msg = "Please complete calibration, enter all parameters, and select tip of pipette.\nPython error = \n" + str(sys.exc_info()[1])
-            self.show_error_box(msg)
-            self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
+            msg = "Error occured while trying to start injections.\n\nSee logs for more info."
+            self.show_exception_box(msg)
 
     def show_n_injected(self):
         self.response_monitor_window.append(">> Number of injections =" + str(self.inj_trajectory.n_injected))

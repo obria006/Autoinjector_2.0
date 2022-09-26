@@ -32,7 +32,7 @@ from src.manipulator_control.error_utils import (CalibrationError,
                                                 AngleFileError,
                                                 TrajectoryError)
 from src.manipulator_control.sensapex_utils import SensapexDevice
-from src.manipulator_control.injection_trajectory import SurfaceLineTrajectory3D
+from src.manipulator_control.injection_trajectory import SurfaceLineTrajectory3D, TrajectoryManager
 from src.manipulator_control.calibration_trajectory import SemiAutoCalibrationTrajectory
 from src.manipulator_control.convenience_trajectories import ConvenienceTrajectories
 from src.ZEN_interface.ZEN_mvc import ModelZEN, ControllerZEN, ViewZENComplete, ViewZENFocus
@@ -1255,6 +1255,8 @@ class ControlWindow(QMainWindow):
         z_polarity = self.cfg.cfg_gui.values['z polarity']
         self.cal_trajectory = SemiAutoCalibrationTrajectory(dev=dev, cal=self.pip_cal, img_w=img_width, img_h=img_height, z_polarity=z_polarity,pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
         self.cal_pos_added.connect(self.cal_trajectory.next_cal_position)
+        # delete calibraiton trajecotory otherwise it will conintue to handle stuff from
+        # its connections even after it is finished
         self.cal_trajectory.finished.connect(self.cal_trajectory.deleteLater)
         self.leaving_calibration.connect(self.cal_trajectory.deleteLater)
 
@@ -1605,7 +1607,7 @@ class ControlWindow(QMainWindow):
         try:
             self.interpolated_pixels = []
             for edge in annotation:
-                self.interpolated_pixels += edge
+                self.interpolated_pixels.append(edge)
             self._annotation_complete.emit(True)
         except Exception as e:
             self.show_exception_box("Error while setting trajectory\n\nSee logs for more info.")
@@ -1794,12 +1796,16 @@ class ControlWindow(QMainWindow):
             pullout_nm = self.cfg.cfg_gui.values['pullout nm']
             dev = SensapexDevice(1)
             cal = self.pip_cal
-            edge = self.interpolated_pixels
-            z_scope = self.zen_controller.get_focus_um()
-            edge_arr = np.array(edge)
-            z_arr = z_scope*np.ones((edge_arr.shape[0],1))
-            edge_3D = np.concatenate((edge_arr,z_arr),axis=1).tolist()
-            self.inj_trajectory = SurfaceLineTrajectory3D(dev, cal, edge_3D, approach_nm, depth_nm, spacing_nm, speed_ums, pullout_nm)
+            self.inj_trajectory = TrajectoryManager()
+            for edge in self.interpolated_pixels:
+                # Have trajectory end at the "finish" position if its the last trajectoyr
+                end_at_fin_pos = edge == self.interpolated_pixels[-1]
+                # Define the edge coordinates for the trajectory
+                z_scope = self.zen_controller.get_focus_um()
+                edge_arr = np.array(edge)
+                z_arr = z_scope*np.ones((edge_arr.shape[0],1))
+                edge_3D = np.concatenate((edge_arr,z_arr),axis=1).tolist()
+                self.inj_trajectory.add_trajectory(SurfaceLineTrajectory3D(dev, cal, edge_3D, approach_nm, depth_nm, spacing_nm, speed_ums, pullout_nm, end_at_fin_pos))
             self.inj_trajectory.start()
             self.inj_trajectory.finished.connect(self.show_n_injected)
         except CalibrationError as e:
@@ -1820,7 +1826,7 @@ class ControlWindow(QMainWindow):
             self.inj_trajectory.stop()
         except:
             msg = "You have to start the trajectory in order to be able to stop it...\nPython error = \n" + str(sys.exc_info()[1])
-            self.show_error_box(msg)
+            self.show_exception_box(msg)
             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
 
     def moveto_unload_position(self):

@@ -176,12 +176,13 @@ class SurfacePointTrajectory3D(QThread):
             injection position during injection trajectory
         speed_ums (int): Speed of manipulator movement in um/s.
         pullout_nm (int): Distance along (in nm) x-axis to retract manipulator
+        end_at_finish_pos (bool): Whether to end at the finishing pos.
         _stop_pressed (bool): Indicator that stop button is pressed
         _move_complete (bool): Inidcator that movement is complete and can go to next position.
         n_injected (int): Number of injections completed
     """
 
-    def __init__(self, dev:SensapexDevice, cal:Calibrator, ex_points_3D:list, approach_nm:int, depth_nm:int, speed_ums:int, pullout_nm:int):
+    def __init__(self, dev:SensapexDevice, cal:Calibrator, ex_points_3D:list, approach_nm:int, depth_nm:int, speed_ums:int, pullout_nm:int, end_at_finish_pos:bool):
         """
         Arguments:
             dev (SensapexDevice): Object that manipulates the sensapex manipulator
@@ -194,6 +195,8 @@ class SurfacePointTrajectory3D(QThread):
                 injection position during injection trajectory
             speed_ums (int): Speed of manipulator movement in um/s.
             pullout_nm (int): Distance along (in nm) x-axis to retract manipulator
+            end_at_finish_pos (bool): Whether to end at the finishing pos. Recommended for single trajectories
+                or the last trajectory in a list of sequential trajectories.
         """
         super().__init__()
         self._logr = StandardLogger(__name__)
@@ -204,12 +207,10 @@ class SurfacePointTrajectory3D(QThread):
         self.depth_nm = depth_nm
         self.speed_ums = speed_ums
         self.pullout_nm = pullout_nm
+        self.end_at_finish_pos = end_at_finish_pos
         self._stop_pressed = False
         self._move_complete = True
         self.n_injected = 0
-
-    def __del__(self):
-        self.wait()
 
     def run(self):
         self.implement_trajectory()
@@ -308,13 +309,14 @@ class SurfacePointTrajectory3D(QThread):
 
                 if i == len(self.ex_points_3D) - 1:
                     self._logr.info(f"Completed {i+1} injections")
-                    #pull out last injection command...
-                    fin_pos_ex = self.ex_points_3D[-1]
-                    fin_pos_m = self._compute_fin_position(fin_pos_ex)
-                    self.conduct_injection.finishing_moves(fin_pos_m, self.speed_ums)
+                    if self.end_at_finish_pos is True:
+                        #pull out last injection command...
+                        fin_pos_ex = self.ex_points_3D[-1]
+                        fin_pos_m = self._compute_fin_position(fin_pos_ex)
+                        self.conduct_injection.finishing_moves(fin_pos_m, self.speed_ums)
+
         except:
-            print(traceback.format_exc())
-            print('except')
+            self._logr.exception("Error while injecting.")
 
     def _next_move(self):
         """ Sets boolean to true so manipulator moves to next position """
@@ -341,12 +343,13 @@ class SurfaceLineTrajectory3D(SurfacePointTrajectory3D):
             injection position during injection trajectory
         speed_ums (int): Speed of manipulator movement in um/s.
         pullout_nm (int): Distance along (in nm) x-axis to retract manipulator
+        end_at_finish_pos (bool): Whether to end at the finishing pos.
         _stop_pressed (bool): Indicator that stop button is pressed
         _move_complete (bool): Inidcator that movement is complete and can go to next position.
         n_injected (int): Number of injections completed
     """
 
-    def __init__(self, dev:SensapexDevice, cal:Calibrator, edge_3D:list, approach_nm:int, depth_nm:int, spacing_nm:int, speed_ums:int, pullout_nm:int):
+    def __init__(self, dev:SensapexDevice, cal:Calibrator, edge_3D:list, approach_nm:int, depth_nm:int, spacing_nm:int, speed_ums:int, pullout_nm:int, end_at_finish_pos:bool):
         """
         Arguments:
             dev (SensapexDevice): Object that manipulates the sensapex manipulator
@@ -360,11 +363,13 @@ class SurfaceLineTrajectory3D(SurfacePointTrajectory3D):
             spacing_nm (int): Distance between injection positions along line
             speed_ums (int): Speed of manipulator movement in um/s.
             pullout_nm (int): Distance along (in nm) x-axis to retract manipulator
+            end_at_finish_pos (bool): Whether to end at the finishing pos. Recommended for single trajectories
+                or the last trajectory in a list of sequential trajectories.
         """
         self._logr = StandardLogger(__name__)
         self.edge_3D = edge_3D
         ex_points_3D = self._line_to_points(cal, spacing_nm)
-        super().__init__(dev, cal, ex_points_3D, approach_nm, depth_nm, speed_ums, pullout_nm)
+        super().__init__(dev, cal, ex_points_3D, approach_nm, depth_nm, speed_ums, pullout_nm, end_at_finish_pos)
 
     def _line_to_points(self, cal:Calibrator, spacing_nm:int)->list:
         """
@@ -391,3 +396,76 @@ class SurfaceLineTrajectory3D(SurfacePointTrajectory3D):
             except IndexError:
                 pass
         return inj_points
+
+class TrajectoryManager(QObject):
+    """ Coordiantes trajectories across multiple trajectories """
+    finished = pyqtSignal()
+
+    def __init__(self,trajectories:list=[]):
+        """
+        Args:
+            trajectories (list): Trajectories to run like SurfaceLIneTrajectory3D
+        """
+        super().__init__()
+        self._logr = StandardLogger(__name__)
+        self.n_injected = 0
+        self._trajectories = trajectories
+        self._cur_trajectory = None
+
+    def reset_(self):
+        """
+        Reset trajectory manager so `n_injected` is 0, no trajectories in
+        the list, and current trajectory is NOne
+        """
+        self.n_injected = 0
+        self._trajectories = []
+        self._cur_trajectory = None
+    
+    def add_trajectory(self, trajectory):
+        """
+        Appends trajectory to list of trajectories to run
+
+        Arg:
+            trajectory: Trajectory object to add
+        """
+        self._trajectories.append(trajectory)
+
+    def is_empty(self)->bool:
+        """ Returns true if no trajectories in list """
+        return len(self._trajectories)==0
+
+    def start(self):
+        """ Run all trajectories stored in trajectories attribute """
+        self.run_next_trajectory()
+
+    def run_next_trajectory(self):
+        """
+        Runs the 0 index trajectory if it exists by popping from traj list. 
+        Emits finished if no more trajectories
+        """
+        # Adds the number of injected from the most recent trajectory
+        if self._cur_trajectory is not None:
+            self.n_injected += self._cur_trajectory.n_injected
+        # Run the next injectory if there are still uncompleted trajectories
+        if self.is_empty() is False:
+            self._cur_trajectory = self._trajectories.pop(0)
+            self._cur_trajectory.start()
+            # When the trajectory thread is finished, run the nex tand delete the current
+            self._cur_trajectory.finished.connect(self.run_next_trajectory)
+            self._cur_trajectory.finished.connect(self._cur_trajectory.deleteLater)
+        # When there are no more trajectoreis, its finished
+        else:
+            self._cur_trajectory = None
+            self.finished.emit()
+
+    def stop(self):
+        """ Stops the current trajectory and resets"""
+        # Clear the list before stopping the trajectory thread because when the thread stops
+        # it emits a `finished` signal which will call `run_next_trajectory` which would
+        # call the next trajectory if it wasn't cleared
+        self._trajectories.clear()
+        self._cur_trajectory.stop()
+        # Finally after the thread is finished, we can reset where thre thread will be
+        # deleted but it won't be an issue since it will have finished. 
+        self._cur_trajectory.finished.connect(self.reset_)
+    

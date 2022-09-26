@@ -40,28 +40,31 @@ class VideoDisplay(QWidget):
             to the camera (which can be a different size than the canvas)
         clicked_canvas_pixel(list): [x, y] coordiantes of the clicked pixel relative
             to the canvas (which can be different size than the camera)
-        draw_camera_pixels(list): [[x,y], ...] coordinates of the drawn edge annotation
-            relative to the camera.
+        annotation_err (exception): Exceptions that occured during the annotation
+            process that are to be sent to the GUI to be displayed
     """
 
     clicked_camera_pixel = pyqtSignal(list)
     clicked_canvas_pixel = pyqtSignal(list)
-    drawn_camera_pixels = pyqtSignal(list)
+    annotation_error = pyqtSignal(Exception)
 
-    def __init__(self, cam:MMCamera, height:int, fps:int):
+    def __init__(self, cam:MMCamera, annot:AnnotationManager, height:int, fps:int):
         """
         Args:
             cam (MMCamera): Camera object
+            annot (AnnotationManager): Annotation object
             height (int): Desired pixel height of video display in GUI
             fps (int): Desired frame rate of video stream
         """
         super().__init__()
         self.cam = cam
+        self.annot_mgr = annot
         self.streamer = VideoStreamer(self.cam, fps)
         self._camera_to_canvas_scaling = height/self.cam.height
         self.height = int(round(height))
         self.width = int(round(self.cam.width * self._camera_to_canvas_scaling))
-        self.moved_camera_pixels = []
+        self.annotated_camera_pixels = []
+        self.is_annotating = False
         self._make_widgets()
         # Update the video display when a new frame available from the camera
         self.streamer.new_frame_available.connect(self.set_new_frame)
@@ -70,7 +73,9 @@ class VideoDisplay(QWidget):
         self.canvas = Canvas(self.width, self.height)
         self.canvas.lmb_mouse_pressed_pixel.connect(self.handle_lmb_press)
         self.canvas.lmb_mouse_released_pixel.connect(self.handle_lmb_release)
+        self.canvas.mmb_mouse_released_pixel.connect(self.handle_mmb_release)
         self.canvas.lmb_mouse_moved_pixel.connect(self.handle_lmb_move)
+        self.annot_mgr.annotation_changed.connect(self.set_interpolated_annotation)
         layout = QVBoxLayout()
         layout.addWidget(self.canvas)
         self.setLayout(layout)
@@ -85,25 +90,58 @@ class VideoDisplay(QWidget):
         self.frame = frame
         self.update_display()
 
+    def enable_annotations(self, state:bool):
+        """
+        Whether to enable tissue annotations by setting `is_annotating` to
+        `state`
+
+        Args:
+            state (bool): True to enable annotations, false to disable
+        """
+        self.is_annotating = state
+    
+    def rm_annotation_by_distance(self, camera_pixel:list, cam_pix_thresh:int=30):
+        """
+        Remove the nearest annotation to the `camera_pixel` if the minimum distance
+        between the annotation and `camera_pixel` is less than `cam_pix_thresh` pixels.
+
+        Args:
+            camera_pixel (list): Pixel coordinate in camera as [x,y]
+            cam_pix_thresh (int): Minimum distance threshold in pixels. If distance between
+            annotation and `camera_pixel` less than this value, then annotation removed.
+        """
+        # Create list of minimum distances between annotations and camera_pixel
+        min_dists = []
+        for inter_list in list(self.annot_mgr.annotation_dict['interpolated']):
+            dif_annot = np.asarray(inter_list) - np.asarray(camera_pixel)
+            min_dist_to_cam_pix = np.amin(np.linalg.norm(dif_annot,axis=1)) 
+            min_dists.append(min_dist_to_cam_pix)
+        min_dists = np.asarray(min_dists)
+        # Remove the annotation that is closest and within the threshold
+        if np.amin(min_dists) < cam_pix_thresh:
+            rm_ind = int(np.argmin(min_dists))
+            self.annot_mgr.rm_annotation_by_inds(rm_ind)    
+
+
     def handle_lmb_press(self,canvas_pixel:list):
         """
         Handles what to do when `lmb_mouse_pressed_pixel` from `Canvas`.
 
-        Intializes a list of `moved_camera_pixels` of the drawn edge.
+        Intializes a list of `annotated_camera_pixels` of the drawn edge.
 
         Args:
             canvas_pixel (list): [x, y] coordiantes of mouse click in canvas
         """
         # Convert canvas pixel location to camera pixel location
         camera_pixel = self.convert_canvas_to_camera(canvas_pixel)
-        self.moved_camera_pixels = []
+        self.annotated_camera_pixels = []
 
     def handle_lmb_release(self,canvas_pixel:list):
         """
         Handles what to do when `lmb_mouse_released_pixel` from `Canvas`.
 
         Emits the clicked camera and canvas pixel coordiates as well as
-        the list of `moved_camera_pixels` that have been acquired since the
+        the list of `annotated_camera_pixels` that have been acquired since the
         mouse button was depressed
 
         Args:
@@ -114,19 +152,41 @@ class VideoDisplay(QWidget):
         # Emit clicked coordinates and list of moved coordiantes
         self.clicked_camera_pixel.emit([camera_pixel[0], camera_pixel[1]])
         self.clicked_canvas_pixel.emit([canvas_pixel[0], canvas_pixel[1]])
-        self.drawn_camera_pixels.emit(self.moved_camera_pixels)
+        if self.is_annotating is True:
+            try:
+                self.annot_mgr.add_annotation(self.annotated_camera_pixels)
+            except Exception as e:
+                self.annotation_error.emit(e)
+
+    def handle_mmb_release(self,canvas_pixel:list):
+        """
+        Handles what to do when `mmb_mouse_released_pixel` from `Canvas`.
+
+        Removes annotation if near the canvas pixel.
+
+        Args:
+            canvas_pixel (list): [x, y] coordiantes of mouse click in canvas
+        """
+        # Convert canvas pixel location to camera pixel location
+        camera_pixel = self.convert_canvas_to_camera(canvas_pixel)
+        # Emit clicked coordinates and list of moved coordiantes
+        if self.is_annotating is True:
+            try:
+                self.rm_annotation_by_distance(camera_pixel)
+            except Exception as e:
+                self.annotation_error.emit(e)
 
     def handle_lmb_move(self,canvas_pixel:list):
         """
         Handles what to do when `lmb_mouse_moved_pixel` from `Canvas`.
 
-        Adds the pixel coordinate to running list of `moved_camera_pixels`
+        Adds the pixel coordinate to running list of `annotated_camera_pixels`
 
         Args:
             canvas_pixel (list): [x, y] coordiantes of mouse click in canvas
         """
         camera_pixel = self.convert_canvas_to_camera(canvas_pixel)
-        self.moved_camera_pixels.append(camera_pixel)
+        self.annotated_camera_pixels.append(camera_pixel)
 
     def update_display(self):
         """
@@ -179,25 +239,27 @@ class VideoDisplay(QWidget):
         """
         self.canvas.painter.show_interpolated_edge(bool_)
 
-    def set_interpolated_annotation(self, annot:np.ndarray):
+    def set_interpolated_annotation(self, annots:np.ndarray):
         """
         Sets the `Painter`'s interpolated edge coordinates for display.
 
         Args:
             annot (np.ndarray): Interpolated coordiantes as [[x, y], ...]
         """
-        try:
-            annot = annot.tolist()
-        except:
-            pass
-        canvas_annot = [self.convert_camera_to_canvas(pix) for pix in annot]
-        self.canvas.painter.interpolated_edge = canvas_annot
+        if isinstance(annots, np.ndarray):
+            annots = annots.tolist()
+        if not isinstance(annots, list):
+            raise TypeError('`annots` must be a list')
+        canvas_annot = []
+        for annot in annots:
+            canvas_annot.append([self.convert_camera_to_canvas(pix) for pix in annot])
+        self.canvas.painter.interpolated_edges = canvas_annot
 
     def reset_interpolated_annotation(self):
         """
         Sets the `Painter`'s interpolated edge coordinates to empty
         """
-        self.canvas.painter.interpolated_edge = []
+        self.canvas.painter.interpolated_edges = []
 
     def show_tissue_mask(self, bool_:bool):
         """
@@ -308,11 +370,14 @@ class Canvas(QLabel):
             the left-mouse-button initially depressed.
         lmb_mouse_released_pixel(list):[x, y] pixel coordinates of the event when
             the left-mouse-button is released after being depressed.
+        mmb_mouse_released_pixel(list):[x, y] pixel coordinates of the event when
+            the middle-mouse-button is released after being depressed.
     """
 
     lmb_mouse_moved_pixel = pyqtSignal(list)
     lmb_mouse_pressed_pixel = pyqtSignal(list)
     lmb_mouse_released_pixel = pyqtSignal(list)
+    mmb_mouse_released_pixel = pyqtSignal(list)
 
     def __init__(self, width:int, height:int):
         """
@@ -367,6 +432,9 @@ class Canvas(QLabel):
             self.lmb_mouse_released_pixel.emit(pixel)
             self.painter.clicked_points = [pixel]
             self.painter.drawn_edge = []
+        if event.button() == Qt.MouseButton.MiddleButton:
+            pixel = [event.pos().x(), event.pos().y()]
+            self.mmb_mouse_released_pixel.emit(pixel)
 
     def update_(self, image:np.ndarray):
         """
@@ -430,7 +498,7 @@ class Painter():
         self.calibrated_tip_points = []
         self.clicked_points = []
         self.drawn_edge = []
-        self.interpolated_edge = []
+        self.interpolated_edges = []
         self.tissue_mask = None
         self.apical_mask = None
         self.basal_mask = None
@@ -656,22 +724,23 @@ class Painter():
             np.ndarray of modified image
         """
         if self._show_interpolated_edge_bool is True:
-            if self.interpolated_edge != []:
-                self.interpolated_edge = np.asarray(self.interpolated_edge)
-                image = cv2.polylines(
-                        img = image,
-                        pts = [self.interpolated_edge],
-                        isClosed = False,
-                        color = self.BLACK,
-                        thickness = 2
-                    )
-                image = cv2.polylines(
-                        img = image,
-                        pts = [self.interpolated_edge],
-                        isClosed = False,
-                        color = self.WHITE,
-                        thickness = 1
-                    )
+            if self.interpolated_edges != []:
+                for edge in self.interpolated_edges:
+                    edge = np.asarray(edge)
+                    image = cv2.polylines(
+                            img = image,
+                            pts = [edge],
+                            isClosed = False,
+                            color = self.BLACK,
+                            thickness = 2
+                        )
+                    image = cv2.polylines(
+                            img = image,
+                            pts = [edge],
+                            isClosed = False,
+                            color = self.WHITE,
+                            thickness = 1
+                        )
         return image
 
     def draw_tissue_mask(self,rgb:np.ndarray)->np.ndarray:
@@ -703,6 +772,8 @@ class Painter():
         if self.basal_mask is not None:
             rgb = utils.alpha_compost_A_over_B(self.basal_mask, rgb, 1)
         return rgb
+
+
 if __name__ == "__main__":
     mm_path = os.path.join('C:', os.path.sep, 'Program Files','Micro-Manager-2.0')
     cam = 'HamamatsuHam_DCAM'
@@ -711,11 +782,12 @@ if __name__ == "__main__":
     bins = '2x2'
     rot = 180
     imagevals = 256
+    annot = AnnotationManager()
     cam_MM = MMCamera(mm_path, cam, brand, val, bins, rot, imagevals)
     app = QApplication(sys.argv)
     scale_factor = 1.3
     height = 900
     fps = 60
-    win = VideoDisplay(cam_MM, height, fps)
+    win = VideoDisplay(cam_MM, annot, height, fps)
     win.show()
     sys.exit(app.exec())

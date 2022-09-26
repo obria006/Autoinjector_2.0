@@ -166,14 +166,26 @@ def display_transparent_mask(image:np.ndarray, rgb:np.ndarray, mask:np.ndarray, 
 
     return rgb
 
-def interpolate(drawn_pixels):
+def interpolate(drawn_pixels:list)->list:
+    """
+    Conducts univariate spline interpolation on ordered x,y coordinates in
+    `drawn_pixels` list.
+
+    Args:
+        drawn_pixels (list): Ordered list to interpolate as [[x1,y1],[x2,y2],...]
+
+    Returns:
+        list of interpolated coordinates as [[x1,y1],[x2,y2],...]
+    """
+    # Convert pixels to array and get number of elements in list
     pixel_arr = np.array(drawn_pixels)
     n = len(pixel_arr)
+    # Extract coordinates and make 0->1 scaled parameter t of same length as x,y
     tvals = np.arange(len(pixel_arr)).reshape(-1,1) / (len(pixel_arr)-1)
     xvals = pixel_arr[:,0]
     yvals = pixel_arr[:,1]
     
-    # Fit splines for data
+    # Fit splines for data along t parameter
     unispl_x = UnivariateSpline(tvals, xvals, s=5*n)
     unispl_y = UnivariateSpline(tvals, yvals, s=5*n)
 
@@ -193,7 +205,7 @@ def interpolate(drawn_pixels):
     sequential_differences = np.diff(interpolated, axis=0).astype(np.bool)
     is_sequentially_different = np.any(sequential_differences,axis=1)
     non_duplicate_indices = np.insert(is_sequentially_different,0,True)
-    interpolated = interpolated[non_duplicate_indices]
+    interpolated = interpolated[non_duplicate_indices].tolist()
 
     return interpolated
     

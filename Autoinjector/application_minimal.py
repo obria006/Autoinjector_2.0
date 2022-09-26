@@ -147,7 +147,8 @@ class ControlWindow(QMainWindow):
             self.show_exception_box(e)
 
         # Instantiate imported widgets
-        self.vid_display = VideoDisplay(self.cam_MM, height=900, fps=50)
+        self.annot_mgr = AnnotationManager()
+        self.vid_display = VideoDisplay(self.cam_MM, self.annot_mgr, height=900, fps=50)
         self.instantiate_mvcs()
 
         # Create main gui widgets
@@ -456,7 +457,7 @@ class ControlWindow(QMainWindow):
         self.edge_type_combo_box = QComboBox()
         self.edge_type_combo_box.setPlaceholderText('Type')
         self.annotation_button = QPushButton("Annotate Target")
-        self.rm_annotation_button = QPushButton("Remove Annotation")
+        self.rm_annotation_button = QPushButton("Remove All Annotations")
         self.default_annotation_group = QGroupBox("Trajectory Annotation")
         # Make alternate annotation widgets
         mode_label2 = QLabel(mode_label1.text())
@@ -497,7 +498,7 @@ class ControlWindow(QMainWindow):
         self.annotation_button.clicked.connect(self.annotate_trajectory_pressed)
         self.rm_annotation_button.clicked.connect(self.rm_annotation_pressed)
         self.complete_annotation_button.clicked.connect(self.annotation_complete_pressed)
-        self.exit_annotation_button.clicked.connect(self.exit_annotation_mode)
+        self.exit_annotation_button.clicked.connect(self.annotation_exit_pressed)
         self.annotation_combo_box.currentTextChanged.connect(self.annotation_combo_changed)
         self.edge_type_combo_box.currentTextChanged.connect(self.edge_type_combo_changed)
 
@@ -608,7 +609,8 @@ class ControlWindow(QMainWindow):
 
     def set_video_display_connections(self):
         self.vid_display.clicked_camera_pixel.connect(self.add_cal_positions)
-        self.vid_display.drawn_camera_pixels.connect(self.handle_drawn_edge)
+        self.vid_display.annotation_error.connect(self.recieve_err_during_annotation)
+        self.annot_mgr.annotation_changed.connect(self.set_trajectory)
     
 
     """
@@ -876,7 +878,21 @@ class ControlWindow(QMainWindow):
         self.logger.exception(str(msg).replace('\n',' '))
         self.error_msg.setText(str(msg))
         self.error_msg.exec()
-        
+
+    def recieve_err_during_annotation(self, err:Exception):
+        """
+        Raise errors that occured during the annotaiton process and
+        were passed to the GUI as a pyqtSignal
+        """
+        try:
+            raise err
+        except AnnotationError as e:
+            msg = f"Error: {e}.\n\nPlease reattempt target annotation."
+            self.show_error_box(msg)
+        except Exception as e:
+            msg = f"Error while annotating.\n\nSee logs for more info."
+            self.show_excption_box(msg)
+
     def assess_startup_errors(self):
         #print errors on response monitor if manipulator or arduino has an error
         if self.motorfound == False:
@@ -913,13 +929,20 @@ class ControlWindow(QMainWindow):
             tip_dict = {'x':tip_position.x(), 'y':tip_position.y()}
             self.save_pip_cal_data(tip_dict)
 
-    def acquire_tissue_data(self, raw_edge_coord, inter_edge_cood):
+    def acquire_tissue_data(self):
         '''
-        Queries whether checkbox selected to save tissue data, and saves data if checked
+        Queries whether checkbox selected to save tissue data, and saves data if checked.
+        Data includes a the raw and interpolated coordinates (and a photo)
         '''
         if self.save_tiss_annot_rbon.isChecked():
-            raw = np.asarray(raw_edge_coord)
-            inter = np.asarray(inter_edge_coord)
+            raw = []
+            for annot in self.annot_mgr.annotation_dict['raw']:
+                raw = raw+annot
+            inter = []
+            for annot in self.annot_mgr.annotation_dict['interpolated']:
+                inter = inter+annot
+            raw = np.asarray(raw)
+            inter = np.asarray(inter)
             self.save_tiss_anot_data(raw_annot=raw, interpolate_annot=inter)
 
 
@@ -1444,7 +1467,7 @@ class ControlWindow(QMainWindow):
                 else:
                     edge_pixels = self.tissue_model.longest_edge_of_type(detection_dict=detection_dict, edge_type=edge_type)
                 # Set the anntoation for injection
-                self.handle_drawn_edge(edge_pixels)
+                self.annot_mgr.add_annotation(edge_pixels)
             except EdgeNotFoundError as e:
                 msg = f"{e}\n\nManually annotate the edge."
                 self.show_warning_box(msg)
@@ -1468,15 +1491,13 @@ class ControlWindow(QMainWindow):
 
     def annotation_complete_pressed(self):
         """ Handle what to do when user clicks annotation complete """
-        # Stop showing the raw drawn edge
-        self.vid_display.show_drawn_annotation(False)
-        self.vid_display.reset_masks()
-        self.vid_display.hide_masks()
-        # Switch GUI to default mode
-        self.switch_to_default_mode()
+        # Leave annotation and switch to default mode
+        self.leave_annotation_mode()
 
     def annotate_trajectory_pressed(self):
         """ Handle what to do when user clicks annotate trajectory """
+        # Start fresh with new annotation to remove any existing ones
+        self.clear_annotation()
         # Allow video display to show the drawn and interpolated annotations
         self.vid_display.show_drawn_annotation(True)
         self.vid_display.show_interpolated_annotation(True)
@@ -1490,19 +1511,25 @@ class ControlWindow(QMainWindow):
         """ Handle what to do when user clicks remove annotation """
         self.clear_annotation()
 
-    def exit_annotation_mode(self):
+    def annotation_exit_pressed(self):
+        """ Handle what to do when user clicks exit trajectory"""
+        # Nullify any interpolated edge coordinates if they exist
+        self.clear_annotation()
+        # Leave annotation and switch to default mode
+        self.leave_annotation_mode()
+
+    def leave_annotation_mode(self):
         """
-        Exit the annotation mode by stop showing the drawn edge and change
-        the gui to the default mode 
+        Leave the annotation mode by stop showing the drawn edge and change
+        gui do the default mode.
         """
+        # Disable tissue annotations
+        self.vid_display.enable_annotations(False)
         # Stop showing the raw drawn edge
         self.vid_display.show_drawn_annotation(False)
-        # Nullify any interpolated edge coordinates if they exist
-        self.interpolated_pixels = []
-        self.vid_display.reset_interpolated_annotation()
+        # Stop showing the automated edge detected masks
         self.vid_display.reset_masks()
         self.vid_display.hide_masks()
-        self._annotation_complete.emit(False)
         # Switch GUI to default mode
         self.switch_to_default_mode()
 
@@ -1510,6 +1537,7 @@ class ControlWindow(QMainWindow):
         """ Modify GUI to show annotation mode layout """
         self.left_stacked_layout.setCurrentWidget(self.annotation_mode_left_page)
         self.right_stacked_layout.setCurrentWidget(self.annotation_mode_right_page)
+        self.vid_display.enable_annotations(True)
 
     def switch_to_default_mode(self):
         """ Modify GUI to show default application layout """
@@ -1520,8 +1548,8 @@ class ControlWindow(QMainWindow):
         """ Modify the annotaiton guidance text to inform user how to proceed """
         annot_mode = self.annotation_combo_box.currentText()
         annot_notes = ("Notes:\n"
-            "1. Multiple annotations will overwrite each other.\n"
-            "2. Selecting `Exit` will exit without the annotation.")
+            "1. Middle-mouse-button click near an exisitng annotation will remove it.\n"
+            "2. Selecting `Exit` will exit without any annotations.")
         if annot_mode == "Manual":
             msg = ("Process:\n1. In video display, click-and-drag mouse along tissue edge."
             f"\n2. Select `Complete Annotation` to exit to main GUI.\n\n{annot_notes}")
@@ -1551,34 +1579,39 @@ class ControlWindow(QMainWindow):
 
     def clear_annotation(self):
         """ Remove annotation and show annotation complete as false """
+        # Nullify any interpolated edge coordinates if they exist
+        self.annot_mgr.reset_annotations()
         self.interpolated_pixels = []
         self.vid_display.reset_interpolated_annotation()
         self._annotation_complete.emit(False)
 
-    def handle_drawn_edge(self, drawn_pixels:list):
-        ''' Handles events when video display returns the drawn edge '''
-        # Only handle the drawn edge when the annotaion mode is active
-        if self.left_stacked_layout.currentWidget() == self.annotation_mode_left_page:
-            # Try to interpolate the drawn edge coordinates
-            try:
-                if len(drawn_pixels) <=3:
-                    raise AnnotationError("Annotation is too short.")
-                self.interpolated_pixels = interpolate(drawn_pixels)
-                self.vid_display.set_interpolated_annotation(self.interpolated_pixels)
-                self._annotation_complete.emit(True)
-            except AnnotationError as e:
-                self.clear_annotation()
-                msg = f"Error while interpolating annotation: {e}\n\nTry annotating again."
-                self.show_warning_box(msg)
-            except Exception as e:
-                self.clear_annotation()
-                msg = "Error while interpolating annotation.\n\nSee logs for more info."
-                self.show_exception_box(msg)
-            else:
-                if self.save_tiss_annot_rbon.isChecked():
-                    raw = np.asarray(drawn_pixels)
-                    inter = np.asarray(self.interpolated_pixels)
-                    self.save_tiss_anot_data(raw_annot=raw, interpolate_annot=inter)
+    def set_trajectory(self, annotation:list):
+        """
+        Set the trajectory to the `annotation`.
+
+        Args:
+            annotation (list): Orderded list of lists of injection points
+            [
+            [[x11,y11,], [x12,y12],... ],
+            [[x21, y21], [x22,y22],.. ],
+            ...,
+            ]
+        """
+        # Annotation may be empty (e.g. if user deletes annotation), so dont set trajectory
+        if len(annotation) == 0:
+            self.interpolated_pixels = []
+            self._annotation_complete.emit(False)
+            return
+        try:
+            self.interpolated_pixels = []
+            for edge in annotation:
+                self.interpolated_pixels += edge
+            self._annotation_complete.emit(True)
+        except Exception as e:
+            self.show_exception_box("Error while setting trajectory\n\nSee logs for more info.")
+            self.interpolated_pixels = []
+        else:
+            self.acquire_tissue_data()
 
     
     """

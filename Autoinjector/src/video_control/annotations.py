@@ -1,20 +1,27 @@
 """ Classes and functions for handling injection target annotations """
 from collections.abc import Iterable
-from PyQt6.QtCore import QObject
+import numpy as np
+from PyQt6.QtCore import QObject, pyqtSignal
+from src.miscellaneous import validify as val
 from src.video_control import video_utils as utils
 
 
 class AnnotationManager(QObject):
     """
     Class to manage the annotations in the GUI video display
+
+    Signals:
+        annotation_changed (list): List of lists of interpolated annoation coordinates
+            [[[x11,y11], [x12,y12]... ], [[x21,y21],[x22,y22],...], ... ]
     """
+    annotation_changed = pyqtSignal(list)
 
     def __init__(self):
         """
         Args:
         """
         super().__init__()
-        self.reset_annotations()
+        self.annotation_dict = {'raw':[], 'interpolated':[]}
 
     def add_annotation(self, annot:list):
         """
@@ -23,9 +30,12 @@ class AnnotationManager(QObject):
         Args:
             annot (list): Ordered list of annotation as [[x1,y1],[x2,y2],...]
         """
+        if isinstance(annot, np.ndarray):
+            annot = np.copy(annot).tolist()
         inter_annot = self._interpolate_annotation(annot)
         self.annotation_dict['raw'].append(annot)
         self.annotation_dict['interpolated'].append(inter_annot)
+        self.annotation_changed.emit(self.annotation_dict['interpolated'])
 
     def rm_annotation_by_inds(self, inds):
         """
@@ -49,10 +59,13 @@ class AnnotationManager(QObject):
         for ind in sorted(inds, reverse=True):
             del self.annotation_dict['raw'][ind]
             del self.annotation_dict['interpolated'][ind]
+        self.annotation_changed.emit(self.annotation_dict['interpolated'])
+        
 
     def reset_annotations(self):
         """ Set annotations to be empty """
         self.annotation_dict = {'raw':[], 'interpolated':[]}
+        self.annotation_changed.emit(self.annotation_dict['interpolated'])
 
     def _interpolate_annotation(self, annot:list):
         """
@@ -66,6 +79,6 @@ class AnnotationManager(QObject):
             list of interpolated coordinates as [[x1,y1],[x2,y2],...]
         """
         if len(annot) <=3:
-            raise utils.AnnotationError("Annotation is too short.\n\nPlease make a longer annotation.")
+            raise utils.AnnotationError("Annotation is too short. Please make a longer annotation.")
         interpolated_pixels = utils.interpolate(annot)
         return interpolated_pixels

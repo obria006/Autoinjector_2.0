@@ -46,7 +46,7 @@ class VideoDisplay(QWidget):
 
     clicked_camera_pixel = pyqtSignal(list)
     clicked_canvas_pixel = pyqtSignal(list)
-    annotation_error = pyqtSignal(Exception)
+    drawn_edge_camera_pixels = pyqtSignal(list)
 
     def __init__(self, cam:MMCamera, annot:AnnotationManager, height:int, fps:int):
         """
@@ -110,6 +110,9 @@ class VideoDisplay(QWidget):
             cam_pix_thresh (int): Minimum distance threshold in pixels. If distance between
             annotation and `camera_pixel` less than this value, then annotation removed.
         """
+        # Dont attempt to remove any annotations if there aren't any to remove
+        if len(self.annot_mgr.annotation_dict['interpolated']) == 0:
+            return
         # Create list of minimum distances between annotations and camera_pixel
         min_dists = []
         for inter_list in list(self.annot_mgr.annotation_dict['interpolated']):
@@ -153,10 +156,7 @@ class VideoDisplay(QWidget):
         self.clicked_camera_pixel.emit([camera_pixel[0], camera_pixel[1]])
         self.clicked_canvas_pixel.emit([canvas_pixel[0], canvas_pixel[1]])
         if self.is_annotating is True:
-            try:
-                self.annot_mgr.add_annotation(self.annotated_camera_pixels)
-            except Exception as e:
-                self.annotation_error.emit(e)
+            self.drawn_edge_camera_pixels.emit(self.annotated_camera_pixels)
 
     def handle_mmb_release(self,canvas_pixel:list):
         """
@@ -171,10 +171,7 @@ class VideoDisplay(QWidget):
         camera_pixel = self.convert_canvas_to_camera(canvas_pixel)
         # Emit clicked coordinates and list of moved coordiantes
         if self.is_annotating is True:
-            try:
-                self.rm_annotation_by_distance(camera_pixel)
-            except Exception as e:
-                self.annotation_error.emit(e)
+            self.rm_annotation_by_distance(camera_pixel)
 
     def handle_lmb_move(self,canvas_pixel:list):
         """

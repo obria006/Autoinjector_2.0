@@ -609,7 +609,7 @@ class ControlWindow(QMainWindow):
 
     def set_video_display_connections(self):
         self.vid_display.clicked_camera_pixel.connect(self.add_cal_positions)
-        self.vid_display.annotation_error.connect(self.recieve_err_during_annotation)
+        self.vid_display.drawn_edge_camera_pixels.connect(self.handle_drawn_edge)
         self.annot_mgr.annotation_changed.connect(self.set_trajectory)
     
 
@@ -878,20 +878,6 @@ class ControlWindow(QMainWindow):
         self.logger.exception(str(msg).replace('\n',' '))
         self.error_msg.setText(str(msg))
         self.error_msg.exec()
-
-    def recieve_err_during_annotation(self, err:Exception):
-        """
-        Raise errors that occured during the annotaiton process and
-        were passed to the GUI as a pyqtSignal
-        """
-        try:
-            raise err
-        except AnnotationError as e:
-            msg = f"Error: {e}.\n\nPlease reattempt target annotation."
-            self.show_error_box(msg)
-        except Exception as e:
-            msg = f"Error while annotating.\n\nSee logs for more info."
-            self.show_excption_box(msg)
 
     def assess_startup_errors(self):
         #print errors on response monitor if manipulator or arduino has an error
@@ -1587,6 +1573,22 @@ class ControlWindow(QMainWindow):
         self.vid_display.reset_interpolated_annotation()
         self._annotation_complete.emit(False)
 
+    def handle_drawn_edge(self, annotated_cam_edge:list):
+        """
+        Attempt to add the annotation to annotation manager
+
+        Args:
+            annotated_cam_edge (list): Pixels of annotated edge in camera
+        """
+        try:
+            self.annot_mgr.add_annotation(annotated_cam_edge)
+        except AnnotationError as e:
+            msg = f"Error while annotating: {e}"
+            self.show_error_box(msg)
+        except:
+            msg = "Error while annotating target.\n\n See logs for more info"
+            self.show_exception_box(msg)
+
     def set_trajectory(self, annotation:list):
         """
         Set the trajectory to the `annotation`.
@@ -1825,9 +1827,8 @@ class ControlWindow(QMainWindow):
         try:
             self.inj_trajectory.stop()
         except:
-            msg = "You have to start the trajectory in order to be able to stop it...\nPython error = \n" + str(sys.exc_info()[1])
+            msg = "You have to start the trajectory in order to be able to stop it..."
             self.show_exception_box(msg)
-            self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
 
     def moveto_unload_position(self):
         """ move pipette to unload position so user can change pipette"""

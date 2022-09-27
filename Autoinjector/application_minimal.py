@@ -140,7 +140,7 @@ class ControlWindow(QMainWindow):
 
         # Instantiate the imported camera
         try:
-            mm_path = self.cfg.cfg_gui.values['micromanager path'].replace('\\','/')
+            mm_path = self.cfg.values.micromanager_path.replace('\\','/')
             self.cam_MM = MMCamera(mm_path, self.cam_, self.brand_, self.val_, self.bins_, self.rot_, self.imagevals_)
         except Exception as e:
             msg = f"Error while interfacing with camera: {e}.\n\nSee logs for more info."
@@ -180,12 +180,12 @@ class ControlWindow(QMainWindow):
     def get_gui_cfg(self):
         ''' Loads the configuration values for the GUI '''
         self.cfg = CfgManager()
-        self.cfg.cfg_from_pointer()
+        self.cfg.from_pointer_file()
 
     def define_dirs(self):
         ''' Set dirs (and create if necessary) for GUI '''
         # General data directory
-        self.data_dir = self.cfg.cfg_gui.values['data directory'].replace('\\','/')
+        self.data_dir = self.cfg.values.data_directory.replace('\\','/')
         if os.path.isdir(self.data_dir) is False:
             os.makedirs(self.data_dir)
             self.logger.info(f'Created data directory: {self.data_dir}')
@@ -1238,7 +1238,7 @@ class ControlWindow(QMainWindow):
         img_height = self.cam_MM.height
         _, _, obj_mag = self.zen_controller.get_current_objective()
         _, _, opto_mag = self.zen_controller.get_current_optovar()
-        z_polarity = self.cfg.cfg_gui.values['z polarity']
+        z_polarity = self.cfg.values.z_polarity
         self.cal_trajectory = SemiAutoCalibrationTrajectory(dev=dev, cal=self.pip_cal, img_w=img_width, img_h=img_height, z_polarity=z_polarity,pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
         self.cal_pos_added.connect(self.cal_trajectory.next_cal_position)
         # delete calibraiton trajecotory otherwise it will conintue to handle stuff from
@@ -1283,7 +1283,7 @@ class ControlWindow(QMainWindow):
             _, _, obj_mag = self.zen_controller.get_current_objective()
             _, _, opto_mag = self.zen_controller.get_current_optovar()
             self.logger.info(f"Computing calibration with data\n{self.pip_cal.data.data_df}")
-            z_polarity = self.cfg.cfg_gui.values['z polarity']
+            z_polarity = self.cfg.values.z_polarity
             self.pip_cal.compute(z_polarity=z_polarity, pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
         except CalibrationDataError as e:
             msg = f"Calibration not completed. Error: {e}\n\nMake sure you click on the tip to register at least 3 points (that don't lie on a line) before unchecking 'Calibrate'."
@@ -1795,7 +1795,7 @@ class ControlWindow(QMainWindow):
             depth_nm = int(float(self.depthintissue)*um2nm)
             spacing_nm = int(float(self.stepsize)*um2nm)
             speed_ums = int((self.motorspeed))
-            pullout_nm = self.cfg.cfg_gui.values['pullout nm']
+            pullout_nm = self.cfg.values.pullout_nm
             dev = SensapexDevice(1)
             cal = self.pip_cal
             self.inj_trajectory = TrajectoryManager()

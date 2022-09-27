@@ -12,7 +12,7 @@ class AnnotationManager(QObject):
 
     Signals:
         annotation_changed (list): List of lists of interpolated annoation coordinates
-            [[[x11,y11], [x12,y12]... ], [[x21,y21],[x22,y22],...], ... ]
+            [[[x11,y11,z11], [x12,y12,z12]... ], [[x21,y21,z21],[x22,y22,z22],...], ... ]
     """
     annotation_changed = pyqtSignal(list)
 
@@ -28,14 +28,53 @@ class AnnotationManager(QObject):
         Add annotation to annotation annotation dict
 
         Args:
-            annot (list): Ordered list of annotation as [[x1,y1],[x2,y2],...]
+            annot (list): Ordered list of annotation as [[x1,y1,z1],[x2,y2,z2],...]
         """
         if isinstance(annot, np.ndarray):
             annot = np.copy(annot).tolist()
+        annot_dims = np.asarray(annot).shape
+        if annot_dims[1] != 3:
+            raise ValueError(f"Invalid annotation because not 3D. Annotation shape is {annot_dims}")
         inter_annot = self._interpolate_annotation(annot)
         self.annotation_dict['raw'].append(annot)
         self.annotation_dict['interpolated'].append(inter_annot)
         self.annotation_changed.emit(self.annotation_dict['interpolated'])
+
+    def get_annotations(self, type_:str, coords:str)->list:
+        """
+        Return list of all annotaitons of given `type_` with `coords`.
+
+        Args:
+            type_ (str): Type of annotation as 'raw' or 'interpolated'
+            coords (str): Which coordinates to return as 'xy' or 'xyz'
+        
+        Returns
+            list of annotations as [[x,y], ...] or [[x,y,z], ...] as
+            depending on `coords`
+        """
+        # Validate correct args for annotation type and coordinates
+        if type_ not in ['raw', 'interpolated']:
+            raise ValueError(f"Invalid annotation type: {type_}. Must be in ['raw', 'interpolated']")
+        if coords not in ['xy', 'xyz']:
+            raise ValueError(f"Invalid annotation coords: {coords}. Must be in ['xy', 'xyz']")
+        
+        # Return empty list if the annotation is empty
+        if len(self.annotation_dict) ==0:
+            return list(self.annotation_dict[type_])
+
+        # Return the xyz or xy coordinates 
+        if coords == 'xyz':
+            return list(self.annotation_dict[type_])
+        elif coords == 'xy':
+            # Only want to return xy coordiantes, but annot is 3D as [[x,y,z],...], so
+            # slice out the only the xy coordiantes
+            annots_xy = []
+            for annot_xyz in self.annotation_dict[type_]:
+                annot_xy = [xyz[0:2] for xyz in annot_xyz]
+                annots_xy.append(annot_xy)
+            return annots_xy
+        else:
+            raise NotImplementedError(f"Invalid annotation coords: {coords}. Must be in ['xy', 'xyz']")
 
     def rm_annotation_by_inds(self, inds):
         """
@@ -73,12 +112,12 @@ class AnnotationManager(QObject):
         `annot` list.
 
         Args:
-            annot (list): Ordered list to interpolate as [[x1,y1],[x2,y2],...]
+            annot (list): Ordered list to interpolate as [[x1,y1,z1],[x2,y2,z2],...]
 
         Returns:
-            list of interpolated coordinates as [[x1,y1],[x2,y2],...]
+            list of interpolated coordinates as [[x1,y1,z1],[x2,y2,z2],...]
         """
         if len(annot) <=3:
             raise utils.AnnotationError("Annotation is too short. Please make a longer annotation.")
-        interpolated_pixels = utils.interpolate(annot)
+        interpolated_pixels = utils.interpolate_3D(annot)
         return interpolated_pixels

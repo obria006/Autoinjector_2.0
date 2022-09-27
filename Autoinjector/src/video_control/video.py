@@ -111,11 +111,11 @@ class VideoDisplay(QWidget):
             annotation and `camera_pixel` less than this value, then annotation removed.
         """
         # Dont attempt to remove any annotations if there aren't any to remove
-        if len(self.annot_mgr.annotation_dict['interpolated']) == 0:
+        if len(self.annot_mgr.get_annotations(type_='interpolated', coords='xy')) == 0:
             return
         # Create list of minimum distances between annotations and camera_pixel
         min_dists = []
-        for inter_list in list(self.annot_mgr.annotation_dict['interpolated']):
+        for inter_list in self.annot_mgr.get_annotations(type_='interpolated', coords='xy'):
             dif_annot = np.asarray(inter_list) - np.asarray(camera_pixel)
             min_dist_to_cam_pix = np.amin(np.linalg.norm(dif_annot,axis=1)) 
             min_dists.append(min_dist_to_cam_pix)
@@ -723,6 +723,9 @@ class Painter():
         if self._show_interpolated_edge_bool is True:
             if self.interpolated_edges != []:
                 for edge in self.interpolated_edges:
+                    # Only want to disp xy coordiantes, but annot is 3D as [[x,y,z],...], so
+                    # slice out the only the xy coordiantes
+                    edge = np.asarray(edge)[:,:2].tolist()
                     edge = np.asarray(edge)
                     image = cv2.polylines(
                             img = image,

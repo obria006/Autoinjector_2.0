@@ -922,11 +922,11 @@ class ControlWindow(QMainWindow):
         '''
         if self.save_tiss_annot_rbon.isChecked():
             raw = []
-            for annot in self.annot_mgr.annotation_dict['raw']:
-                raw = raw+annot
+            for annot_xy in self.annot_mgr.get_annotations(type_='raw',coords='xy'):
+                raw = raw + annot_xy
             inter = []
-            for annot in self.annot_mgr.annotation_dict['interpolated']:
-                inter = inter+annot
+            for annot_xy in self.annot_mgr.get_annotations(type_='interpolated',coords='xy'):
+                inter = inter + annot_xy
             raw = np.asarray(raw)
             inter = np.asarray(inter)
             self.save_tiss_anot_data(raw_annot=raw, interpolate_annot=inter)
@@ -1454,8 +1454,10 @@ class ControlWindow(QMainWindow):
                     edge_pixels = self.tissue_model.longest_reachable_edge_of_type(detection_dict=detection_dict, edge_type=edge_type, pip_orient_RH=ang_RH)
                 else:
                     edge_pixels = self.tissue_model.longest_edge_of_type(detection_dict=detection_dict, edge_type=edge_type)
-                # Set the anntoation for injection
-                self.annot_mgr.add_annotation(edge_pixels)
+                # Add annotation as 3d list of [[x1, y1, z], [x2, y2, z],...]
+                z_scope = self.zen_controller.get_focus_um()
+                annotated_3d_edge = [[ele for ele in coord] + [z_scope] for coord in edge_pixels]
+                self.annot_mgr.add_annotation(annotated_3d_edge)
             except EdgeNotFoundError as e:
                 msg = f"{e}\n\nManually annotate the edge."
                 self.show_warning_box(msg)
@@ -1581,7 +1583,10 @@ class ControlWindow(QMainWindow):
             annotated_cam_edge (list): Pixels of annotated edge in camera
         """
         try:
-            self.annot_mgr.add_annotation(annotated_cam_edge)
+            # Add annotation as 3d list of [[x1, y1, z], [x2, y2, z],...]
+            z_scope = self.zen_controller.get_focus_um()
+            annotated_3d_edge = [[ele for ele in coord] + [z_scope] for coord in annotated_cam_edge]
+            self.annot_mgr.add_annotation(annotated_3d_edge)
         except AnnotationError as e:
             msg = f"Error while annotating: {e}"
             self.show_error_box(msg)
@@ -1799,14 +1804,9 @@ class ControlWindow(QMainWindow):
             dev = SensapexDevice(1)
             cal = self.pip_cal
             self.inj_trajectory = TrajectoryManager()
-            for edge in self.interpolated_pixels:
+            for ind, edge_3D in enumerate(self.interpolated_pixels):
                 # Have trajectory end at the "finish" position if its the last trajectoyr
-                end_at_fin_pos = edge == self.interpolated_pixels[-1]
-                # Define the edge coordinates for the trajectory
-                z_scope = self.zen_controller.get_focus_um()
-                edge_arr = np.array(edge)
-                z_arr = z_scope*np.ones((edge_arr.shape[0],1))
-                edge_3D = np.concatenate((edge_arr,z_arr),axis=1).tolist()
+                end_at_fin_pos = ind == len(self.interpolated_pixels) - 1
                 self.inj_trajectory.add_trajectory(SurfaceLineTrajectory3D(dev, cal, edge_3D, approach_nm, depth_nm, spacing_nm, speed_ums, pullout_nm, end_at_fin_pos))
             self.inj_trajectory.start()
             self.inj_trajectory.finished.connect(self.show_n_injected)

@@ -208,6 +208,59 @@ def interpolate(drawn_pixels:list)->list:
     interpolated = interpolated[non_duplicate_indices].tolist()
 
     return interpolated
+
+def interpolate_3D(drawn_pixels:list)->list:
+    """
+    Conducts univariate spline interpolation on ordered x,y,z coordinates in
+    `drawn_pixels` list.
+
+    Args:
+        drawn_pixels (list): Ordered list to interpolate as [[x1,y1,z1],[x2,y2,z2],...]
+
+    Returns:
+        list of interpolated coordinates as [[x1,y1,z1],[x2,y2,z2],...]
+    """
+    # Convert pixels to array and get number of elements in list
+    pixel_arr = np.array(drawn_pixels)
+    if pixel_arr.shape[1] !=3:
+        raise ValueError(f'Invalid data to interpolate 3D. Must have 3 columns, but data shape is: {pixel_arr.shape}')
+    n = len(pixel_arr)
+    # Extract coordinates and make 0->1 scaled parameter t of same length as x,y
+    tvals = np.arange(len(pixel_arr)).reshape(-1,1) / (len(pixel_arr)-1)
+    xvals = pixel_arr[:,0]
+    yvals = pixel_arr[:,1]
+    zvals = pixel_arr[:,2]
+    
+    # Fit splines for data along t parameter. Interpolates x, y, and z separately on domain of 0-1
+    unispl_x = UnivariateSpline(tvals, xvals, s=5*n)
+    unispl_y = UnivariateSpline(tvals, yvals, s=5*n)
+    unispl_z = UnivariateSpline(tvals, zvals)
+
+    # Approximate total pixel x, y distance of annotation using inf norm (city block norm)
+    # This should over estimate the total number of pixels in a contiguous annotation.
+    # Need to do this because pixel_arr may be sparse meaning taht it is isn't a continuous
+    # line.
+    dist = 0
+    for ind, pix in enumerate(pixel_arr):
+        if ind == 0:
+            continue
+        dist += np.linalg.norm(pix - pixel_arr[ind-1], ord=np.inf)
+    # Generate x, y datapoints from the total distance to make contigous spline
+    tnew = np.linspace(0,1,int(dist))
+    xnew = (unispl_x(tnew)).astype(int).reshape(-1,1)
+    ynew = (unispl_y(tnew)).astype(int).reshape(-1,1)
+    interpolated = np.concatenate([xnew,ynew],axis=1)
+    # Remove duplicate values in interpolated x-y data points
+    sequential_differences = np.diff(interpolated, axis=0).astype(np.bool)
+    is_sequentially_different = np.any(sequential_differences,axis=1)
+    non_duplicate_indices = np.insert(is_sequentially_different,0,True)
+    interpolated = interpolated[non_duplicate_indices]
+    # Add z interpolated z coordinate for each xy datapoint
+    tnew = np.linspace(0,1,len(interpolated))
+    znew = (np.round_(unispl_z(tnew),2)).astype(float).reshape(-1,1)
+    interpolated = np.concatenate([interpolated,znew], axis=1).tolist()
+
+    return interpolated
     
 def interpolate_vertical(drawn_pixels:list):
     pixel_arr = np.array(drawn_pixels)

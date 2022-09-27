@@ -880,6 +880,15 @@ class ControllerZEN(QObject):
         position = str(foc_pos)
         self.ex_foc_position_changed.emit(position)
 
+    def goto_focus_absolute(self, abs_focus:float):
+        """
+        Move to absolute focus position
+
+        Args:
+            abs_focus (float): Desired focus position
+        """
+        self._model.goto_focus_abs_um(abs_focus)
+
     def goto_focus_relative(self, rel_focus:float):
         """
         Move focus position relative to current position.

@@ -1,9 +1,10 @@
 import time
+from typing import Callable
 from math import ceil
 import traceback
 import numpy as np
 import pandas as pd
-from PyQt6.QtCore import QObject, QThread, pyqtSignal
+from PyQt6.QtCore import QObject, QThread, pyqtSignal, pyqtSlot
 from src.manipulator_control.calibration import Calibrator
 from src.manipulator_control.sensapex_utils import SensapexDevice, UMP
 from src.miscellaneous.standard_logger import StandardLogger 
@@ -179,8 +180,14 @@ class SurfacePointTrajectory3D(QThread):
         end_at_finish_pos (bool): Whether to end at the finishing pos.
         _stop_pressed (bool): Indicator that stop button is pressed
         _move_complete (bool): Inidcator that movement is complete and can go to next position.
+        _is_focussed (bool): INdicator that the focus height is at the desired positoin
         n_injected (int): Number of injections completed
+
+    Signals:
+        finished: Emitted when the thread is finished (aka when the trajectory is complete)
+        goto_focus (float): Emitted when the trajectory wants the focus height to change
     """
+    goto_focus = pyqtSignal(float)
 
     def __init__(self, dev:SensapexDevice, cal:Calibrator, ex_points_3D:list, approach_nm:int, depth_nm:int, speed_ums:int, pullout_nm:int, end_at_finish_pos:bool):
         """
@@ -210,6 +217,7 @@ class SurfacePointTrajectory3D(QThread):
         self.end_at_finish_pos = end_at_finish_pos
         self._stop_pressed = False
         self._move_complete = True
+        self._is_focussed = False
         self.n_injected = 0
 
     def run(self):
@@ -286,6 +294,8 @@ class SurfacePointTrajectory3D(QThread):
 
                 # Get the position of the injection in external CSYS
                 des_inj_pos = self.ex_points_3D[i]
+                z = des_inj_pos[2]
+                self._focus_to_next(z)
 
                 # Get positoin in man CSYS and approach and depth distances along d
                 des_pos_m = self._compute_inj_position(des_pos_ex=des_inj_pos)
@@ -318,6 +328,23 @@ class SurfacePointTrajectory3D(QThread):
         except:
             self._logr.exception("Error while injecting.")
 
+    def _focus_to_next(self,z:float):
+        """
+        Focus on the next positoin by emitting a signal requesting a focus change
+        and then waiting for the `_is_focussed` attribute to be set to True
+
+        Args:
+            z (float): Desired focus controller positoin
+        """
+        self.goto_focus.emit(z)
+        self._is_focussed = True
+        while not self._is_focussed:
+            time.sleep(0.1)
+
+    def set_as_focussed(self):
+        """ Set the `_is_focussed` attribute as True """
+        self._is_focussed = True
+
     def _next_move(self):
         """ Sets boolean to true so manipulator moves to next position """
         self._move_complete = True
@@ -346,7 +373,12 @@ class SurfaceLineTrajectory3D(SurfacePointTrajectory3D):
         end_at_finish_pos (bool): Whether to end at the finishing pos.
         _stop_pressed (bool): Indicator that stop button is pressed
         _move_complete (bool): Inidcator that movement is complete and can go to next position.
+        _is_focussed (bool): INdicator that the focus height is at the desired positoin
         n_injected (int): Number of injections completed
+
+    Signals:
+        finished: Emitted when the thread is finished (aka when the trajectory is complete)
+        goto_focus (float): Emitted when the trajectory wants the focus height to change
     """
 
     def __init__(self, dev:SensapexDevice, cal:Calibrator, edge_3D:list, approach_nm:int, depth_nm:int, spacing_nm:int, speed_ums:int, pullout_nm:int, end_at_finish_pos:bool):
@@ -401,16 +433,23 @@ class TrajectoryManager(QObject):
     """ Coordiantes trajectories across multiple trajectories """
     finished = pyqtSignal()
 
-    def __init__(self,trajectories:list=[]):
+    def __init__(self, goto_z:Callable[[float], None], trajectories:list=None):
         """
         Args:
             trajectories (list): Trajectories to run like SurfaceLIneTrajectory3D
+            goto_z (Callable): Function that given a z-coordinate commands the microscope
+            to go to the z coordiante
         """
         super().__init__()
         self._logr = StandardLogger(__name__)
+        self.goto_z = goto_z
         self.n_injected = 0
-        self._trajectories = trajectories
         self._cur_trajectory = None
+        # Prevent mutable default args
+        if trajectories is None:
+            self._trajectories = []
+        else:
+            self._trajectories = trajectories
 
     def reset_(self):
         """
@@ -451,12 +490,24 @@ class TrajectoryManager(QObject):
             self._cur_trajectory = self._trajectories.pop(0)
             self._cur_trajectory.start()
             # When the trajectory thread is finished, run the nex tand delete the current
+            self._cur_trajectory.goto_focus.connect(self.goto_focus)
             self._cur_trajectory.finished.connect(self.run_next_trajectory)
             self._cur_trajectory.finished.connect(self._cur_trajectory.deleteLater)
         # When there are no more trajectoreis, its finished
         else:
             self._cur_trajectory = None
             self.finished.emit()
+
+    @pyqtSlot(float)
+    def goto_focus(self,z:float):
+        """
+        Move focus controller to next position defined by `z`
+
+        Args:
+            z (float): Desired focus controller position
+        """
+        self.goto_z(z)
+        self._cur_trajectory.set_as_focussed()
 
     def stop(self):
         """ Stops the current trajectory and resets"""

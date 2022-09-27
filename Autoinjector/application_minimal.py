@@ -1539,14 +1539,16 @@ class ControlWindow(QMainWindow):
         """ Modify the annotaiton guidance text to inform user how to proceed """
         annot_mode = self.annotation_combo_box.currentText()
         annot_notes = ("Notes:\n"
-            "1. Middle-mouse-button click near an exisitng annotation will remove it.\n"
+            "1. Middle-mouse-button click near an exisiting annotation will remove it.\n"
             "2. Selecting `Exit` will exit without any annotations.")
         if annot_mode == "Manual":
-            msg = ("Process:\n1. In video display, click-and-drag mouse along tissue edge."
+            msg = ("Process:\n1. In video display, click-and-drag mouse along tissue edge. "
+            f"Doing this multiple times will result in multiple annotations."
             f"\n2. Select `Complete Annotation` to exit to main GUI.\n\n{annot_notes}")
         elif annot_mode == "Automatic":
             msg = ("Process:\n1. Automatic annotation is shown. If satisfied, select `Complete "
-            " Annotation`.\n2. If unstisfied, manually annotate by click-and-drag mouse along "
+            " Annotation`.\n2. If unstisfied, middle-mouse-button click near the automatic "
+            f" annotation to remove it then manually annotate by click-and-drag mouse along "
             f"tissue edge.\n3.Select `Complete Annotation` to exit to main GUI.\n\n{annot_notes}")
         else:
             err_msg = f"Invalid annotation mode: {annot_mode}. Must be in ['Manual', 'Auotmatic']"
@@ -1811,7 +1813,8 @@ class ControlWindow(QMainWindow):
             pullout_nm = self.cfg.values.pullout_nm
             dev = SensapexDevice(1)
             cal = self.pip_cal
-            self.inj_trajectory = TrajectoryManager()
+            goto_z = self.zen_controller.goto_focus_absolute
+            self.inj_trajectory = TrajectoryManager(goto_z)
             for ind, edge_3D in enumerate(self.interpolated_pixels):
                 # Have trajectory end at the "finish" position if its the last trajectoyr
                 end_at_fin_pos = ind == len(self.interpolated_pixels) - 1

@@ -13,6 +13,7 @@ from skimage.util import img_as_ubyte
 from PyQt6.QtCore import (Qt,
                           QObject,
                           pyqtSignal,
+                          QTimer,
                           )
 from PyQt6.QtWidgets import (QApplication,
                             QLabel,
@@ -47,6 +48,7 @@ class VideoDisplay(QWidget):
     clicked_camera_pixel = pyqtSignal(list)
     clicked_canvas_pixel = pyqtSignal(list)
     drawn_edge_camera_pixels = pyqtSignal(list)
+    ask_for_focus_z = pyqtSignal()
 
     def __init__(self, cam:MMCamera, annot:AnnotationManager, height:int, fps:int):
         """
@@ -68,6 +70,13 @@ class VideoDisplay(QWidget):
         self._make_widgets()
         # Update the video display when a new frame available from the camera
         self.streamer.new_frame_available.connect(self.set_new_frame)
+        # Continuously query the focus z-height so painter can change annotaiton display
+        # based on height of focus (e.g. display when annotation in different focal plane)
+        self._timer = QTimer()
+        self._timer.timeout.connect(self.ask_for_focus_z.emit)
+        TIMEOUT_MS = 100
+        self._timer.start(TIMEOUT_MS)
+
 
     def _make_widgets(self):
         self.canvas = Canvas(self.width, self.height)
@@ -236,6 +245,18 @@ class VideoDisplay(QWidget):
         """
         self.canvas.painter.show_interpolated_edge(bool_)
 
+    def set_focus_z(self, z:float):
+        """
+        Sets the `Painter` current z height (using the zen focus height).
+        
+        The `Painter` will use this information to modify the display. E.g.
+        show red when the pipette tip is below the focal plane.
+
+        Args:
+            z (float): Focus height
+        """
+        self.canvas.painter.cur_z = z
+
     def set_interpolated_annotation(self, annots:np.ndarray):
         """
         Sets the `Painter`'s interpolated edge coordinates for display.
@@ -249,7 +270,7 @@ class VideoDisplay(QWidget):
             raise TypeError('`annots` must be a list')
         canvas_annot = []
         for annot in annots:
-            canvas_annot.append([self.convert_camera_to_canvas(pix) for pix in annot])
+            canvas_annot.append([self.convert_camera_to_canvas(pix[:2]) + [pix[2]] for pix in annot])
         self.canvas.painter.interpolated_edges = canvas_annot
 
     def reset_interpolated_annotation(self):
@@ -484,6 +505,7 @@ class Painter():
     """
 
     def __init__(self):
+        self.cur_z = None
         self._show_calibration_points_bool = False
         self._show_calibrated_tip_points_bool = False
         self._show_clicked_points_bool = True
@@ -723,23 +745,39 @@ class Painter():
         if self._show_interpolated_edge_bool is True:
             if self.interpolated_edges != []:
                 for edge in self.interpolated_edges:
-                    # Only want to disp xy coordiantes, but annot is 3D as [[x,y,z],...], so
-                    # slice out the only the xy coordiantes
-                    edge = np.asarray(edge)[:,:2].tolist()
-                    edge = np.asarray(edge)
+                    # Annot is 3D as [[x,y,z],...],slice out the xy and z coords
+                    z = np.mean(np.asarray(edge)[:,2])
+                    edge = np.asarray(edge)[:,:2].astype(np.int32)
+                    if self.cur_z is None:
+                        col = self.WHITE
+                        thick = 2
+                        in_thick = 1
+                    else:
+                        # Maximum deviation between tip and focal plane in um
+                        MAX_DZ = 200
+                        # Max and min radii of display circle in pixel
+                        MAX_THICK = 8
+                        MIN_THICK = 2
+                        # Exctract delta z between tip and focal plane, and normalize -1 to 1
+                        dz = z - self.cur_z
+                        norm_dz = np.clip(dz/MAX_DZ, -1, 1)
+                        # Compute color and radis from delta z
+                        col = self.tip_cmap.get_rgb(norm_dz)
+                        thick = MIN_THICK + int(abs(norm_dz) * (MAX_THICK- MIN_THICK))
+                        in_thick = int(0.65*thick)
                     image = cv2.polylines(
                             img = image,
                             pts = [edge],
                             isClosed = False,
                             color = self.BLACK,
-                            thickness = 2
+                            thickness = thick
                         )
                     image = cv2.polylines(
                             img = image,
                             pts = [edge],
                             isClosed = False,
-                            color = self.WHITE,
-                            thickness = 1
+                            color = col,
+                            thickness = in_thick
                         )
         return image
 

@@ -147,9 +147,9 @@ class ControlWindow(QMainWindow):
             self.show_exception_box(e)
 
         # Instantiate imported widgets
+        self.instantiate_mvcs()
         self.annot_mgr = AnnotationManager()
         self.vid_display = VideoDisplay(self.cam_MM, self.annot_mgr, height=900, fps=50)
-        self.instantiate_mvcs()
 
         # Create main gui widgets
         self.make_widgets()
@@ -610,6 +610,7 @@ class ControlWindow(QMainWindow):
     def set_video_display_connections(self):
         self.vid_display.clicked_camera_pixel.connect(self.add_cal_positions)
         self.vid_display.drawn_edge_camera_pixels.connect(self.handle_drawn_edge)
+        self.vid_display.ask_for_focus_z.connect(self.send_focus_z_to_display)
         self.annot_mgr.annotation_changed.connect(self.set_trajectory)
     
 
@@ -1621,6 +1622,13 @@ class ControlWindow(QMainWindow):
             self.interpolated_pixels = []
         else:
             self.acquire_tissue_data()
+
+    def send_focus_z_to_display(self):
+        """
+        Queries the focus height and sends value to video display 
+        """
+        z = self.zen_controller.get_focus_um()
+        self.vid_display.set_focus_z(z)
 
     
     """

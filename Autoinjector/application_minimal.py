@@ -471,6 +471,24 @@ class ControlWindow(QMainWindow):
         self.annotation_guidance = QLabel('')
         self.annotation_guidance.setWordWrap(True)
         self.alt_annotation_group = QGroupBox("Annotation Control")
+        # Make the z-stack annotation widgets
+        self.plane1_button = QPushButton('Set first focus')
+        self.plane2_button = QPushButton('Set last focus')
+        palette = QPalette()
+        palette.setColor(QPalette.ColorRole.Base, QColor('lightGray'))
+        self.plane1_entry = QLineEdit()
+        self.plane1_entry.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.plane1_entry.setReadOnly(True)
+        self.plane1_entry.setPalette(palette)
+        self.plane2_entry = QLineEdit()
+        self.plane2_entry.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.plane2_entry.setReadOnly(True)
+        self.plane2_entry.setPalette(palette)
+        num_slices_label = QLabel("Number of slices")
+        self.slices_entry = QLineEdit()
+        self.slices_entry.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.zstack_button = QPushButton('Auto. Z-Stack Annotation')
+        self.zstack_group = QGroupBox("Z-Stack Control")
         # Specify the default annotation layout and group
         default_layout = QVBoxLayout()
         form1 = QFormLayout()
@@ -492,6 +510,15 @@ class ControlWindow(QMainWindow):
         alt_layout.addWidget(guidance_label)
         alt_layout.addWidget(self.annotation_guidance)
         self.alt_annotation_group.setLayout(alt_layout)
+        # Specify z stack layout and group
+        z_layout = QVBoxLayout()
+        form3 = QFormLayout()
+        form3.addRow(self.plane1_button, self.plane1_entry)
+        form3.addRow(self.plane2_button, self.plane2_entry)
+        form3.addRow(num_slices_label, self.slices_entry)
+        z_layout.addLayout(form3)
+        z_layout.addWidget(self.zstack_button)
+        self.zstack_group.setLayout(z_layout)
 
     def set_annotation_connections(self):
         """ Set signal/slot connections for annotation widgets """
@@ -501,6 +528,9 @@ class ControlWindow(QMainWindow):
         self.exit_annotation_button.clicked.connect(self.annotation_exit_pressed)
         self.annotation_combo_box.currentTextChanged.connect(self.annotation_combo_changed)
         self.edge_type_combo_box.currentTextChanged.connect(self.edge_type_combo_changed)
+        self.plane1_button.clicked.connect(self.set_zstack_plane1)
+        self.plane2_button.clicked.connect(self.set_zstack_plane2)
+        self.zstack_button.clicked.connect(self.run_zstack_annotation)
 
     def stateify_annotation_widgets(self):
         self.annotation_combo_box.insertItems(0,['Manual','Automatic'])
@@ -827,6 +857,7 @@ class ControlWindow(QMainWindow):
         self.annotation_mode_right_page = QWidget()
         layout = QVBoxLayout()
         layout.addWidget(self.focus_zen_app1.zen_group)
+        layout.addWidget(self.zstack_group)
         layout.addStretch()
         self.annotation_mode_right_page.setLayout(layout)
     
@@ -1526,6 +1557,13 @@ class ControlWindow(QMainWindow):
 
     def switch_to_annotation_mode(self):
         """ Modify GUI to show annotation mode layout """
+        annot_mode = self.annotation_combo_box.currentText()
+        if annot_mode == 'Automatic':
+            self.zstack_group.show()
+            self.zstack_group.setEnabled(True)
+        else:
+            self.zstack_group.hide()
+            self.zstack_group.setEnabled(False)
         self.left_stacked_layout.setCurrentWidget(self.annotation_mode_left_page)
         self.right_stacked_layout.setCurrentWidget(self.annotation_mode_right_page)
         self.vid_display.enable_annotations(True)
@@ -1631,6 +1669,60 @@ class ControlWindow(QMainWindow):
         """
         z = self.zen_controller.get_focus_um()
         self.vid_display.set_focus_z(z)
+
+    def set_zstack_plane1(self):
+        """
+        Queries the focus controller for its height and sets the 
+        plane1 entry box to the focus controller height.
+        """
+        z_height = round(self.zen_controller.get_focus_um(),2)
+        self.plane1_entry.insert(str(z_height))
+
+    def set_zstack_plane2(self):
+        """
+        Queries the focus controller for its height and sets the 
+        plane1 entry box to the focus controller height.
+        """
+        z_height = round(self.zen_controller.get_focus_um(),2)
+        self.plane2_entry.insert(str(z_height))
+
+    def run_zstack_annotation(self):
+        """ Conducts automatic annotaiton of the tissue via a z-stack """
+        try:
+            self.validate_zstack_parameters()
+        except ValueError as e:
+            self.show_error_box(e)
+        except:
+            self.show_exception_box('Error while validating z-stack params')
+
+        self.show_error_box('This function is not implimented yet')
+
+    def validate_zstack_parameters(self):
+        """
+        Validates that all parameters are set and ready to perform a z-stack.
+        Raises ValueError if parameters are not ready
+        """
+        plane1_str = self.plane1_entry.text().strip()
+        plane2_str = self.plane2_entry.text().strip()
+        slices_str = self.slices_entry.text().strip()
+        if plane1_str == '':
+            msg = f"Must set first focus before running z-stack.\n\nPlease click 'Set first focus' to register the starting z-stack height."
+            raise ValueError(msg)
+        elif val.is_valid_number(plane1_str) is False:
+            msg = f'Invalid first focus: {plane1_str}. Must be a valid number.'
+            raise ValueError(msg)
+        if plane2_str == '':
+            msg = f"Must set last focus before running z-stack.\n\nPlease click 'Set last focus' to register the ending z-stack height."
+            raise ValueError(msg)
+        elif val.is_valid_number(plane2_str) is False:
+            msg = f'Invalid last focus: {plane2_str}. Must be a valid number.'
+            raise ValueError(msg)
+        if slices_str == '':
+            msg = f"Must enter number of slices before running z-stack.\n\nPlease click enter the desired number of z-stack slices."
+            raise ValueError(msg)
+        elif val.is_valid_number(slices_str) is False:
+            msg = f'Invalid slices number: {slices_str}. Must be a valid number.'
+            raise ValueError(msg)
 
     
     """

@@ -36,6 +36,7 @@ from src.manipulator_control.injection_trajectory import SurfaceLineTrajectory3D
 from src.manipulator_control.calibration_trajectory import SemiAutoCalibrationTrajectory
 from src.manipulator_control.convenience_trajectories import ConvenienceTrajectories
 from src.ZEN_interface.ZEN_mvc import ModelZEN, ControllerZEN, ViewZENComplete, ViewZENFocus
+from src.ZEN_interface.z_stack import ZStackManager
 from src.deep_learning.tissue_detection import ModelTissueDetection
 from src.deep_learning.edge_utils.error_utils import EdgeNotFoundError
 
@@ -150,6 +151,7 @@ class ControlWindow(QMainWindow):
         self.instantiate_mvcs()
         self.annot_mgr = AnnotationManager()
         self.vid_display = VideoDisplay(self.cam_MM, self.annot_mgr, height=900, fps=50)
+        self.zstack = ZStackManager(self.zen_controller)
 
         # Create main gui widgets
         self.make_widgets()
@@ -488,6 +490,7 @@ class ControlWindow(QMainWindow):
         self.slices_entry = QLineEdit()
         self.slices_entry.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.zstack_button = QPushButton('Auto. Z-Stack Annotation')
+        self.zstack_stop_button = QPushButton('Stop Z-Stack')
         self.zstack_group = QGroupBox("Z-Stack Control")
         # Specify the default annotation layout and group
         default_layout = QVBoxLayout()
@@ -518,6 +521,7 @@ class ControlWindow(QMainWindow):
         form3.addRow(num_slices_label, self.slices_entry)
         z_layout.addLayout(form3)
         z_layout.addWidget(self.zstack_button)
+        z_layout.addWidget(self.zstack_stop_button)
         self.zstack_group.setLayout(z_layout)
 
     def set_annotation_connections(self):
@@ -531,6 +535,9 @@ class ControlWindow(QMainWindow):
         self.plane1_button.clicked.connect(self.set_zstack_plane1)
         self.plane2_button.clicked.connect(self.set_zstack_plane2)
         self.zstack_button.clicked.connect(self.run_zstack_annotation)
+        self.zstack_stop_button.clicked.connect(self.zstack.stop)
+        self.zstack.ask_for_image.connect(lambda:self.zstack.set_stack_image(self.vid_display.get_frame()))
+        self.zstack.errors.connect(self.show_recieved_exception)
 
     def stateify_annotation_widgets(self):
         self.annotation_combo_box.insertItems(0,['Manual','Automatic'])
@@ -921,6 +928,12 @@ class ControlWindow(QMainWindow):
             self.response_monitor_window.append(">> Arduino not detected, make sure you selected the correct com port, plug in, and try again")
         else:
             self.response_monitor_window.append(">> Arduino connected and working on port " + str(self.com))
+
+    def show_recieved_exception(self, err:Exception):
+        """
+        Show exception box for a given error
+        """
+        self.show_exception_box(err)
 
     def closeEvent(self, event):
         """ Functions to call when gui is closed (`X` is clicked) """
@@ -1677,6 +1690,7 @@ class ControlWindow(QMainWindow):
         plane1 entry box to the focus controller height.
         """
         z_height = round(self.zen_controller.get_focus_um(),2)
+        self.plane1_entry.clear()
         self.plane1_entry.insert(str(z_height))
 
     def set_zstack_plane2(self):
@@ -1685,6 +1699,7 @@ class ControlWindow(QMainWindow):
         plane1 entry box to the focus controller height.
         """
         z_height = round(self.zen_controller.get_focus_um(),2)
+        self.plane2_entry.clear()
         self.plane2_entry.insert(str(z_height))
 
     def run_zstack_annotation(self):
@@ -1693,10 +1708,19 @@ class ControlWindow(QMainWindow):
             self.validate_zstack_parameters()
         except ValueError as e:
             self.show_error_box(e)
+            return
         except:
             self.show_exception_box('Error while validating z-stack params')
+            return
 
-        self.show_error_box('This function is not implimented yet')
+        start = float(self.plane1_entry.text().strip())
+        stop = float(self.plane2_entry.text().strip())
+        slices = int(self.slices_entry.text().strip())
+        try:
+            self.zstack.run(start, stop, slices)
+        except Exception as e:
+            self.show_error_box(e)
+
 
     def validate_zstack_parameters(self):
         """

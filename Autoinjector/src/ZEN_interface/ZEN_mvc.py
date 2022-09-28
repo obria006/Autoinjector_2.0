@@ -903,7 +903,7 @@ class ControllerZEN(QObject):
         Return current position of focus
 
         Returns:
-            string of current focus position
+            current focus position
         """
         pos = self._model.get_focus_um()
         return pos

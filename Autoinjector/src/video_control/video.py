@@ -99,6 +99,15 @@ class VideoDisplay(QWidget):
         self.frame = frame
         self.update_display()
 
+    def get_frame(self)->np.ndarray:
+        """
+        Returns copy of current frame used by video
+
+        Returns:
+            np.ndarray of current video frame
+        """
+        return np.copy(self.frame)
+
     def enable_annotations(self, state:bool):
         """
         Whether to enable tissue annotations by setting `is_annotating` to
@@ -199,7 +208,7 @@ class VideoDisplay(QWidget):
         Update the video display with the new image and annotations
         """
         # Convert camera image to rgb image for display
-        canvas_frame = np.copy(self.frame)
+        canvas_frame = self.get_frame()
         self.canvas.update_(canvas_frame)
 
     def show_tip_position(self, bool_:bool):

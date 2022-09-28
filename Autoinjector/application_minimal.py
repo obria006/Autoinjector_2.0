@@ -1420,7 +1420,7 @@ class ControlWindow(QMainWindow):
         '''
         # Instance of object to save data
         pip_data_saver = PipTipData(pip_data_dir=self.pip_data_dir)
-        image = np.copy(self.vid_display.frame)
+        image = self.vid_display.get_frame()
         pip_data_saver.save_data(image=image, tip_position=tip_dict)
 
 
@@ -1467,6 +1467,7 @@ class ControlWindow(QMainWindow):
         if annot_mode == "Automatic":
             try:
                 # Make detection of tissue edge
+                image = self.vid_display.get_frame()
                 detection_dict = self.tissue_model.detect(image, edge_type)
                 # Extract detection data
                 df = detection_dict['detection_data']
@@ -1605,7 +1606,7 @@ class ControlWindow(QMainWindow):
         '''
         # Instance of object to save data
         tis_data_saver = TissueEdgeData(tis_data_dir=self.tis_data_dir)
-        image = np.copy(self.vid_display.frame)
+        image = self.vid_display.get_frame()
         tis_data_saver.save_data(image=image, raw_annot=raw_annot, interpolate_annot=interpolate_annot)
 
     def clear_annotation(self):

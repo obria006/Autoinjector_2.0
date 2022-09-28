@@ -100,6 +100,8 @@ class ZStackManager(QObject):
             stop (float): The focus height to end the z-stack
             slices (int): Number of slices (# of images) for the z-stack
         """
+        if self.is_running is True:
+            raise NotImplementedError("Cannot start a new z-stack when a z-stack is already running.\n\nIf you want to start a new z-stack, please stop the current z-stack then start a new one.")
         start, stop, slices = self._validate_args(start, stop, slices)
         self._init_parameters(start, stop, slices)
         self._timer = QTimer()
@@ -127,6 +129,7 @@ class ZStackManager(QObject):
             8. Repeat
         """
         try:
+            self.is_running=True
             if self._is_zstack_complete() is True or self._stop_zstack is True:
                 self._finish_zstack()
                 return
@@ -202,10 +205,12 @@ class ZStackManager(QObject):
     def _silent_finish(self):
         """ Finish the z-stack without emitting the finished signal """
         self._timer.stop()
+        self.is_running=False
 
     def _finish_zstack(self):
         """ Stops the z-stack procedure, makes the z-stack, and emits the finished signal """
         self._timer.stop()
+        self.is_running=False
         self.finished.emit()
 
 @dataclass

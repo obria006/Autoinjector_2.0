@@ -4,6 +4,7 @@ from datetime import datetime
 from PIL import Image
 import pandas as pd
 import numpy as np
+import tifffile
 from src.video_control.image_io import save_image
 from src.miscellaneous.standard_logger import StandardLogger as logr
 from src.miscellaneous import validify as val
@@ -225,5 +226,90 @@ class TissueEdgeData():
                 'normalized y':norm_y.tolist(),
                 'image width':[cols]*len(x),
                 'image height':[rows]*len(x)}
+        df = pd.DataFrame(data=data)
+        return df
+
+class ImageStackData():
+    ''' Class handles coordianted saving image stack '''
+
+    def __init__(self, data_dir:str):
+        '''
+        Initializes class for saving data. Creates directory with date
+        as name in the data_dir
+
+        Arguments:
+            data_dir (str): Parent directory of where to save data
+        '''
+
+        self.logger = logr(__name__)
+        
+        # Ensure parent directory exists
+        if os.path.isdir(data_dir) is False:
+            self.logger.error(f"Z-stack directory doesn't exist: {data_dir}")
+            raise ValueError(f"Z-stack directory doesn't exist: {data_dir}")
+        self.parent_dir = data_dir.replace('\\','/')
+
+        # Directory where images will be saved
+        ymd = datetime.now().strftime("%Y%m%d")
+        self.ymd_data_dir = f"{self.parent_dir}/{ymd}"
+
+        # Make date directory if necessary
+        if os.path.isdir(self.ymd_data_dir) is False:
+            os.mkdir(self.ymd_data_dir)
+            self.logger.info(f"Created z-stack directory: {self.ymd_data_dir}")
+
+    def save_data(self, image_stack:np.ndarray, z_height:list):
+        '''
+        Save the image stack as a tiff and an associated csv file that contains
+        the z-coordinates of each image in the stack.
+
+        Arguments:
+            image (np.ndarray): Image to save
+            z_height (list): z-coordinates of each image in the z-stack
+        '''
+
+        # Validate arguments
+        if val.is_of_types(image_stack, [np.ndarray]) is False:
+            raise TypeError('image must be an np.ndarray')
+        if val.is_of_types(z_height, [list]) is False:
+            raise TypeError('z_height must be alist')
+        if image_stack.shape[0] != len(z_height):
+            raise ValueError(f"the depth of the image stack ande elements of the z-height must be equivalent")
+
+        # Time of saving
+        ymd_hms = datetime.now().strftime("%Y%m%d_%H%M%S")
+        ymd = datetime.now().strftime("%Y%m%d")
+
+        # Save the data
+        try:
+            img_path = f"{self.ymd_data_dir}/{ymd_hms}_zstack.tif"
+            tifffile.imwrite(img_path, image_stack, photometric='minisblack')
+            df = self._make_coord_df(img_path, z_height)
+            df_path = f"{self.ymd_data_dir}/{ymd_hms}_zstack_heights.csv"
+            df.to_csv(df_path)
+
+        except:
+            self.logger.exception(f'Error during saving z-stack data.')
+            raise
+        else:
+            self.logger.info(f'Saved z-stack data: {df_path}')
+
+    def _make_coord_df(self, img_path:str, z_height:list):
+        '''
+        Makes dataframe of: [image path, slice, z_height]
+
+        Arguments:
+            img_path (str): Path for where image was saved
+            tz_height (list): z-coordinates of each image in the z-stack
+        
+        Returns:
+            Dataframe of [image path, slice, z_height]
+        '''
+        # Make data dict and DataFrame
+        img_paths = [img_path]*len(z_height)
+        slices = list(range(len(z_height)))
+        data = {'filepath':img_paths,
+                'slice':slices,
+                'z':z_height}
         df = pd.DataFrame(data=data)
         return df

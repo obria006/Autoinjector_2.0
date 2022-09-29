@@ -24,7 +24,7 @@ import src.GUI_utils.display_modifier_mvc as disp_mod_mvc
 from src.miscellaneous.standard_logger import StandardLogger as logr
 from src.miscellaneous import validify as val
 from src.miscellaneous.error_utils import InjectionParameterError
-from src.data_generation.data_generators import PipTipData, TissueEdgeData
+from src.data_generation.data_generators import PipTipData, TissueEdgeData, ImageStackData
 from src.manipulator_control.calibration import Calibrator, AngleIO
 from src.manipulator_control.error_utils import (CalibrationError,
                                                 CalibrationDataError,
@@ -201,7 +201,12 @@ class ControlWindow(QMainWindow):
         self.tis_data_dir = f"{self.data_dir}/tissue/annotation_images"
         if os.path.isdir(self.tis_data_dir) is False:
             os.makedirs(self.tis_data_dir)
-            self.logger.info(f'Created tissue image data directory: {self.tis_data_dir}')
+            self.logger.info(f'Created tissue image and annotation data directory: {self.tis_data_dir}')
+        # For saving z-stacks
+        self.zstack_data_dir = f"{self.data_dir}/zstacks"
+        if os.path.isdir(self.zstack_data_dir) is False:
+            os.makedirs(self.zstack_data_dir)
+            self.logger.info(f'Created Z-Stack image data directory: {self.zstack_data_dir}')
         # For saving calibration data 
         self.cal_data_dir = f"{self.data_dir}/calibration"
         if os.path.isdir(self.cal_data_dir) is False:
@@ -546,7 +551,7 @@ class ControlWindow(QMainWindow):
         self.zstack_button.clicked.connect(self.run_zstack_annotation)
         self.zstack_stop_button.clicked.connect(self.zstack.stop)
         self.zstack.ask_for_data.connect(self.send_zstack_data)
-        self.zstack.progress.connect(lambda percent: self.zstack_progress.setValue(percent))
+        self.zstack.progress.connect(lambda percent: self.zstack_progress.setValue(int(percent)))
         self.zstack.errors.connect(self.show_recieved_exception)
         self.zstack.finished.connect(self.process_zstack_data)
 
@@ -1825,8 +1830,8 @@ class ControlWindow(QMainWindow):
         Args:
             zstack_data (dataclass): Dataclass from z-stack
         """
-        img_stack = zstack_data.get_images_as_stack()
         self.zstack_to_annotation(zstack_data)
+        self.save_zstack_data(zstack_data)
 
     def zstack_to_annotation(self, zstack_data:ZStackDataWithAnnotations):
         """
@@ -1838,13 +1843,24 @@ class ControlWindow(QMainWindow):
             zstack_data (dataclass): Dataclass from z-stack
         """
         annot_counter = 0
-        for ind in range(len(zstack_data.annotations)):
-            _, _, annotation = zstack_data.get_data_from_index(ind)
+        for annotation in zstack_data.get_annotations():
             if annotation is not None:
                 self.annot_mgr.add_annotation(annotation)
                 annot_counter += 1
         self.zstack_status.setText(f"{annot_counter} of {len(zstack_data.annotations)} annotated")
 
+    def save_zstack_data(self, zstack_data:ZStackDataWithAnnotations):
+        """
+        Save the zstack data and associated heights
+
+        Args:
+            zstack_data (dataclass): Dataclass from z-stack
+        """
+        if self.save_tiss_annot_rbon.isChecked():
+            stack_saver = ImageStackData(data_dir=self.zstack_data_dir)
+            img_stack = zstack_data.get_images_as_stack()
+            z = zstack_data.get_z_heights()
+            stack_saver.save_data(image_stack=img_stack, z_height=z)
 
     def validate_zstack_parameters(self):
         """

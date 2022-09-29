@@ -245,6 +245,14 @@ class ZStackData:
         """
         return len(self.images) == 0
 
+    def get_images(self)->list[np.ndarray]:
+        """ Return a list of all the images in the data """
+        return list(self.images)
+
+    def get_z_heights(self)->list[float]:
+        """ Return a list of all the z heights """
+        return list(self.z_heights)
+
     def get_data_from_index(self, ind:int) -> Tuple[np.ndarray, float]:
         """
         Returns image and its associated z-height for the slice index
@@ -328,6 +336,10 @@ class ZStackDataWithAnnotations(ZStackData):
                 raise TypeError(f"Invalid annotaiton type: {type(annotation)}. Must be a list.")
         super().append(image, z)
         self.annotations.append(annotation)
+
+    def get_annotations(self)->list[list[float,float,float]]:
+        """ Return a list of all the annotations """
+        return list(self.annotations)
 
     def get_data_from_index(self, ind:int) -> Tuple[np.ndarray, float]:
         """

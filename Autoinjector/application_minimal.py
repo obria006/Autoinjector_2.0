@@ -37,7 +37,7 @@ from src.manipulator_control.injection_trajectory import SurfaceLineTrajectory3D
 from src.manipulator_control.calibration_trajectory import SemiAutoCalibrationTrajectory
 from src.manipulator_control.convenience_trajectories import ConvenienceTrajectories
 from src.ZEN_interface.ZEN_mvc import ModelZEN, ControllerZEN, ViewZENComplete, ViewZENFocus
-from src.ZEN_interface.z_stack import ZStackManager
+from src.ZEN_interface.z_stack import ZStackManager, ZStackDataWithAnnotations
 from src.deep_learning.tissue_detection import ModelTissueDetection
 from src.deep_learning.edge_utils.error_utils import EdgeNotFoundError
 
@@ -490,6 +490,10 @@ class ControlWindow(QMainWindow):
         self.slices_entry.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.zstack_button = QPushButton('Run Z-Stack Auto. Annotation')
         self.zstack_stop_button = QPushButton('Stop Z-Stack')
+        progress_label = QLabel("Z-Stack Progress:")
+        self.zstack_progress = QProgressBar()
+        zstack_status_label = QLabel("Z-Stack Results:")
+        self.zstack_status = QLabel('Not Applicable')
         self.auto_annotation_group = QGroupBox("Automatic Annotation Control")
         # Specify the default annotation layout and group
         default_layout = QVBoxLayout()
@@ -515,6 +519,9 @@ class ControlWindow(QMainWindow):
         form3.addRow(self.plane1_button, self.plane1_entry)
         form3.addRow(self.plane2_button, self.plane2_entry)
         form3.addRow(num_slices_label, self.slices_entry)
+        form4 = QFormLayout()
+        form4.addRow(progress_label, self.zstack_progress)
+        form4.addRow(zstack_status_label, self.zstack_status)
         auto_annot_layout.addLayout(form2)
         auto_annot_layout.addWidget(QHLine())
         auto_annot_layout.addWidget(self.single_auto_annotation_button)
@@ -523,6 +530,7 @@ class ControlWindow(QMainWindow):
         auto_annot_layout.addLayout(form3)
         auto_annot_layout.addWidget(self.zstack_button)
         auto_annot_layout.addWidget(self.zstack_stop_button)
+        auto_annot_layout.addLayout(form4)
         self.auto_annotation_group.setLayout(auto_annot_layout)
 
     def set_annotation_connections(self):
@@ -532,14 +540,15 @@ class ControlWindow(QMainWindow):
         self.complete_annotation_button.clicked.connect(self.annotation_complete_pressed)
         self.exit_annotation_button.clicked.connect(self.annotation_exit_pressed)
         self.annotation_combo_box.currentTextChanged.connect(self.annotation_combo_changed)
-        self.single_auto_annotation_button.clicked.connect(lambda: self.conduct_automatic_annotation(zstack=False))
+        self.single_auto_annotation_button.clicked.connect(self.single_automatic_annotation)
         self.plane1_button.clicked.connect(self.set_zstack_plane1)
         self.plane2_button.clicked.connect(self.set_zstack_plane2)
         self.zstack_button.clicked.connect(self.run_zstack_annotation)
         self.zstack_stop_button.clicked.connect(self.zstack.stop)
-        self.zstack.ask_for_image.connect(lambda:self.zstack.set_stack_image(self.vid_display.get_frame()))
-        self.zstack.ask_for_image.connect(lambda: self.conduct_automatic_annotation(zstack=True))
+        self.zstack.ask_for_data.connect(self.send_zstack_data)
+        self.zstack.progress.connect(lambda percent: self.zstack_progress.setValue(percent))
         self.zstack.errors.connect(self.show_recieved_exception)
+        self.zstack.finished.connect(self.process_zstack_data)
 
     def stateify_annotation_widgets(self):
         self.annotation_combo_box.insertItems(0,['Manual','Automatic'])
@@ -1503,6 +1512,12 @@ class ControlWindow(QMainWindow):
         tissue_mask = detection_dict['segmentation_image']>0
         basal_mask = self.make_edge_mask(edge_df=df, edge_cc=edge_cc, edge_type='basal')
         apical_mask = self.make_edge_mask(edge_df=df, edge_cc=edge_cc, edge_type='apical')
+        # Show the masks in the video display and add the edge to the annotations
+        # SHould be done before processing the edge which can raise error if the correct edge
+        # is not found. This way it will show the detection and the user can understand why
+        # the edge wasn't found
+        self.vid_display.set_masks(tissue_mask=tissue_mask, apical_mask=apical_mask, basal_mask=basal_mask)
+        self.vid_display.display_masks()
         # Return the pixels of the detected edge
         if self.pip_cal.model.is_calibrated is True:
             # Because image coordinate system has y axis in opposite direction of
@@ -1516,7 +1531,79 @@ class ControlWindow(QMainWindow):
         if z_scope is None:
             z_scope = self.zen_controller.get_focus_um()
         annotated_3d_edge = [[ele for ele in coord] + [z_scope] for coord in edge_pixels]
-        return tissue_mask, apical_mask, basal_mask, annotated_3d_edge
+        return annotated_3d_edge
+
+    def single_automatic_annotation(self):
+        """
+        Attempts a tissue detection, set detected masks in video display, and
+        adds the detected annotation coordinates to the annotations to be
+        targeted.
+
+        For performing a auto tissue annotation during a z-stack. Errors during the
+        tissue detection are suppressed (from issues like not being able to detect
+        an edge) to allow the zstack to finish without user intervention of closing
+        error boxes. 
+
+        Returns:
+            image (np.ndarray): Raw image that was used for detection
+            annotated_3d_edge (list): List of detected edge coords as [[x,y,z],...]
+        """
+        edge_type = self.edge_type_combo_box.currentText().lower()
+        image = self.vid_display.get_frame()
+        # image = np.copy(self.vid_display.test_img)
+        try:
+            # Make detection of tissue edge
+            annotated_3d_edge = self.automatic_tissue_annotation(image=image, edge_type=edge_type, z_scope=None)
+        except EdgeNotFoundError as e:
+            # ONly show error boxes when not zstack. During zstack pass errors to log.
+            msg = f"{e}\n\nManually annotate the edge."
+            self.show_warning_box(msg)
+        except:
+            msg = "Error while detecting tissue.\n\nSee logs for more info."
+            self.show_exception_box(msg)
+        else:
+            # Add the detected edge coordiantes to the list of targets to be injected
+            # (which will emit a signal to set a new injection trajectory)
+            self.annot_mgr.add_annotation(annotated_3d_edge)
+
+    def zstack_automatic_annotation(self)->Tuple[np.ndarray, Union[list[list[float,float,float]],None]]:
+        """
+        Attempts a tissue detection, set detected masks in video display, and
+        returns the image and annotated coordinates. This image/annotation can
+        be passed to the z-stack `set_stack_data` method.
+
+        For performing a auto tissue annotation during a z-stack. Errors during the
+        tissue detection are suppressed (from issues like not being able to detect
+        an edge) to allow the zstack to finish without user intervention of closing
+        error boxes. 
+
+        Returns:
+            image (np.ndarray): Raw image that was used for detection
+            annotated_3d_edge (list): List of detected edge coords as [[x,y,z],...]
+        """
+        edge_type = self.edge_type_combo_box.currentText().lower()
+        image = self.vid_display.get_frame()
+        # image = np.copy(self.vid_display.test_img)
+        try:
+            annotated_3d_edge = self.automatic_tissue_annotation(image=image, edge_type=edge_type, z_scope=None)
+        except EdgeNotFoundError as e:
+            # Dont show error boxes (like when it can't detect the edge) during the z-stack
+            # so the zstack can complete. Send error to log
+            self.response_monitor_window.append(f">> {e}")
+            msg = f"Supressed during z-stack: {e}"
+            self.logger.warning(msg)
+            # Send a None annotaiton to the z-stack
+            annotated_3d_edge = None
+        except:
+            # Dont show error boxes (like when it can't detect the edge) during the z-stack
+            # so the zstack can complete. Send error to log
+            self.response_monitor_window.append(f">> Error during z-stack. See logs for more info.")
+            msg = "Error suppresed during z-stack"
+            self.logger.exception(msg)
+            # Send a None annotaiton to the z-stack
+            annotated_3d_edge = None
+
+        return image, annotated_3d_edge
 
     def annotation_combo_changed(self, annot_mode:str):
         """
@@ -1531,40 +1618,6 @@ class ControlWindow(QMainWindow):
             self.auto_annotation_group.setEnabled(False)
         # Update the annotaiton guidance
         self.modify_annotation_guidance()
-
-    def conduct_automatic_annotation(self, zstack:bool):
-        """
-        Attempt an automatic annotation on the current image. If `zstack` is true,
-        errors are suppressed (from issues like not being able to detect an edge)
-        to allow the zstack to finish.
-
-        Args:
-            zstack (bool): Whether this fcn is being called during a zstack
-        """
-        edge_type = self.edge_type_combo_box.currentText().lower()
-        image = np.copy(self.vid_display.test_img)
-        try:
-            tissue_mask, apical_mask, basal_mask, annotated_3d_edge = self.automatic_tissue_annotation(image=image, edge_type=edge_type, z_scope=None)
-            # Show the masks in the video display and add the edge to the annotations
-            self.vid_display.set_masks(tissue_mask=tissue_mask, apical_mask=apical_mask, basal_mask=basal_mask)
-            self.vid_display.display_masks()
-            self.annot_mgr.add_annotation(annotated_3d_edge)
-        except EdgeNotFoundError as e:
-            # ONly show error boxes when not zstack. During zstack pass errors to log.
-            if zstack is False:
-                msg = f"{e}\n\nManually annotate the edge."
-                self.show_warning_box(msg)
-            else:
-                msg = f"Supressed during z-stack: {e}"
-                self.logger.warning(msg)
-        except:
-            # ONly show error boxes when not zstack. During zstack pass errors to log.
-            if zstack is False:
-                msg = "Error while detecting tissue.\n\nSee logs for more info."
-                self.show_exception_box(msg)
-            else:
-                msg = "Error suppresed during z-stack"
-                self.logger.exception(msg)
 
     def annotation_complete_pressed(self):
         """ Handle what to do when user clicks annotation complete """
@@ -1612,6 +1665,8 @@ class ControlWindow(QMainWindow):
         self.left_stacked_layout.setCurrentWidget(self.annotation_mode_left_page)
         self.right_stacked_layout.setCurrentWidget(self.annotation_mode_right_page)
         self.vid_display.enable_annotations(True)
+        self.zstack_status.setText("Not Applicable")
+        self.zstack_progress.setValue(0)
 
     def switch_to_default_mode(self):
         """ Modify GUI to show default application layout """
@@ -1752,6 +1807,43 @@ class ControlWindow(QMainWindow):
             self.zstack.run(start, stop, slices)
         except Exception as e:
             self.show_error_box(e)
+
+    def send_zstack_data(self):
+        """
+        Performs automatic tissue annotation on current video frame, and sends
+        the image and annotation to the z-stack
+        """
+        image, annotation = self.zstack_automatic_annotation()
+        self.zstack.set_stack_data(image=image, annotation=annotation)
+
+    def process_zstack_data(self, zstack_data:ZStackDataWithAnnotations):
+        """
+        Handle data returned by the z-stack. Data is returned as a dataclass
+        with lists for images, z-heights, and annotations which can be None
+        or its own list
+
+        Args:
+            zstack_data (dataclass): Dataclass from z-stack
+        """
+        img_stack = zstack_data.get_images_as_stack()
+        self.zstack_to_annotation(zstack_data)
+
+    def zstack_to_annotation(self, zstack_data:ZStackDataWithAnnotations):
+        """
+        Add z-stack data to annotations which will be injected. Also
+        update the status/results of the zstack by displaying number
+        of successful annotations
+
+        Args:
+            zstack_data (dataclass): Dataclass from z-stack
+        """
+        annot_counter = 0
+        for ind in range(len(zstack_data.annotations)):
+            _, _, annotation = zstack_data.get_data_from_index(ind)
+            if annotation is not None:
+                self.annot_mgr.add_annotation(annotation)
+                annot_counter += 1
+        self.zstack_status.setText(f"{annot_counter} of {len(zstack_data.annotations)} annotated")
 
 
     def validate_zstack_parameters(self):

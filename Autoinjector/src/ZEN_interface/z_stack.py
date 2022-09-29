@@ -1,6 +1,6 @@
 """ Classes/functions for performing a z-stack """
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 import numpy as np
 from PyQt6.QtCore import pyqtSignal, pyqtBoundSignal, pyqtSlot, QObject, QTimer
 from PyQt6.QtTest import QTest
@@ -12,18 +12,18 @@ class ZStackManager(QObject):
     """
     Class for conducting z-stack and constructing image stack object. Uses a
     QTimer to periodically run `_conduct_zstack` for conducting the z-stack.
-    This function emits a `ask_for_image` signal to request an image that is
-    to be added into the stack vai the `set_stack_image`.
+    This function emits a `ask_for_data` signal to request an image that is
+    to be added into the stack via the `set_stack_data`.
 
     !! IMPORTANT: When instantiating this class, you must make a connection to
-    this class's `set_stack_image` (with a signal that emits the current video
-    frame, so the image can be added into the stack !!
+    this class's `set_stack_data` (with a signal that emits the current video
+    frame, so the image can be added into the stack) !!
 
     # ---- Example usage to run a z-stack ----
     # Instantiate the zstack manager somewhere in code
     zen = zen_controller # This is an instance of the ControllerZEN class
     z_stack = ZStackManager(zen)
-    z_stack.ask_for_image.connect(lambda: z_stack.set_stack_image(send_frame_foo()))
+    z_stack.ask_for_data.connect(lambda: z_stack.set_stack_data(send_frame_foo(), send_annotation_foo()))
     z_stack.finished.connect(do_something_after_stack_foo)
     # Somewhere later run the z stack
     start_height = 1000
@@ -32,12 +32,14 @@ class ZStackManager(QObject):
     z_stack.run(start_height, stop_height, num_slices)
 
     Signals:
-        ask_for_image: emitted when the z-stack needs a new image for the stack
-        finished: emitted when the z-stack is complete
+        ask_for_data: emitted when the z-stack needs a new image for the stack
+        finished: emitted when the z-stack is complete Emits ZStackData class.
+        progress: emits the progress of the z-stack on scale 0 to 100
         errors: emits exception when exception occurs
     """
-    ask_for_image = pyqtSignal()
-    finished = pyqtSignal()
+    ask_for_data = pyqtSignal()
+    finished = pyqtSignal(object)
+    progress = pyqtSignal(float)
     errors = pyqtSignal(Exception)
 
     def __init__(self, zen:ControllerZEN):
@@ -63,7 +65,7 @@ class ZStackManager(QObject):
         self.stop = stop
         self.slices = slices
         self._dz = round((self.stop - self.start) / (self.slices - 1),2)
-        self.data = ZStackData()
+        self.data = ZStackDataWithAnnotations()
         self._stop_zstack = False
         self._focus_to_next_slice = True
         self._recieved_image = False
@@ -130,6 +132,7 @@ class ZStackManager(QObject):
         """
         try:
             self.is_running=True
+            self.progress.emit((self._slice_ind/self.slices)*100)
             if self._is_zstack_complete() is True or self._stop_zstack is True:
                 self._finish_zstack()
                 return
@@ -140,10 +143,10 @@ class ZStackManager(QObject):
                 # Add non-blocking delay before asking for image, so camera has time to update 
                 # to image the new focal plane
                 QTest.qWait(500)
-                self.ask_for_image.emit()
+                self.ask_for_data.emit()
                 return
             if self._recieved_image is True:
-                self._add_to_stack(self._tmp_image)
+                self._add_to_stack(self._tmp_image, self._tmp_annotation)
                 self._focus_to_next_slice = True
                 self._slice_ind = self._slice_ind + 1
                 return
@@ -182,25 +185,28 @@ class ZStackManager(QObject):
             self.zen.goto_focus_relative(self._dz)
     
     @pyqtSlot(np.ndarray)
-    def set_stack_image(self, image:np.ndarray):
+    def set_stack_data(self, image:np.ndarray, annotation:Optional[list[float,float]] = None):
         """
-        Sets image for z-stack
+        Sets image and optionally the taret annotation for z-stack
 
         Args:
             image (np.ndarray): Image to add to stack
+            annotation (list): List of annotated target coordinates as [[x, y],...]
         """
         self._tmp_image = image
+        self._tmp_annotation = annotation
         self._recieved_image = True
 
-    def _add_to_stack(self, image:np.ndarray):
+    def _add_to_stack(self, image:np.ndarray, annotation:Optional[list[float,float]] = None):
         """
-        Add image to z-stack. (Appends to images list)
+        Add image and target annotation to z-stack. (Appends to images list)
 
         Args:
             image (np.ndarray): Image to add to stack
+            annotation (list): List of annotated target coordinates as [[x, y],...]
         """
         z  = self.zen.get_focus_um()
-        self.data.append(image, z)
+        self.data.append(image, z, annotation)
 
     def _silent_finish(self):
         """ Finish the z-stack without emitting the finished signal """
@@ -211,7 +217,7 @@ class ZStackManager(QObject):
         """ Stops the z-stack procedure, makes the z-stack, and emits the finished signal """
         self._timer.stop()
         self.is_running=False
-        self.finished.emit()
+        self.finished.emit(self.data)
 
 @dataclass
 class ZStackData:
@@ -230,7 +236,7 @@ class ZStackData:
             raise TypeError(f"Invalid image type: {type(image)}. Must be np.ndarray.")
         if not val.is_valid_number(z):
             raise ValueError(f"Invalid z-height: {z}. Must be a valid number.")
-        self.images.append(image)
+        self.images.append(np.copy(image))
         self.z_heights.append(z)
 
     def is_empty(self)->bool:
@@ -252,7 +258,7 @@ class ZStackData:
         """
         if ind > len(self.images) - 1 or ind > len(self.z_heights) - 1 :
             raise KeyError(f"Invalid index for z-stack data: {ind}. Must be in 0 - {len(self.images) - 1}")
-        return self.images[ind], self.z_heights[ind]
+        return np.copy(self.images[ind]), self.z_heights[ind]
 
     def get_image_from_exact_z(self, z:float) -> Tuple[np.ndarray, int]:
         """
@@ -268,7 +274,7 @@ class ZStackData:
         if z not in self.z_heights:
             raise KeyError(f"Invalid z-height: {z}. Z-height not found in existing z-heights.")
         ind = self.z_heights.index(z)
-        image = self.images[ind]
+        image = np.copy(self.images[ind])
         return image, ind
 
     def get_image_from_nearest_z(self, z:float) -> Tuple[np.ndarray, float, int]:
@@ -288,7 +294,7 @@ class ZStackData:
         dif_z = np.abs(z_arr - z)
         ind = int(np.argmin(dif_z))
         ind = self.z_heights.index(z)
-        image = self.images[ind]
+        image = np.copy(self.images[ind])
         true_z = self.z_heights[ind]
         return image, true_z, ind
 
@@ -299,3 +305,48 @@ class ZStackData:
         """
         stack = np.stack(self.images)
         return stack
+
+@dataclass
+class ZStackDataWithAnnotations(ZStackData):
+    annotations: list[list[float, float]] = field(default_factory=list)
+
+    def append(self, image:np.ndarray, z:float, annotation:Optional[list[float,float]] = None):
+        """
+        Append image and its associated focus-level/z-height to data attributes.
+
+        Args:
+            image (np.ndarray): Image to append
+            z (float): Focus level of image to append
+            annotation (list): List of annotated target coordinates as [[x, y],...]
+        """
+        if not isinstance(image, np.ndarray):
+            raise TypeError(f"Invalid image type: {type(image)}. Must be np.ndarray.")
+        if not val.is_valid_number(z):
+            raise ValueError(f"Invalid z-height: {z}. Must be a valid number.")
+        if annotation is not None:
+            if not isinstance(annotation, list):
+                raise TypeError(f"Invalid annotaiton type: {type(annotation)}. Must be a list.")
+        super().append(image, z)
+        self.annotations.append(annotation)
+
+    def get_data_from_index(self, ind:int) -> Tuple[np.ndarray, float]:
+        """
+        Returns image and its associated z-height and annotation for the slice index
+
+        Args:
+            ind (int): Slice index of image/z-height to return
+
+        Returns:
+            image (np.ndarray): Image at index
+            z (float): Z-height of image
+            annotation (list): List of annotated target coordinates as [[x, y],...]
+        """
+        image, z = super().get_data_from_index(ind)
+        tmp_annot = self.annotations[ind]
+        # Only return new list instance of annotation if the annotation is not NOne
+        # otherwise will raise an error that NoneType object is not iterable
+        if tmp_annot is None:
+            annotation = None
+        else:
+            annotation = list(tmp_annot)
+        return image, z, annotation

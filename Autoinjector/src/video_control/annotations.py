@@ -13,8 +13,10 @@ class AnnotationManager(QObject):
     Signals:
         annotation_changed (list): List of lists of interpolated annoation coordinates
             [[[x11,y11,z11], [x12,y12,z12]... ], [[x21,y21,z21],[x22,y22,z22],...], ... ]
+        new_annotation: Emitted when a new annotation is added
     """
     annotation_changed = pyqtSignal(list)
+    new_annotation = pyqtSignal()
 
     def __init__(self):
         """
@@ -38,6 +40,7 @@ class AnnotationManager(QObject):
         inter_annot = self._interpolate_annotation(annot)
         self.annotation_dict['raw'].append(annot)
         self.annotation_dict['interpolated'].append(inter_annot)
+        self.new_annotation.emit()
         self.annotation_changed.emit(self.annotation_dict['interpolated'])
 
     def get_annotations(self, type_:str, coords:str)->list:

@@ -664,6 +664,7 @@ class ControlWindow(QMainWindow):
         self.vid_display.drawn_edge_camera_pixels.connect(self.handle_drawn_edge)
         self.vid_display.ask_for_focus_z.connect(self.send_focus_z_to_display)
         self.annot_mgr.annotation_changed.connect(self.set_trajectory)
+        self.annot_mgr.new_annotation.connect(self.acquire_tissue_data)
     
 
     """
@@ -981,12 +982,11 @@ class ControlWindow(QMainWindow):
         Data includes a the raw and interpolated coordinates (and a photo)
         '''
         if self.save_tiss_annot_rbon.isChecked():
-            raw = []
-            for annot_xy in self.annot_mgr.get_annotations(type_='raw',coords='xy'):
-                raw = raw + annot_xy
-            inter = []
-            for annot_xy in self.annot_mgr.get_annotations(type_='interpolated',coords='xy'):
-                inter = inter + annot_xy
+            all_raw_xy = self.annot_mgr.get_annotations(type_='raw',coords='xy')
+            all_inter_xy = self.annot_mgr.get_annotations(type_='interpolated',coords='xy')
+            # Only return the most recent ones that were added
+            raw = all_raw_xy[-1]
+            inter = all_inter_xy[-1]
             raw = np.asarray(raw)
             inter = np.asarray(inter)
             self.save_tiss_anot_data(raw_annot=raw, interpolate_annot=inter)
@@ -1766,8 +1766,6 @@ class ControlWindow(QMainWindow):
         except Exception as e:
             self.show_exception_box("Error while setting trajectory\n\nSee logs for more info.")
             self.interpolated_pixels = []
-        else:
-            self.acquire_tissue_data()
 
     def send_focus_z_to_display(self):
         """
@@ -1819,6 +1817,8 @@ class ControlWindow(QMainWindow):
         the image and annotation to the z-stack
         """
         image, annotation = self.zstack_automatic_annotation()
+        if annotation is not None:
+            self.annot_mgr.add_annotation(annotation)
         self.zstack.set_stack_data(image=image, annotation=annotation)
 
     def process_zstack_data(self, zstack_data:ZStackDataWithAnnotations):
@@ -1845,7 +1845,7 @@ class ControlWindow(QMainWindow):
         annot_counter = 0
         for annotation in zstack_data.get_annotations():
             if annotation is not None:
-                self.annot_mgr.add_annotation(annotation)
+                # self.annot_mgr.add_annotation(annotation)
                 annot_counter += 1
         self.zstack_status.setText(f"{annot_counter} of {len(zstack_data.annotations)} annotated")
 

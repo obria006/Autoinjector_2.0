@@ -453,20 +453,13 @@ class ControlWindow(QMainWindow):
     def make_annotation_widgets(self):
         """ Creates widgets for injection target annotation """
         # Make the default annotation widgets
-        mode_label1 = QLabel('Annotation Mode:')
-        self.annotation_combo_box = QComboBox()
-        self.annotation_combo_box.setPlaceholderText('Mode')
-        edge_label1 = QLabel('Auto-detect Edge:')
-        self.edge_type_combo_box = QComboBox()
-        self.edge_type_combo_box.setPlaceholderText('Type')
         self.annotation_button = QPushButton("Annotate Target")
         self.rm_annotation_button = QPushButton("Remove All Annotations")
         self.default_annotation_group = QGroupBox("Trajectory Annotation")
         # Make alternate annotation widgets
-        mode_label2 = QLabel(mode_label1.text())
-        self.annotation_mode_display = QLabel('')
-        edge_label2 = QLabel(edge_label1.text())
-        self.edge_type_display = QLabel('')
+        mode_label1 = QLabel('Annotation Mode:')
+        self.annotation_combo_box = QComboBox()
+        self.annotation_combo_box.setPlaceholderText('Mode')
         self.complete_annotation_button = QPushButton("Complete Annotation")
         self.exit_annotation_button = QPushButton("Exit Annotation")
         hline = QHLine()
@@ -475,6 +468,9 @@ class ControlWindow(QMainWindow):
         self.annotation_guidance.setWordWrap(True)
         self.alt_annotation_group = QGroupBox("Annotation Control")
         # Make automatic annotation and the z-stack annotation widgets
+        edge_label1 = QLabel('Auto-detect Edge:')
+        self.edge_type_combo_box = QComboBox()
+        self.edge_type_combo_box.setPlaceholderText('Type')
         self.single_auto_annotation_button = QPushButton('Run Single Auto. Annotation')
         zstack_label = QLabel('Z-Stack Annotation')
         self.plane1_button = QPushButton('Set first focus')
@@ -497,19 +493,14 @@ class ControlWindow(QMainWindow):
         self.auto_annotation_group = QGroupBox("Automatic Annotation Control")
         # Specify the default annotation layout and group
         default_layout = QVBoxLayout()
-        form1 = QFormLayout()
-        form1.addRow(mode_label1, self.annotation_combo_box)
-        form1.addRow(edge_label1, self.edge_type_combo_box)
-        default_layout.addLayout(form1)
         default_layout.addWidget(self.annotation_button)
         default_layout.addWidget(self.rm_annotation_button)
         self.default_annotation_group.setLayout(default_layout)
         # Specify alt annotation layout and group
         alt_layout = QVBoxLayout()
-        form2 = QFormLayout()
-        form2.addRow(mode_label2, self.annotation_mode_display)
-        form2.addRow(edge_label2, self.edge_type_display)
-        alt_layout.addLayout(form2)
+        form1 = QFormLayout()
+        form1.addRow(mode_label1, self.annotation_combo_box)
+        alt_layout.addLayout(form1)
         alt_layout.addWidget(self.complete_annotation_button)
         alt_layout.addWidget(self.exit_annotation_button)
         alt_layout.addWidget(hline)
@@ -518,10 +509,14 @@ class ControlWindow(QMainWindow):
         self.alt_annotation_group.setLayout(alt_layout)
         # Specify z stack layout and group
         auto_annot_layout = QVBoxLayout()
+        form2 = QFormLayout()
+        form2.addRow(edge_label1, self.edge_type_combo_box)
         form3 = QFormLayout()
         form3.addRow(self.plane1_button, self.plane1_entry)
         form3.addRow(self.plane2_button, self.plane2_entry)
         form3.addRow(num_slices_label, self.slices_entry)
+        auto_annot_layout.addLayout(form2)
+        auto_annot_layout.addWidget(QHLine())
         auto_annot_layout.addWidget(self.single_auto_annotation_button)
         auto_annot_layout.addWidget(QHLine())
         auto_annot_layout.addWidget(zstack_label)
@@ -537,7 +532,6 @@ class ControlWindow(QMainWindow):
         self.complete_annotation_button.clicked.connect(self.annotation_complete_pressed)
         self.exit_annotation_button.clicked.connect(self.annotation_exit_pressed)
         self.annotation_combo_box.currentTextChanged.connect(self.annotation_combo_changed)
-        self.edge_type_combo_box.currentTextChanged.connect(self.edge_type_combo_changed)
         self.single_auto_annotation_button.clicked.connect(lambda: self.conduct_automatic_annotation(zstack=False))
         self.plane1_button.clicked.connect(self.set_zstack_plane1)
         self.plane2_button.clicked.connect(self.set_zstack_plane2)
@@ -549,10 +543,9 @@ class ControlWindow(QMainWindow):
 
     def stateify_annotation_widgets(self):
         self.annotation_combo_box.insertItems(0,['Manual','Automatic'])
-        self.annotation_combo_box.setCurrentText('Manual')
+        self.annotation_combo_box.setCurrentText('Automatic')
         self.edge_type_combo_box.insertItems(0,['Apical','Basal'])
         self.edge_type_combo_box.setCurrentText('Apical')
-        self.update_annotation_display_labels()
 
     """
     Initialize video display modification widgets -------------------------------------------------
@@ -1525,36 +1518,19 @@ class ControlWindow(QMainWindow):
         annotated_3d_edge = [[ele for ele in coord] + [z_scope] for coord in edge_pixels]
         return tissue_mask, apical_mask, basal_mask, annotated_3d_edge
 
-    def annotation_combo_changed(self):
-        """ Handle what to do when the annotation combobox state is changed """
-        self.update_annotation_display_labels()
-
-    def edge_type_combo_changed(self):
-        """ Handle what to do when the edge type combobox state is changed """
-        self.update_annotation_display_labels()
-
-    def update_annotation_display_labels(self):
-        annot_mode = self.annotation_combo_box.currentText()
-        self.annotation_mode_display.setText(annot_mode)
-        edge_type = self.edge_type_combo_box.currentText()
-        self.edge_type_display.setText(edge_type)
-
-    def annotation_complete_pressed(self):
-        """ Handle what to do when user clicks annotation complete """
-        # Leave annotation and switch to default mode
-        self.leave_annotation_mode()
-
-    def annotate_trajectory_pressed(self):
-        """ Handle what to do when user clicks annotate trajectory """
-        # Start fresh with new annotation to remove any existing ones
-        self.clear_annotation()
-        # Allow video display to show the drawn and interpolated annotations
-        self.vid_display.show_drawn_annotation(True)
-        self.vid_display.show_interpolated_annotation(True)
+    def annotation_combo_changed(self, annot_mode:str):
+        """
+        Handle what to do when the annotation combobox state is changed
+        
+        Args:
+            annot_mode (str): Selected text in combo box """
+        # Enable or disable ability to conduct automatic annotation
+        if annot_mode == 'Automatic':
+            self.auto_annotation_group.setEnabled(True)
+        else:
+            self.auto_annotation_group.setEnabled(False)
         # Update the annotaiton guidance
         self.modify_annotation_guidance()
-        # Switch gui to the annotaiton mode
-        self.switch_to_annotation_mode()
 
     def conduct_automatic_annotation(self, zstack:bool):
         """
@@ -1569,6 +1545,7 @@ class ControlWindow(QMainWindow):
         image = np.copy(self.vid_display.test_img)
         try:
             tissue_mask, apical_mask, basal_mask, annotated_3d_edge = self.automatic_tissue_annotation(image=image, edge_type=edge_type, z_scope=None)
+            # Show the masks in the video display and add the edge to the annotations
             self.vid_display.set_masks(tissue_mask=tissue_mask, apical_mask=apical_mask, basal_mask=basal_mask)
             self.vid_display.display_masks()
             self.annot_mgr.add_annotation(annotated_3d_edge)
@@ -1588,6 +1565,21 @@ class ControlWindow(QMainWindow):
             else:
                 msg = "Error suppresed during z-stack"
                 self.logger.exception(msg)
+
+    def annotation_complete_pressed(self):
+        """ Handle what to do when user clicks annotation complete """
+        # Leave annotation and switch to default mode
+        self.leave_annotation_mode()
+
+    def annotate_trajectory_pressed(self):
+        """ Handle what to do when user clicks annotate trajectory """
+        # Start fresh with new annotation to remove any existing ones
+        self.clear_annotation()
+        # Allow video display to show the drawn and interpolated annotations
+        self.vid_display.show_drawn_annotation(True)
+        self.vid_display.show_interpolated_annotation(True)
+        # Switch gui to the annotaiton mode
+        self.switch_to_annotation_mode()
 
     def rm_annotation_pressed(self):
         """ Handle what to do when user clicks remove annotation """
@@ -1617,13 +1609,6 @@ class ControlWindow(QMainWindow):
 
     def switch_to_annotation_mode(self):
         """ Modify GUI to show annotation mode layout """
-        annot_mode = self.annotation_combo_box.currentText()
-        if annot_mode == 'Automatic':
-            self.auto_annotation_group.show()
-            self.auto_annotation_group.setEnabled(True)
-        else:
-            self.auto_annotation_group.hide()
-            self.auto_annotation_group.setEnabled(False)
         self.left_stacked_layout.setCurrentWidget(self.annotation_mode_left_page)
         self.right_stacked_layout.setCurrentWidget(self.annotation_mode_right_page)
         self.vid_display.enable_annotations(True)
@@ -1637,17 +1622,18 @@ class ControlWindow(QMainWindow):
         """ Modify the annotaiton guidance text to inform user how to proceed """
         annot_mode = self.annotation_combo_box.currentText()
         annot_notes = ("Notes:\n"
-            "1. Middle-mouse-button click near an exisiting annotation will remove it.\n"
-            "2. Selecting `Exit` will exit without any annotations.")
+            "1. Each annotation attempt is retained, so middle-mouse-button click near an "
+            "exisiting annotation will remove it.\n2. Selecting `Exit` will exit without any "
+            "annotations.")
         if annot_mode == "Manual":
-            msg = ("Process:\n1. In video display, click-and-drag mouse along tissue edge. "
-            f"Doing this multiple times will result in multiple annotations."
-            f"\n2. Select `Complete Annotation` to exit to main GUI.\n\n{annot_notes}")
+            msg = ("Process:\n1. In video display, left-click-and-drag mouse along tissue "
+            f"edge.\n2. Select `Complete Annotation` to exit to main GUI.\n\n{annot_notes}")
         elif annot_mode == "Automatic":
-            msg = ("Process:\n1. Automatic annotation is shown. If satisfied, select `Complete "
-            " Annotation`.\n2. If unstisfied, middle-mouse-button click near the automatic "
-            f" annotation to remove it then manually annotate by click-and-drag mouse along "
-            f"tissue edge.\n3.Select `Complete Annotation` to exit to main GUI.\n\n{annot_notes}")
+            msg = ("Process:\n1. Adjust focus to tissue.\n2. Select the edge-type to annotate.\n3. "
+            "Either `Run Single Auto. Annotation` or focus to desired z-stack positions and set "
+            "the starting and ending heights, enter the number of slices, and `Run Z-Stack Auto. "
+            "Annotation`.\n4. Add manual annotations with left-click-and-drag in video display."
+            f"\n5. Select `Complete Annotation` to exit to main GUI.\n\n{annot_notes}")
         else:
             err_msg = f"Invalid annotation mode: {annot_mode}. Must be in ['Manual', 'Auotmatic']"
             self.show_error_box(err_msg)

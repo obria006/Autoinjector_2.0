@@ -4,6 +4,7 @@ import time
 import os
 import sys
 from datetime import datetime
+from typing import Optional, Union, List, Tuple
 import cv2
 import serial
 import numpy as np
@@ -473,7 +474,9 @@ class ControlWindow(QMainWindow):
         self.annotation_guidance = QLabel('')
         self.annotation_guidance.setWordWrap(True)
         self.alt_annotation_group = QGroupBox("Annotation Control")
-        # Make the z-stack annotation widgets
+        # Make automatic annotation and the z-stack annotation widgets
+        self.single_auto_annotation_button = QPushButton('Run Single Auto. Annotation')
+        zstack_label = QLabel('Z-Stack Annotation')
         self.plane1_button = QPushButton('Set first focus')
         self.plane2_button = QPushButton('Set last focus')
         palette = QPalette()
@@ -489,9 +492,9 @@ class ControlWindow(QMainWindow):
         num_slices_label = QLabel("Number of slices")
         self.slices_entry = QLineEdit()
         self.slices_entry.setAlignment(Qt.AlignmentFlag.AlignRight)
-        self.zstack_button = QPushButton('Auto. Z-Stack Annotation')
+        self.zstack_button = QPushButton('Run Z-Stack Auto. Annotation')
         self.zstack_stop_button = QPushButton('Stop Z-Stack')
-        self.zstack_group = QGroupBox("Z-Stack Control")
+        self.auto_annotation_group = QGroupBox("Automatic Annotation Control")
         # Specify the default annotation layout and group
         default_layout = QVBoxLayout()
         form1 = QFormLayout()
@@ -514,15 +517,18 @@ class ControlWindow(QMainWindow):
         alt_layout.addWidget(self.annotation_guidance)
         self.alt_annotation_group.setLayout(alt_layout)
         # Specify z stack layout and group
-        z_layout = QVBoxLayout()
+        auto_annot_layout = QVBoxLayout()
         form3 = QFormLayout()
         form3.addRow(self.plane1_button, self.plane1_entry)
         form3.addRow(self.plane2_button, self.plane2_entry)
         form3.addRow(num_slices_label, self.slices_entry)
-        z_layout.addLayout(form3)
-        z_layout.addWidget(self.zstack_button)
-        z_layout.addWidget(self.zstack_stop_button)
-        self.zstack_group.setLayout(z_layout)
+        auto_annot_layout.addWidget(self.single_auto_annotation_button)
+        auto_annot_layout.addWidget(QHLine())
+        auto_annot_layout.addWidget(zstack_label)
+        auto_annot_layout.addLayout(form3)
+        auto_annot_layout.addWidget(self.zstack_button)
+        auto_annot_layout.addWidget(self.zstack_stop_button)
+        self.auto_annotation_group.setLayout(auto_annot_layout)
 
     def set_annotation_connections(self):
         """ Set signal/slot connections for annotation widgets """
@@ -532,11 +538,13 @@ class ControlWindow(QMainWindow):
         self.exit_annotation_button.clicked.connect(self.annotation_exit_pressed)
         self.annotation_combo_box.currentTextChanged.connect(self.annotation_combo_changed)
         self.edge_type_combo_box.currentTextChanged.connect(self.edge_type_combo_changed)
+        self.single_auto_annotation_button.clicked.connect(lambda: self.conduct_automatic_annotation(zstack=False))
         self.plane1_button.clicked.connect(self.set_zstack_plane1)
         self.plane2_button.clicked.connect(self.set_zstack_plane2)
         self.zstack_button.clicked.connect(self.run_zstack_annotation)
         self.zstack_stop_button.clicked.connect(self.zstack.stop)
         self.zstack.ask_for_image.connect(lambda:self.zstack.set_stack_image(self.vid_display.get_frame()))
+        self.zstack.ask_for_image.connect(lambda: self.conduct_automatic_annotation(zstack=True))
         self.zstack.errors.connect(self.show_recieved_exception)
 
     def stateify_annotation_widgets(self):
@@ -864,7 +872,7 @@ class ControlWindow(QMainWindow):
         self.annotation_mode_right_page = QWidget()
         layout = QVBoxLayout()
         layout.addWidget(self.focus_zen_app1.zen_group)
-        layout.addWidget(self.zstack_group)
+        layout.addWidget(self.auto_annotation_group)
         layout.addStretch()
         self.annotation_mode_right_page.setLayout(layout)
     
@@ -1474,42 +1482,48 @@ class ControlWindow(QMainWindow):
         
         return bin_mask
 
-    def automatic_tissue_annotation(self):
-        annot_mode = self.annotation_combo_box.currentText()
-        edge_type = self.edge_type_combo_box.currentText().lower()
-        if annot_mode == "Automatic":
-            try:
-                # Make detection of tissue edge
-                image = self.vid_display.get_frame()
-                detection_dict = self.tissue_model.detect(image, edge_type)
-                # Extract detection data
-                df = detection_dict['detection_data']
-                edge_cc = detection_dict['edge_image']
-                # Construct binary masks of tissue/edge detection for display
-                tissue_mask = detection_dict['segmentation_image']>0
-                basal_mask = self.make_edge_mask(edge_df=df, edge_cc=edge_cc, edge_type='basal')
-                apical_mask = self.make_edge_mask(edge_df=df, edge_cc=edge_cc, edge_type='apical')
-                self.vid_display.set_masks(tissue_mask=tissue_mask, apical_mask=apical_mask, basal_mask=basal_mask)
-                self.vid_display.display_masks()
-                # Return the pixels of the detected edge
-                if self.pip_cal.model.is_calibrated is True:
-                    # Because image coordinate system has y axis in opposite direction of
-                    # right hand coordinate system, negate the angle of the pipette rotation to
-                    # compute the angel of the pipette realtive to a RH coordinate system
-                    ang_RH = -self.pip_cal.model.compute_pipette_rotation_deg()
-                    edge_pixels = self.tissue_model.longest_reachable_edge_of_type(detection_dict=detection_dict, edge_type=edge_type, pip_orient_RH=ang_RH)
-                else:
-                    edge_pixels = self.tissue_model.longest_edge_of_type(detection_dict=detection_dict, edge_type=edge_type)
-                # Add annotation as 3d list of [[x1, y1, z], [x2, y2, z],...]
-                z_scope = self.zen_controller.get_focus_um()
-                annotated_3d_edge = [[ele for ele in coord] + [z_scope] for coord in edge_pixels]
-                self.annot_mgr.add_annotation(annotated_3d_edge)
-            except EdgeNotFoundError as e:
-                msg = f"{e}\n\nManually annotate the edge."
-                self.show_warning_box(msg)
-            except:
-                msg = "Error while detecting tissue.\n\nSee logs for more info."
-                self.show_exception_box(msg)
+    def automatic_tissue_annotation(self, image:np.ndarray, edge_type:str, z_scope: Optional[float]=None)->list[list[float, float, float]]:
+        """
+        Returns list of tissue edge coordinates as [[x, y, z], ...] as detected
+        from tissue segmentation and edge classification.
+
+        !! IMPORTANT: This should be encapsulated in try except because it will
+        raise errors when it cannot detect edges or reachable edges !!
+        
+        Raises:
+            EdgeNotFoundError: Occurs when it cannot detect an edge (or a valid edge)
+
+        Args:
+            image (np.ndarray): image to annotate
+            edge_type (str): Type of edge to annotate like ['apical' 'basal']
+            z_scope (float): Focus height for the image (if not passed then this
+            function measures the height when it is called.)
+        Returns:
+            list of tissue edge coordinates as [[x, y, z], ...] 
+        """
+        # Make detection of tissue edge
+        detection_dict = self.tissue_model.detect(image, edge_type)
+        # Extract detection data
+        df = detection_dict['detection_data']
+        edge_cc = detection_dict['edge_image']
+        # Construct binary masks of tissue/edge detection for display
+        tissue_mask = detection_dict['segmentation_image']>0
+        basal_mask = self.make_edge_mask(edge_df=df, edge_cc=edge_cc, edge_type='basal')
+        apical_mask = self.make_edge_mask(edge_df=df, edge_cc=edge_cc, edge_type='apical')
+        # Return the pixels of the detected edge
+        if self.pip_cal.model.is_calibrated is True:
+            # Because image coordinate system has y axis in opposite direction of
+            # right hand coordinate system, negate the angle of the pipette rotation to
+            # compute the angel of the pipette realtive to a RH coordinate system
+            ang_RH = -self.pip_cal.model.compute_pipette_rotation_deg()
+            edge_pixels = self.tissue_model.longest_reachable_edge_of_type(detection_dict=detection_dict, edge_type=edge_type, pip_orient_RH=ang_RH)
+        else:
+            edge_pixels = self.tissue_model.longest_edge_of_type(detection_dict=detection_dict, edge_type=edge_type)
+        # Add annotation as 3d list of [[x1, y1, z], [x2, y2, z],...]
+        if z_scope is None:
+            z_scope = self.zen_controller.get_focus_um()
+        annotated_3d_edge = [[ele for ele in coord] + [z_scope] for coord in edge_pixels]
+        return tissue_mask, apical_mask, basal_mask, annotated_3d_edge
 
     def annotation_combo_changed(self):
         """ Handle what to do when the annotation combobox state is changed """
@@ -1541,7 +1555,39 @@ class ControlWindow(QMainWindow):
         self.modify_annotation_guidance()
         # Switch gui to the annotaiton mode
         self.switch_to_annotation_mode()
-        self.automatic_tissue_annotation()
+
+    def conduct_automatic_annotation(self, zstack:bool):
+        """
+        Attempt an automatic annotation on the current image. If `zstack` is true,
+        errors are suppressed (from issues like not being able to detect an edge)
+        to allow the zstack to finish.
+
+        Args:
+            zstack (bool): Whether this fcn is being called during a zstack
+        """
+        edge_type = self.edge_type_combo_box.currentText().lower()
+        image = np.copy(self.vid_display.test_img)
+        try:
+            tissue_mask, apical_mask, basal_mask, annotated_3d_edge = self.automatic_tissue_annotation(image=image, edge_type=edge_type, z_scope=None)
+            self.vid_display.set_masks(tissue_mask=tissue_mask, apical_mask=apical_mask, basal_mask=basal_mask)
+            self.vid_display.display_masks()
+            self.annot_mgr.add_annotation(annotated_3d_edge)
+        except EdgeNotFoundError as e:
+            # ONly show error boxes when not zstack. During zstack pass errors to log.
+            if zstack is False:
+                msg = f"{e}\n\nManually annotate the edge."
+                self.show_warning_box(msg)
+            else:
+                msg = f"Supressed during z-stack: {e}"
+                self.logger.warning(msg)
+        except:
+            # ONly show error boxes when not zstack. During zstack pass errors to log.
+            if zstack is False:
+                msg = "Error while detecting tissue.\n\nSee logs for more info."
+                self.show_exception_box(msg)
+            else:
+                msg = "Error suppresed during z-stack"
+                self.logger.exception(msg)
 
     def rm_annotation_pressed(self):
         """ Handle what to do when user clicks remove annotation """
@@ -1573,11 +1619,11 @@ class ControlWindow(QMainWindow):
         """ Modify GUI to show annotation mode layout """
         annot_mode = self.annotation_combo_box.currentText()
         if annot_mode == 'Automatic':
-            self.zstack_group.show()
-            self.zstack_group.setEnabled(True)
+            self.auto_annotation_group.show()
+            self.auto_annotation_group.setEnabled(True)
         else:
-            self.zstack_group.hide()
-            self.zstack_group.setEnabled(False)
+            self.auto_annotation_group.hide()
+            self.auto_annotation_group.setEnabled(False)
         self.left_stacked_layout.setCurrentWidget(self.annotation_mode_left_page)
         self.right_stacked_layout.setCurrentWidget(self.annotation_mode_right_page)
         self.vid_display.enable_annotations(True)

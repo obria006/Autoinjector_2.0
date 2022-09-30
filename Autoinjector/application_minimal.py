@@ -2061,6 +2061,9 @@ class ControlWindow(QMainWindow):
         try:
             # Validate that everything is ready for injections
             self.validate_ready_for_injection()
+            if hasattr(self, "inj_trajectory"):
+                if self.inj_trajectory.is_running():
+                    raise TrajectoryError("Cannot run injection trajectory because an injection trajectory is currently running.")
             #get values from GUI
             um2nm = 1000
             approach_nm = int(float(self.approachdist)*um2nm)
@@ -2076,8 +2079,13 @@ class ControlWindow(QMainWindow):
                 # Have trajectory end at the "finish" position if its the last trajectoyr
                 end_at_fin_pos = ind == len(self.interpolated_pixels) - 1
                 self.inj_trajectory.add_trajectory(SurfaceLineTrajectory3D(dev, cal, edge_3D, approach_nm, depth_nm, spacing_nm, speed_ums, pullout_nm, end_at_fin_pos))
+            self.inj_trajectory.n_injected_signal.connect(lambda n: self.show_n_injected(n))
+            self.inj_trajectory.started.connect(self.on_trajectory_started)
+            self.inj_trajectory.finished.connect(self.on_trajectory_finished)
             self.inj_trajectory.start()
-            self.inj_trajectory.finished.connect(self.show_n_injected)
+        
+        except TrajectoryError as e:
+            self.show_error_box(f"Error: {e}\n\nPlease wait or stop trajectory before running a new trajectory.")
         except CalibrationError as e:
             self.show_error_box(f"Error: {e}\n\nPlease conduct calibration before injecting.")
         except AnnotationError as e:
@@ -2088,14 +2096,48 @@ class ControlWindow(QMainWindow):
             msg = "Error occured while trying to start injections.\n\nSee logs for more info."
             self.show_exception_box(msg)
 
-    def show_n_injected(self):
-        self.response_monitor_window.append(">> Number of injections =" + str(self.inj_trajectory.n_injected))
+    def on_trajectory_started(self):
+        """ Handles what to do when trajectory starts """
+        self.disable_noninjection_widgets()
+
+    def on_trajectory_finished(self):
+        """ Handles what to do when trajectory is compelte """
+        self.enable_noninjection_widgets()
+
+    def enable_noninjection_widgets(self):
+        """ Reactivates widgets that may have been disabled during injection """
+        self.run_button.setEnabled(True)
+        self.pip_cal_group.setEnabled(True)
+        self.default_annotation_group.setEnabled(True)
+        self.full_zen_app.zen_group.setEnabled(True)
+        self.manipulator_group.setEnabled(True)
+        self.inj_parameter_group.setEnabled(True)
+
+    def disable_noninjection_widgets(self):
+        """ Disables widgets that shouldn't be used during injection """
+        self.run_button.setEnabled(False)
+        self.pip_cal_group.setEnabled(False)
+        self.default_annotation_group.setEnabled(False)
+        self.full_zen_app.zen_group.setEnabled(False)
+        self.manipulator_group.setEnabled(False)
+        self.inj_parameter_group.setEnabled(False)
+
+
+    def show_n_injected(self, n:int):
+        self.response_monitor_window.append(">> Number of injections =" + str(int(n)))
 
     def stoptrajectory(self):
         try:
+            if not hasattr(self, "inj_trajectory"):
+                raise TrajectoryError("Cannot stop injection trajectory because no injection trajectory is running.")
+            if not self.inj_trajectory.is_running():
+                raise TrajectoryError("Cannot stop injection trajectory because no injection trajectory is running.")
             self.inj_trajectory.stop()
+        except TrajectoryError as e:
+            msg = f"{e}\n\nPlease start injection trajectory first."
+            self.show_error_box(msg)
         except:
-            msg = "You have to start the trajectory in order to be able to stop it..."
+            msg = "Error while attempting to stop injection trajectory.\n\nSee logs for more info."
             self.show_exception_box(msg)
 
     def moveto_unload_position(self):

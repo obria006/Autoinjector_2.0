@@ -432,6 +432,8 @@ class SurfaceLineTrajectory3D(SurfacePointTrajectory3D):
 class TrajectoryManager(QObject):
     """ Coordiantes trajectories across multiple trajectories """
     finished = pyqtSignal()
+    started = pyqtSignal()
+    n_injected_signal = pyqtSignal(float)
 
     def __init__(self, goto_z:Callable[[float], None], trajectories:list=None):
         """
@@ -445,6 +447,7 @@ class TrajectoryManager(QObject):
         self.goto_z = goto_z
         self.n_injected = 0
         self._cur_trajectory = None
+        self._is_running = False
         # Prevent mutable default args
         if trajectories is None:
             self._trajectories = []
@@ -469,6 +472,10 @@ class TrajectoryManager(QObject):
         """
         self._trajectories.append(trajectory)
 
+    def is_running(self)->bool:
+        """ Returns true if it is currently running an injection trial."""
+        return self._is_running
+
     def is_empty(self)->bool:
         """ Returns true if no trajectories in list """
         return len(self._trajectories)==0
@@ -476,6 +483,8 @@ class TrajectoryManager(QObject):
     def start(self):
         """ Run all trajectories stored in trajectories attribute """
         self.run_next_trajectory()
+        self._is_running = True
+        self.started.emit()
 
     def run_next_trajectory(self):
         """
@@ -494,8 +503,13 @@ class TrajectoryManager(QObject):
             self._cur_trajectory.finished.connect(self.run_next_trajectory)
             self._cur_trajectory.finished.connect(self._cur_trajectory.deleteLater)
         # When there are no more trajectoreis, its finished
+        # ALWAYS END HERE BECAUSE CONNECT this fcn to finsihed from current trajectory
+        # even if manually stop trajectroy the loop will end here when the current trajectory
+        # stops and emits its finished signal
         else:
             self._cur_trajectory = None
+            self._is_running = False
+            self.n_injected_signal.emit(self.n_injected)
             self.finished.emit()
 
     @pyqtSlot(float)

@@ -118,6 +118,125 @@ class PipTipData():
         df = pd.DataFrame(data=data)
         return df
 
+class PipetteAnnotator():
+    ''' For rapid annotation of the pipette tip including objective, optovar, and delta z '''
+
+    def __init__(self, pip_data_dir:str):
+        '''
+        Initializes class for saving pipette data. Creates directory with date
+        as name in the pip_data_DIR
+
+        Arguments:
+            pip_data_dir (str): Parent directory of where to save data
+        '''
+
+        self.logger = logr(__name__)
+        
+        # Ensure parent directory exists
+        if os.path.isdir(pip_data_dir) is False:
+            self.logger.error(f"Pipette image directory doesn't exist: {pip_data_dir}")
+            raise ValueError(f"Pipette image directory doesn't exist: {pip_data_dir}")
+        self.parent_dir = pip_data_dir.replace('\\','/')
+
+        # Directory where images will be saved
+        ymd = datetime.now().strftime("%Y%m%d")
+        self.pip_tip_dir = f"{self.parent_dir}/{ymd}"
+
+        # Make date directory if necessary
+        if os.path.isdir(self.pip_tip_dir) is False:
+            os.mkdir(self.pip_tip_dir)
+            self.logger.info(f"Created pipette image directory: {self.pip_tip_dir}")
+
+    def save_data(self, image:np.ndarray, tip_data:dict):
+        '''
+        Save the pipette image, coordinate of clicked pipette tip, objective,
+        optovar, and delta between infocus and current position to csv.
+        
+        Saves dataframe of 
+        and other data. Saves pipette [image path, x, y, norm x, norm y, img width, img height, delta z, objective, optovar].
+        coordinate dataframe of: [image path, x, y, norm x, norm y, img width, img height].
+        Coordinate data saved to csv
+
+        Arguments:
+            image (np.ndarray): Image that was saved
+            tip_data (dict): Coords of tip annotation in image {'x':x, 'y':y, 'dz':dz, 'obj':obj, 'opto':opto}
+        '''
+
+        # Validate arguments
+        if val.is_of_types(image, [np.ndarray]) is False:
+            raise TypeError('image must be an np.ndarray')
+        if val.is_of_types(tip_data, [dict]) is False:
+            raise TypeError('tip_postition must be a dict')
+        tip_keys = list(tip_data.keys())
+        if set(tip_keys) != set(['x','y','dz','obj','opto']):
+            raise ValueError(f"Set of tip_data keys {tip_keys} does not match set of necessary keys {set(['x','y','dz','obj','opto'])}")
+
+        # Time of saving
+        ymd_hms = datetime.now().strftime("%Y%m%d_%H%M%S")
+        ymd = datetime.now().strftime("%Y%m%d")
+
+        obj_str = f"obj{tip_data['obj']}".replace('.','dot')
+        opto_str = f"opto{tip_data['opto']}".replace('.','dot')
+        dz_str = f"dz{tip_data['dz']}".replace('.','dot')
+
+        # Save the data
+        try:
+            # Pipette image
+            img_path = f"{self.pip_tip_dir}/{ymd_hms}_{obj_str}_{opto_str}_{dz_str}_pipette.jpeg"
+            save_image(image, img_path)
+
+            # Save pipette annotation
+            tip_df = self._make_coord_df(img_path, image, tip_data)
+            ip_df = self._make_coord_df(img_path, image, tip_data)
+            coord_path = f"{self.pip_tip_dir}/{ymd}_annotations.csv"
+            if os.path.exists(coord_path):
+                tip_df.to_csv(coord_path, mode='a', index=False, header=False)
+            else:
+                tip_df.to_csv(coord_path, index=False)
+        except:
+            self.logger.exception(f'Error during saving pipette data.')
+            raise
+        else:
+            self.logger.info(f'Saved pipette data: {img_path}')
+
+    def _make_coord_df(self, img_path:str, image:np.ndarray, tip_data:dict):
+        '''
+        Makes dataframe of: [image path, x, y, norm x, norm y, img width, img height]
+
+        Arguments:
+            img_path (str): Path for where image was saved
+            image (np.ndarray): Image that was saved
+            tip_data (dict): Coords of tip annotation in image {'x':x, 'y':y}
+        
+        Returns:
+            Dataframe of [image path, x, y, norm x, norm y, img width, img height]
+        '''
+        # Get x and y coordinates of annoation
+        x = tip_data['x']
+        y = tip_data['y']
+        dz = tip_data['dz']
+        obj = tip_data['obj']
+        opto = tip_data['opto']
+        # Get image size
+        rows = image.shape[0]
+        cols = image.shape[1]
+        # Normalize the x and y coords by image size
+        norm_x = x / cols
+        norm_y = y / rows
+        # Make data dict and DataFrame
+        data = {'filepath':[img_path],
+                'x':[x],
+                'y':[y],
+                'normalized x':[norm_x],
+                'normalized y':[norm_y],
+                'image width':[cols],
+                'image height':[rows],
+                'delta z um':[dz],
+                'objective':[obj],
+                'optovar':[opto]}
+        df = pd.DataFrame(data=data)
+        return df
+
 class TissueEdgeData():
     ''' Class handles coordinated saving of tissue image and annotated trajectory '''
 

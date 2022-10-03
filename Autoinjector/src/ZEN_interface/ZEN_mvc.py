@@ -55,6 +55,9 @@ class ModelZEN(QObject):
         # Max and min values of focus position in ZEN
         self.focus_max_um = 10000
         self.focus_min_um = 0
+        # Stage limits
+        self.stage_min_um = [0, 0]
+        self.stage_max_um = [130000, 100000]
         # Dataframe of objectives, optovars, and reflectors of microscope
         self.objectives = self._connected_objectives()
         self.optovars = self._connected_optovars()
@@ -215,6 +218,30 @@ class ModelZEN(QObject):
             raise ValueError(f'Invalid goto_focus_abs_um position: {des_foc_um}um. Must be {self.focus_min_um}um to {self.focus_max_um}um.')
         # TODO add threaded move function
         self._zen.Devices.Focus.MoveTo(des_foc_um)
+
+    def get_stage_um(self)->list[float, float]:
+        """
+        Return position of the stage in um as [x,y]
+
+        Returns:
+            stage position as [x, y] in um
+        """
+        stage_x_um = self._zen.Devices.Stage.ActualPositionX
+        stage_y_um = self._zen.Devices.Stage.ActualPositionY
+        return [stage_x_um, stage_y_um]
+    
+    def goto_stage_um(self, stage_pos_um:list[float, float]):
+        """
+        Return position of the stage in um as [x,y]
+
+        Returns:
+            stage position as [x, y] in um
+        """
+        if stage_pos_um[0] < self.stage_min_um[0] or stage_pos_um[0] > self.stage_max_um[0]:
+            raise ValueErrror(f"Invalid stage x position: {stage_pos_um[0]}. Must be in {[self.stage_min_um[0], self.stage_maxs_um[0]]}")
+        if stage_pos_um[1] < self.stage_min_um[1] or stage_pos_um[1] > self.stage_max_um[1]:
+            raise ValueErrror(f"Invalid stage x position: {stage_pos_um[1]}. Must be in {[self.stage_min_um[1], self.stage_maxs_um[1]]}")
+        self._zen.Devices.Stage.MoveTo(stage_pos_um[0], stage_pos_um[1])
 
     def goto_focus_rel_um(self, delta_foc_um:float)->None:
         '''
@@ -907,6 +934,25 @@ class ControllerZEN(QObject):
         """
         pos = self._model.get_focus_um()
         return pos
+
+    def get_stage_um(self)->list[float, float]:
+        """
+        Return position of the stage in um as [x,y]
+
+        Returns:
+            stage position as [x, y] in um
+        """
+        return self._model.get_stage_um()
+    
+    def goto_stage_um(self, stage_pos_um:list[float, float]):
+        """
+        Return position of the stage in um as [x,y]
+
+        Returns:
+            stage position as [x, y] in um
+        """
+        self._model.goto_stage_um(stage_pos_um)
+
 
     def get_focus_um_approx(self)->float:
         '''

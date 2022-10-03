@@ -10,6 +10,7 @@ import serial
 import numpy as np
 from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
+from PyQt6.QtTest import QTest
 from PyQt6.QtGui import QIcon, QPalette, QColor
 import pandas as pd
 from src.video_control.video_utils import interpolate, AnnotationError
@@ -24,7 +25,7 @@ import src.GUI_utils.display_modifier_mvc as disp_mod_mvc
 from src.miscellaneous.standard_logger import StandardLogger as logr
 from src.miscellaneous import validify as val
 from src.miscellaneous.error_utils import InjectionParameterError
-from src.data_generation.data_generators import PipTipData, TissueEdgeData, ImageStackData
+from src.data_generation.data_generators import PipTipData, TissueEdgeData, ImageStackData, PipetteAnnotator
 from src.manipulator_control.calibration import Calibrator, AngleIO
 from src.manipulator_control.error_utils import (CalibrationError,
                                                 CalibrationDataError,
@@ -35,6 +36,7 @@ from src.manipulator_control.error_utils import (CalibrationError,
 from src.manipulator_control.sensapex_utils import SensapexDevice
 from src.manipulator_control.injection_trajectory import SurfaceLineTrajectory3D, TrajectoryManager
 from src.manipulator_control.calibration_trajectory import SemiAutoCalibrationTrajectory
+from src.manipulator_control.pipette_annotation_trajectory import PipetteAnnotationTrajectory
 from src.manipulator_control.convenience_trajectories import ConvenienceTrajectories
 from src.ZEN_interface.ZEN_mvc import ModelZEN, ControllerZEN, ViewZENComplete, ViewZENFocus
 from src.ZEN_interface.z_stack import ZStackManager, ZStackDataWithAnnotations
@@ -57,6 +59,8 @@ class ControlWindow(QMainWindow):
     _annotation_complete = pyqtSignal(bool)
     _parameter_complete = pyqtSignal(bool)
     leaving_calibration = pyqtSignal()
+    leaving_annotation = pyqtSignal()
+    move_to_next_annot = pyqtSignal()
     cal_pos_added = pyqtSignal()
 
     def __init__(self,cam,brand,val,bins,rot,imagevals,scale,com, parent=None):
@@ -197,6 +201,11 @@ class ControlWindow(QMainWindow):
         if os.path.isdir(self.pip_data_dir) is False:
             os.makedirs(self.pip_data_dir)
             self.logger.info(f'Created pipette image data directory: {self.pip_data_dir}')
+        # For saving pipette images
+        self.pip_annot_dir = f"{self.data_dir}/pipette/ML_annotation"
+        if os.path.isdir(self.pip_annot_dir) is False:
+            os.makedirs(self.pip_annot_dir)
+            self.logger.info(f'Created pipette ML annotation directory: {self.pip_annot_dir}')
         # For saving tissue images
         self.tis_data_dir = f"{self.data_dir}/tissue/annotation_images"
         if os.path.isdir(self.tis_data_dir) is False:
@@ -236,6 +245,7 @@ class ControlWindow(QMainWindow):
         # Create all interactive widgets
         self.make_pipette_calibrator_widgets()
         self.make_data_generator_widgets()
+        self.make_pip_annotation_widgets()
         self.make_annotation_widgets()
         self.make_display_modification_widgets()
         self.make_video_display_widgets()
@@ -249,12 +259,15 @@ class ControlWindow(QMainWindow):
         self.make_default_right_page_widget()
         self.make_annotation_mode_left_page_widget()
         self.make_annotation_mode_right_page_widget()
+        self.make_pip_annot_mode_left_page_widget()
+        self.make_pip_annot_mode_right_page_widget()
         self.make_calibration_mode_left_page_widget()
         self.make_calibration_mode_right_page_widget()
 
     def set_connections(self):
         """ Set the signal/slot connections for the GUI's widgets """
         self.set_pipette_calibrator_connections()
+        self.set_pip_annotation_connections()
         self.set_annotation_connections()
         self.set_display_modification_connections()
         self.set_video_display_connections()
@@ -285,9 +298,11 @@ class ControlWindow(QMainWindow):
         # Add the different pages to the stacked layout
         self.left_stacked_layout.addWidget(self.default_left_page)
         self.left_stacked_layout.addWidget(self.annotation_mode_left_page)
+        self.left_stacked_layout.addWidget(self.pip_annot_mode_left_page)
         self.left_stacked_layout.addWidget(self.calibration_mode_left_page)
         self.right_stacked_layout.addWidget(self.default_right_page)
         self.right_stacked_layout.addWidget(self.annotation_mode_right_page)
+        self.right_stacked_layout.addWidget(self.pip_annot_mode_right_page)
         self.right_stacked_layout.addWidget(self.calibration_mode_right_page)
 
         # Define the center layout widgets (places in `center_widget` so aligns with stacked pages)
@@ -455,6 +470,36 @@ class ControlWindow(QMainWindow):
     """
     Initialize injection target annotation widgets ------------------------------------------------
     """
+    def make_pip_annotation_widgets(self):
+        self.pip_annot_but = QPushButton("Auto Annotate Pipette")
+        annot_label = QLabel("Number of annotations:")
+        self.annot_entry = QLineEdit('')
+        self.annot_entry.clear()
+        self.annot_entry.insert('100')
+        self.start_annot_but = QPushButton("Start")
+        self.annot_progress = QProgressBar()
+        self.annot_progress.setValue(0)
+        self.stop_pip_annot_but = QPushButton("Stop and/or exit")
+        def_layout = QVBoxLayout()
+        def_layout.addWidget(self.pip_annot_but)
+        self.default_pip_annot_group = QGroupBox("Pipette Annotation")
+        self.default_pip_annot_group.setLayout(def_layout)
+        alt_layout = QVBoxLayout()
+        hlayout = QHBoxLayout()
+        hlayout.addWidget(annot_label)
+        hlayout.addWidget(self.annot_entry)
+        alt_layout.addWidget(self.annot_progress)
+        alt_layout.addLayout(hlayout)
+        alt_layout.addWidget(self.start_annot_but)
+        alt_layout.addWidget(self.stop_pip_annot_but)
+        self.alt_pip_annot_group = QGroupBox("Pipette Annotation")
+        self.alt_pip_annot_group.setLayout(alt_layout)
+
+    def set_pip_annotation_connections(self):
+        self.pip_annot_but.clicked.connect(self.switchto_pipette_annotation)
+        self.start_annot_but.clicked.connect(self.automatic_pipette_annotation)
+        self.stop_pip_annot_but.clicked.connect(self.stop_pipette_annotation)
+
     def make_annotation_widgets(self):
         """ Creates widgets for injection target annotation """
         # Make the default annotation widgets
@@ -673,14 +718,14 @@ class ControlWindow(QMainWindow):
     def make_injection_parameter_widgets(self):
         ''' Creates widgets for injection parameters and specifies layout '''
         mu = "µ"
-        approach_label = QLabel("Approach Distance ("+ mu +"m)")
-        depth_label = QLabel("Depth ("+ mu +"m)")
-        spacing_label = QLabel("Spacing ("+ mu +"m)")
-        speed_label = QLabel(f"Speed ({mu}/s)")
-        self.approach_entry = QLineEdit(self)
-        self.depth_entry= QLineEdit(self)
-        self.spacing_entry = QLineEdit(self)
-        self.speed_entry = QLineEdit(self)
+        # approach_label = QLabel("Approach Distance ("+ mu +"m)")
+        # depth_label = QLabel("Depth ("+ mu +"m)")
+        # spacing_label = QLabel("Spacing ("+ mu +"m)")
+        # speed_label = QLabel(f"Speed ({mu}/s)")
+        # self.approach_entry = QLineEdit(self)
+        # self.depth_entry= QLineEdit(self)
+        # self.spacing_entry = QLineEdit(self)
+        # self.speed_entry = QLineEdit(self)
         self.pressure_slider = QSlider(Qt.Orientation.Horizontal)
         self.pressure_slider = QSlider(Qt.Orientation.Horizontal)
         self.pressure_slider.setMinimum(10)
@@ -691,17 +736,17 @@ class ControlWindow(QMainWindow):
         self.pressure_display = QLineEdit(self)
         self.set_values_button = QPushButton("Set Values")
         h_layout1 = QHBoxLayout()
-        h_layout1.addWidget(approach_label)
-        h_layout1.addWidget(self.approach_entry)
-        h_layout2 = QHBoxLayout()
-        h_layout2.addWidget(depth_label)
-        h_layout2.addWidget(self.depth_entry)
-        h_layout3 = QHBoxLayout()
-        h_layout3.addWidget(spacing_label)
-        h_layout3.addWidget(self.spacing_entry)
-        h_layout4 = QHBoxLayout()       
-        h_layout4.addWidget(speed_label)
-        h_layout4.addWidget(self.speed_entry)
+        # h_layout1.addWidget(approach_label)
+        # h_layout1.addWidget(self.approach_entry)
+        # h_layout2 = QHBoxLayout()
+        # h_layout2.addWidget(depth_label)
+        # h_layout2.addWidget(self.depth_entry)
+        # h_layout3 = QHBoxLayout()
+        # h_layout3.addWidget(spacing_label)
+        # h_layout3.addWidget(self.spacing_entry)
+        # h_layout4 = QHBoxLayout()       
+        # h_layout4.addWidget(speed_label)
+        # h_layout4.addWidget(self.speed_entry)
         v_layout1 = QVBoxLayout()
         v_layout1.addWidget(self.pressure_slider)
         v_layout2 = QVBoxLayout()
@@ -716,10 +761,10 @@ class ControlWindow(QMainWindow):
         v_layout4.addWidget(self.set_values_button)
         v_layout3.addLayout(v_layout4)
         inj_param_layout = QVBoxLayout()
-        inj_param_layout.addLayout(h_layout1)
-        inj_param_layout.addLayout(h_layout2)
-        inj_param_layout.addLayout(h_layout3)
-        inj_param_layout.addLayout(h_layout4)
+        # inj_param_layout.addLayout(h_layout1)
+        # inj_param_layout.addLayout(h_layout2)
+        # inj_param_layout.addLayout(h_layout3)
+        # inj_param_layout.addLayout(h_layout4)
         inj_param_layout.addLayout(v_layout3)
         self.inj_parameter_group = QGroupBox('Automated Microinjection Controls')
         self.inj_parameter_group.setLayout(inj_param_layout)
@@ -731,10 +776,10 @@ class ControlWindow(QMainWindow):
     
     def stateify_injection_parameter_widgets(self):
         ''' set initial states for injection parameter widgets'''
-        self.approach_entry.insert('100')
-        self.depth_entry.insert('20')
-        self.spacing_entry.insert('50')
-        self.speed_entry.insert('1000')
+        # self.approach_entry.insert('100')
+        # self.depth_entry.insert('20')
+        # self.spacing_entry.insert('50')
+        # self.speed_entry.insert('1000')
         self.pressure_slider.setValue(20)
 
     """
@@ -849,9 +894,10 @@ class ControlWindow(QMainWindow):
         self.default_left_page = QWidget()
         default_left_layout = QVBoxLayout()
         default_left_layout.addWidget(self.pip_cal_group)
-        default_left_layout.addWidget(self.default_annotation_group)
+        default_left_layout.addWidget(self.default_pip_annot_group)
+        # default_left_layout.addWidget(self.default_annotation_group)
         default_left_layout.addWidget(self.display_modification_group)
-        default_left_layout.addWidget(self.data_gen_group)
+        # default_left_layout.addWidget(self.data_gen_group)
         default_left_layout.addStretch()
         self.default_left_page.setLayout(default_left_layout)
     
@@ -860,9 +906,9 @@ class ControlWindow(QMainWindow):
         self.default_right_page = QWidget()
         default_right_layout = QVBoxLayout()
         default_right_layout.addWidget(self.full_zen_app.zen_group)
-        default_right_layout.addWidget(self.manipulator_group)
+        # default_right_layout.addWidget(self.manipulator_group)
         default_right_layout.addWidget(self.inj_parameter_group)
-        default_right_layout.addWidget(self.workflow_group)
+        # default_right_layout.addWidget(self.workflow_group)
         default_right_layout.addStretch()
         self.default_right_page.setLayout(default_right_layout)
 
@@ -883,6 +929,22 @@ class ControlWindow(QMainWindow):
         layout.addWidget(self.auto_annotation_group)
         layout.addStretch()
         self.annotation_mode_right_page.setLayout(layout)
+
+    def make_pip_annot_mode_left_page_widget(self):
+        """ Define pip_annot mode left page for stacked layout """
+        self.pip_annot_mode_left_page = QWidget()
+        layout = QVBoxLayout()
+        layout.addWidget(self.alt_pip_annot_group)
+        layout.addWidget(self.display_modification_group_alt)
+        layout.addStretch()
+        self.pip_annot_mode_left_page.setLayout(layout)
+
+    def make_pip_annot_mode_right_page_widget(self):
+        """ Define pip_annot mode left page for stacked layout """
+        self.pip_annot_mode_right_page = QWidget()
+        layout = QVBoxLayout()
+        layout.addStretch()
+        self.pip_annot_mode_right_page.setLayout(layout)
     
     def make_calibration_mode_left_page_widget(self):
         """ Define calibration mode left page for stacked layout """
@@ -1168,6 +1230,89 @@ class ControlWindow(QMainWindow):
             pass
         if cal_mode == "Manual":
             pass
+
+    def stop_pipette_annotation(self):
+        self.switch_to_default_mode()
+        self.leaving_annotation.emit()
+
+    def switchto_pipette_annotation(self):
+        if not self.pip_cal.model.is_calibrated:
+            self.show_error_box("Cannot annotate because calibration doesn't exist.")
+        else:
+            self.left_stacked_layout.setCurrentWidget(self.pip_annot_mode_left_page)
+            self.right_stacked_layout.setCurrentWidget(self.pip_annot_mode_right_page)
+
+    def automatic_pipette_annotation(self):
+        try:
+            self.logger.debug('Doing automatic pipette anntotation')
+            # Initalize for the calibration trajectory
+            dev = SensapexDevice(1)
+            img_width = self.cam_MM.width
+            img_height = self.cam_MM.height
+            in_focus_foc_z = self.pip_cal.model.x_0[2,0] # the starting position of the focus when it was calibrated
+            in_focus_man_z = self.pip_cal.model.x_0[5,0]
+            self.lamp_inten = self.zen_controller.get_lamp_intensity()
+            self.stage_pos = self.zen_controller.get_stage_um()
+            num_poses = self.annot_entry.text()
+            if val.is_valid_number(num_poses) is False:
+                raise ValueError(f"Invalid number of annotations: {num_poses}. Must be a number")
+            else:
+                num_poses = float(self.annot_entry.text())
+            self.pipette_annot_trajectory = PipetteAnnotationTrajectory(dev=dev, cal=self.pip_cal, img_w=img_width, img_h=img_height, in_focus_foc_z=in_focus_foc_z, in_focus_man_z= in_focus_man_z, num_poses = num_poses)
+            self.pipette_annot_trajectory.next_fov_pos.connect(self.set_tip_annot_coords)
+            self.pipette_annot_trajectory.move_finished.connect(self.save_pipette_annotation)
+            self.pipette_annot_trajectory.finished.connect(self.pipette_annot_trajectory.deleteLater)
+            self.pipette_annot_trajectory.progress.connect(self.show_annot_progress)
+            self.leaving_annotation.connect(self.pipette_annot_trajectory.stop)
+            self.move_to_next_annot.connect(self.pipette_annot_trajectory.next_position)
+            self.pipette_annot_trajectory.next_position()
+        except Exception as e:
+            self.show_exception_box(e)
+    def show_annot_progress(self,val):
+        self.annot_progress.setValue(int(val))
+
+    def set_tip_annot_coords(self, x, y, dz):
+        self.tip_x_in_fov = x
+        self.tip_y_in_fov = y
+        self.tip_dz_in_focus = dz
+
+    def save_pipette_annotation(self):
+        QTest.qWait(1000)
+        try:
+            x = self.tip_x_in_fov
+            y = self.tip_y_in_fov
+            dz = self.tip_dz_in_focus
+        except Exception as e:
+            self.show_exception_box(f"Error during automatic annotation: {e}")
+            return
+        else:
+            del self.tip_x_in_fov
+            del self.tip_y_in_fov
+            del self.tip_dz_in_focus
+
+            _, _, obj_mag = self.zen_controller.get_current_objective()
+            _, _, opto_mag = self.zen_controller.get_current_optovar()
+
+            tip_dict = {
+                'x':x,
+                'y':y,
+                'dz':dz,
+                'obj':obj_mag,
+                'opto':opto_mag
+            }
+
+            pip_data_saver = PipetteAnnotator(pip_data_dir=self.pip_annot_dir)
+            image = self.vid_display.get_frame()
+            pip_data_saver.save_data(image=image, tip_data=tip_dict)
+        finally:
+            new_lamp_inten = np.clip(np.random.normal(self.lamp_inten,2.3),0,100)
+            new_stage_x = min([np.random.normal(self.stage_pos[0], 3000),45000])
+            new_stage_y = np.random.normal(self.stage_pos[1],3000)
+            self.zen_controller.goto_stage_um([new_stage_x, new_stage_y])
+            self.zen_controller.set_lamp_intensity(new_lamp_inten)
+            self.move_to_next_annot.emit()
+            
+
 
     def add_cal_positions(self,pixel):
         ''' Adds clicked calibration positions to calibration data '''
@@ -2025,10 +2170,10 @@ class ControlWindow(QMainWindow):
         try:
             self.compensationpressureval = self.pressureslidervalue
             self.compensationpressureval =str(self.compensationpressureval)
-            self.approachdist = self.approach_entry.text()
-            self.depthintissue = self.depth_entry.text()
-            self.stepsize = self.spacing_entry.text()
-            self.motorspeed = self.speed_entry.text()
+            # self.approachdist = self.approach_entry.text()
+            # self.depthintissue = self.depth_entry.text()
+            # self.stepsize = self.spacing_entry.text()
+            # self.motorspeed = self.speed_entry.text()
             self.injectpressurevoltage = self.compensationpressureval
             self.response_monitor_window.append(">> Values set")
             self.injector_compensate = injection(arduino,self.compensationpressureval, 0,self.injectpressurevoltage,0,'bp')

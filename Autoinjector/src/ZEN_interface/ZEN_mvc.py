@@ -4,7 +4,7 @@ Interface w/ Zeiss ZEN software using model-view-controller architecture
 import sys
 import pandas as pd
 import win32com.client
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSignalBlocker, QObject
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSignalBlocker, QObject, pyqtSlot
 from PyQt6.QtWidgets import (QApplication,
                             QLabel,
                             QPushButton,
@@ -720,6 +720,7 @@ class ControllerZEN(QObject):
     ex_led_active_changed = pyqtSignal(dict)
 
     focus_changed = pyqtSignal([str])
+    inc_changed = pyqtSignal([str])
     obj_changed = pyqtSignal([float])
     opto_changed = pyqtSignal([float])
     ref_changed = pyqtSignal([str])
@@ -746,6 +747,18 @@ class ControllerZEN(QObject):
         self._model.lamp_intensity_changed.connect(self.lamp_model_change)
         self._model.lamp_shutter_changed.connect(self.lamp_shutter_model_change)
         self._model.led_changed.connect(self.led_model_change)
+
+    @pyqtSlot()
+    def change_increment(self, inc_val:str):
+        """
+        Change the internal attribute corresponding to the focus increment value.
+        Outputs a signal that can be recieved by all connected "views" so that the
+        focus increment is consistenet across "views".
+
+        Args:
+            inc_val (str): Value of the focus increment
+        """
+        self.inc_changed.emit(inc_val)
 
     def objective_model_change(self):
         """
@@ -1394,6 +1407,11 @@ class ViewZEN(QObject):
         self._controller.ex_shutter_position_opened.connect(lambda opened: self.update_lamp_button(opened))
         self._controller.ex_led_intensity_changed.connect(lambda inten: self.update_led_slider(inten))
         self._controller.ex_led_active_changed.connect(lambda led_active_dict: self.update_led_buttons(led_active_dict))
+        # The controller can be connected to multiple views. For all views to display the
+        # same focus increment, send the a signal to the controller about the increment
+        # changing then have the controller set the text of the view (and all views)
+        self.foc_inc.textEdited.connect(lambda inc_text: self._controller.change_increment(inc_text))
+        self._controller.inc_changed.connect(lambda inc_text: self.foc_inc.setText(inc_text))
 
     def update_combobox(self, combo_box:QComboBox, combo_str:str):
         """

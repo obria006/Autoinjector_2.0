@@ -449,7 +449,7 @@ class ControlWindow(QMainWindow):
     def stateify_data_generator_widgets(self):
         ''' Set initial states for data generator widgets '''
         self.save_tip_annot_rbon.setChecked(True)
-        self.save_tiss_annot_rbon.setChecked(False)
+        self.save_tiss_annot_rbon.setChecked(True)
 
 
     """

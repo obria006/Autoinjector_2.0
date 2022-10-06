@@ -1,4 +1,5 @@
 import os
+import random
 import time
 import glob
 import cv2
@@ -29,6 +30,7 @@ for img_type in img_types:
 if len(img_paths) > 10:
     random.seed(10)
     img_paths = random.sample(img_paths,10)
+proc = []
 for img_path in img_paths:
     img = np.array(Image.open(img_path))
     for edge_type in ['reachable']:
@@ -36,6 +38,7 @@ for img_path in img_paths:
             t0 = time.time()
             res = MTC.detect(img)
             t1 = time.time()
+            proc.append(t1- t0)
             edge_coords = MTC.longest_reachable_edge_of_type(res, edge_type, -178.5)
             print(f"Total: {round(time.time()-t0,4)}\tDetection: {round(t1-t0,4)}\tProcessing: {round(time.time()-t1,4)}")
         except EdgeNotFoundError as e:
@@ -86,3 +89,4 @@ for img_path in img_paths:
             # out_path = img_path.replace(img_dir,out_dir)
             # out_path = out_path.replace(".jpg",f"_{edge_type}.jpg")
             # im.save(out_path)
+print(np.mean(np.asarray(proc)))

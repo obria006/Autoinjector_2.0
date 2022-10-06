@@ -4,6 +4,7 @@ from collections.abc import Iterable
 import numpy as np
 from matplotlib import pyplot as plt
 import cv2
+from src.miscellaneous.validify import val_binary_image
 
 
 def blend_images(images: Iterable, weights: list = None):
@@ -206,3 +207,32 @@ def overlay_image(
     # blend the image and mask
     blended = blend_images([rgb, overlay], [0.7, 0.3])
     return blended
+
+def is_single_pixel_width(mask:np.ndarray, conn:int)->bool:
+    """
+    Return true if mask only contains edges of single pixel width
+
+    Args:
+        mask (np.ndarray): 0-1 binary mask
+        conn (int): Type of connectiveity as 4-way or 8-way 2D
+    
+    Returns:
+        np.ndarray w/ number of connectivity pixels at each location
+    """
+    # Validate
+    val_binary_image(mask)       
+    # Convolve kernel
+    kernel = np.ones((2,2))
+    conn_img = cv2.filter2D(mask.astype(np.int16), ddepth=-1, kernel=kernel, borderType=cv2.BORDER_CONSTANT)
+    # For four way connectivity, any group of 2x2 square pixels can contain at most 3 non-zero
+    # |x x|
+    # |0 x|
+    if conn == 4:
+        return np.all(conn_img<=3)
+    # For eight way connectivity, any group of 2x2 square pixels can contain at most 2 non-zero
+    # |x x|  or  |x 0|
+    # |0 0|      |0 x|
+    elif conn == 8:
+        return np.all(conn_img <=2)
+    else:
+        raise ValueError(f"Invalid connectivity: {conn}. Must be 4 or 8")

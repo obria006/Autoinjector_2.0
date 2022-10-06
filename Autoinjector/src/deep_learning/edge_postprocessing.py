@@ -2,6 +2,7 @@
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
+from skimage.morphology import skeletonize
 from src.deep_learning.edge_utils.error_utils import EdgeNotFoundError
 from src.miscellaneous.validify import val_binary_image
 
@@ -66,28 +67,10 @@ def reachable_edges(edge_mask:np.ndarray, tiss_mask:np.ndarray, pip_orient_RH:fl
     # Resize to original
     reachable = cv2.resize(edge_mask_rsz.astype(np.uint8),edge_mask.shape,interpolation=cv2.INTER_LINEAR)
     reachable = np.logical_and(reachable, edge_mask)
-    # Evaluate connectivity (aka that edge is single pixel width so each True pixel
-    # has at most 3 instances of 8-point connectivity)
-    if not is_single_pixel_width(reachable):
-        raise ValueError("Edge mask is not single pixel width")
+    # Skeletonize the edge to ensure it is a single pixel width edge with
+    # 8-way connectivity
+    reachable=skeletonize(reachable)
     return reachable
-    
-def is_single_pixel_width(mask:np.ndarray)->bool:
-    """
-    Return true if mask only contains edges of single pixel width
-
-    Args:
-        mask (np.ndarray): 0-1 binary mask
-    
-    Returns:
-        np.ndarray w/ number of connectivity pixels at each location
-    """
-    # Validate
-    val_binary_image(mask)
-    # Convolve kernel
-    kernel = np.ones((2,2))
-    conn_img = cv2.filter2D(mask.astype(np.int16), ddepth=-1, kernel=kernel, borderType=cv2.BORDER_CONSTANT)
-    return np.all(conn_img<4)
 
 def edge_angle_thresholding(edge_mask:np.ndarray, min_ang_deg:float = 20)->np.ndarray:
     """

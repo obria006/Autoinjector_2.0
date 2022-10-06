@@ -2,6 +2,7 @@
 import numpy as np
 import cv2
 from src.deep_learning.edge_utils.error_utils import EdgeNotFoundError
+from src.deep_learning.edge_utils.img_utils import is_single_pixel_width
 
 def inv_dictionary(dict_: dict) -> dict:
     """
@@ -23,10 +24,10 @@ def sort_path_along_binary_trajectory(img:np.ndarray)->list:
     Sorts points in binary image with a single pixel width path (value == 1), so
     that the sorted points could be traced consecutively.
 
-    Starts by finding the extremum point of path (a pixel with a single 4-way connection).
+    !! IMPORTANT: MUST HAVE EDGES OF ONLY SINGLE PIXEL WIDTH WITH 8-WAY CONNECTIVITY !!
+
+    Starts by finding the extremum point of path (a pixel with a single 8-way connection).
     Then trace coordinates from extremum point to nearest neighbors to construct the path.
-    All pixels should have 4-way connectivity so the nearest neighbor (ignoring the traced
-    path) is the pixel w/ 4-way connectivity to the pixel of interest
 
     Args:
         img (np.ndarray): Binary image w/ single pixel width path to be sorted (path value == 1)
@@ -37,6 +38,8 @@ def sort_path_along_binary_trajectory(img:np.ndarray)->list:
     # Validate image is a binary image
     if not isinstance(img, np.ndarray):
         raise TypeError("img must be numpy array")
+    if not is_single_pixel_width(img, conn=8):
+        raise ValueError(f"Image must have single pixel width edge with strictly 8-way connectivity")
     for ele in np.unique(img):
         if ele not in [0,1]:
             raise ValueError(f"img must be binary valued on 0-1")
@@ -54,7 +57,7 @@ def sort_path_along_binary_trajectory(img:np.ndarray)->list:
     for p in pnts:
         x = p[1]
         y = p[0]
-        neighbors = get_neighbors_4way(img, x, y)
+        neighbors = get_neighbors_8way(img, x, y)
         # An extremum point has only 1 neighbor
         if len(neighbors) == 1:
             ex = [y, x]
@@ -65,7 +68,7 @@ def sort_path_along_binary_trajectory(img:np.ndarray)->list:
     if extremum_found is False:
         x = pnts[0][1]
         y = pnts[0][0]
-        neighbors = get_neighbors_4way(img, x, y)
+        neighbors = get_neighbors_8way(img, x, y)
         # compute distance between current pixel and its neighbors
         norms = [np.linalg.norm(np.array([y,x]) - np.array([ele[0],ele[1]])) for ele in neighbors]
         try:

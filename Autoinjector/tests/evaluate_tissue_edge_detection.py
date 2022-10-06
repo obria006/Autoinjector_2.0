@@ -12,6 +12,7 @@ from src.deep_learning.edge_utils.error_utils import EdgeNotFoundError
 
 ckpt_path = "Autoinjector/src/deep_learning/weights/20220824_180000_Colab_gpu/best.pth"
 img_dir = "T:/Autoinjector/tissue_images/mouse/tissue_seg/jpeg/images"
+# img_dir = "T:/Autoinjector/data/machine_learning/tissue_segmentation/uncropped/train/images"
 out_dir = "C:/Users/Public/Documents/envs/Autoinjector_2/Autoinjector/results/edge_classification"
 
 # make results directory
@@ -21,13 +22,19 @@ if not os.path.isdir(out_dir):
 # instantate tissue detector
 MTC = ModelTissueDetection(ckpt_path)
 
-img_paths= glob.glob(f"{img_dir}/*.jpg")
+img_types = ("*.jpg", "*.tif")
+img_paths = []
+for img_type in img_types:
+    img_paths.extend(glob.glob(f"{img_dir}/{img_type}"))
+if len(img_paths) > 10:
+    random.seed(10)
+    img_paths = random.sample(img_paths,10)
 for img_path in img_paths:
     img = np.array(Image.open(img_path))
-    for edge_type in ['apical', 'basal']:
+    for edge_type in ['reachable']:
         try:
             t0 = time.time()
-            res = MTC.detect(img,edge_type)
+            res = MTC.detect(img)
             t1 = time.time()
             edge_coords = MTC.longest_reachable_edge_of_type(res, edge_type, -178.5)
             print(f"Total: {round(time.time()-t0,4)}\tDetection: {round(t1-t0,4)}\tProcessing: {round(time.time()-t1,4)}")
@@ -73,9 +80,9 @@ for img_path in img_paths:
                         color = [255,255,255],
                         thickness = 5
                     )
-            # plt.imshow(rgb)
-            # plt.show()
-            im = Image.fromarray(rgb)
-            out_path = img_path.replace(img_dir,out_dir)
-            out_path = out_path.replace(".jpg",f"_{edge_type}.jpg")
-            im.save(out_path)
+            plt.imshow(rgb)
+            plt.show()
+            # im = Image.fromarray(rgb)
+            # out_path = img_path.replace(img_dir,out_dir)
+            # out_path = out_path.replace(".jpg",f"_{edge_type}.jpg")
+            # im.save(out_path)

@@ -558,8 +558,8 @@ class ControlWindow(QMainWindow):
     def stateify_annotation_widgets(self):
         self.annotation_combo_box.insertItems(0,['Manual','Automatic'])
         self.annotation_combo_box.setCurrentText('Automatic')
-        self.edge_type_combo_box.insertItems(0,['Apical','Basal'])
-        self.edge_type_combo_box.setCurrentText('Apical')
+        self.edge_type_combo_box.insertItems(0,['Apical','Basal','Reachable'])
+        self.edge_type_combo_box.setCurrentText('Reachable')
 
     """
     Initialize video display modification widgets -------------------------------------------------
@@ -1509,7 +1509,7 @@ class ControlWindow(QMainWindow):
             list of tissue edge coordinates as [[x, y, z], ...] 
         """
         # Make detection of tissue edge
-        detection_dict = self.tissue_model.detect(image, edge_type)
+        detection_dict = self.tissue_model.detect(image)
         # Extract detection data
         df = detection_dict['detection_data']
         edge_cc = detection_dict['edge_image']

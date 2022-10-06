@@ -1,5 +1,6 @@
 """ General utility functions used in edge classification """
 import numpy as np
+import cv2
 from src.deep_learning.edge_utils.error_utils import EdgeNotFoundError
 
 def inv_dictionary(dict_: dict) -> dict:
@@ -39,6 +40,10 @@ def sort_path_along_binary_trajectory(img:np.ndarray)->list:
     for ele in np.unique(img):
         if ele not in [0,1]:
             raise ValueError(f"img must be binary valued on 0-1")
+    # Evaluate number of edges. Should have 2 components 0 is bg and 1 is edge
+    n_labels, _ = cv2.connectedComponents(img.astype(np.uint8))
+    if n_labels - 1 != 1:
+        raise ValueError(f'Invalid number of edges to sort for trajectory: {n_labels -1}. Must have 1 edge to sort.')
     
     # get list of mask points
     pnts = np.transpose(np.where(img == 1))

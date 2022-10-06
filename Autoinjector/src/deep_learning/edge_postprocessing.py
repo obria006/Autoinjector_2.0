@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from src.deep_learning.edge_utils.error_utils import EdgeNotFoundError
 from src.miscellaneous.validify import val_binary_image
 
-def reachable_edges(edge_mask:np.ndarray, tiss_mask:np.ndarray, pip_orient_RH:float, edge_type:str, ang_thresh:float=20, bound_perc:float=0.1)-> np.ndarray:
+def reachable_edges(edge_mask:np.ndarray, tiss_mask:np.ndarray, pip_orient_RH:float, ang_thresh:float=20, bound_perc:float=0.1)-> np.ndarray:
     """
     Extract the reachable edges from the edge mask. Reachable meaning that
     the edges make a desired angle w/ the pipette (like 90 deg), don't 
@@ -21,7 +21,6 @@ def reachable_edges(edge_mask:np.ndarray, tiss_mask:np.ndarray, pip_orient_RH:fl
         pip_orient_RH (float): Orientation of pipette x-axis (projecting out and
             away from pipette tip) in degrees relative to RH coordinate system (positve is
             CCW from pointing to the right)
-        edge_type (str): name of edge to be detected
         ang_thresh (float): Mininum appropriate angle between the pipette and the
             edges in degrees. Edges below the angle will be removed
         bound_perc (np.ndarray): Perecentage of width/height to set to 0
@@ -39,6 +38,7 @@ def reachable_edges(edge_mask:np.ndarray, tiss_mask:np.ndarray, pip_orient_RH:fl
     tiss_mask = np.copy(tiss_mask).astype(np.uint8)
     # Resize to 128
     SQ_DIM = 128
+    # Add 1 to kszise so that now gaps in edges when downsized 
     ksz = (int(edge_mask.shape[0]/SQ_DIM)+1, int(edge_mask.shape[1]/SQ_DIM)+1)
     kern = cv2.getStructuringElement(shape=cv2.MORPH_RECT, ksize=ksz)
     dil = cv2.dilate(edge_mask, kern)
@@ -58,7 +58,7 @@ def reachable_edges(edge_mask:np.ndarray, tiss_mask:np.ndarray, pip_orient_RH:fl
     edge_mask_rsz = zeroify_boundaries(edge_mask_rsz, perc=bound_perc)
     # Get the longest contigous edge
     if len(np.unique(edge_mask_rsz)) == 1:
-        raise EdgeNotFoundError(f"Could not find 'reachable' {edge_type} edge given the orientation between the tissue and pipette.")
+        raise EdgeNotFoundError(f"Could not find the desired edge type given the orientation between the tissue and pipette.")
     edge_mask_rsz = largest_connected_component(edge_mask_rsz)
     # Dialate the smaller image so when intersect upsized version and orignal edge, there will definintly be an intersection
     kern = cv2.getStructuringElement(shape=cv2.MORPH_RECT, ksize=(3,3))
@@ -243,6 +243,7 @@ def largest_connected_component(mask:np.ndarray)->np.ndarray:
     max_area = max(mask_areas)
     mask_size = {area: label for label, area in enumerate(mask_areas, start=1)}
     longest = mask_cc == mask_size[max_area]
+    longest = longest.astype(mask.dtype)
     return longest
 
 def rotate_image(image:np.ndarray, angle:float, bound:bool = True):

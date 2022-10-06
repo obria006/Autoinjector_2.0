@@ -8,7 +8,7 @@ from matplotlib import pyplot as plt
 from PyQt6.QtCore import QObject
 from src.deep_learning.edge_utils.error_utils import EdgeNotFoundError
 from src.miscellaneous.standard_logger import StandardLogger
-from src.deep_learning.edge_postprocessing import reachable_edges
+from src.deep_learning.edge_postprocessing import reachable_edges, largest_connected_component
 from src.deep_learning.edge_utils.general import sort_path_along_binary_trajectory
 from src.deep_learning.predict import Predicter
 from src.deep_learning.inference import TissueEdgeClassifier, SegmenterWrapper
@@ -28,13 +28,12 @@ class ModelTissueDetection():
         segmenter = SegmenterWrapper(Predicter.from_ckpt(model_ckpt), in_size=(128, 128))
         self._classifier = TissueEdgeClassifier(segmenter)
 
-    def detect(self, image:np.ndarray, edge_type:str)->dict:
+    def detect(self, image:np.ndarray)->dict:
         """
         Perform tissue detection and edge classification
 
         Args:
             image (np.ndarray): Image to detect tissue/edges
-            edge_type (str): Type of edge to detect like 'apical' or 'basal'
 
         Returns:
             dictionary of:
@@ -71,13 +70,15 @@ class ModelTissueDetection():
             err: Error raised during post-processing (or None)
         """
         # Get edge mask
-        edge_mask = self._edge_mask_of_type(detection_dict, edge_type)
+        if edge_type.lower() == 'reachable':
+            edge_mask = detection_dict['edge_image']>0
+        else:
+            edge_mask = self._edge_mask_of_type(detection_dict, edge_type)
         # Only return reachable edges
         mask_cc = detection_dict['segmentation_image']
         edge_mask = reachable_edges(edge_mask=edge_mask,
                                     tiss_mask=mask_cc>0,
                                     pip_orient_RH=pip_orient_RH,
-                                    edge_type=edge_type,
                                     ang_thresh=20,
                                     bound_perc=0.1)
         # Get coordinates of edge from connected component edge image
@@ -103,7 +104,11 @@ class ModelTissueDetection():
             err: Error raised during post-processing (or None)
         """
         # Get edge mask
-        edge_mask = self._edge_mask_of_type(detection_dict, edge_type)
+        if edge_type.lower() == 'reachable':
+            edge_mask = detection_dict['edge_image']>0
+        else:
+            edge_mask = self._edge_mask_of_type(detection_dict, edge_type)
+        edge_mask = largest_connected_component(edge_mask)
         # Get coordinates of edge from connected component edge image
         edge_coords = np.asarray(sort_path_along_binary_trajectory(edge_mask))
         # Convert from [rows (y), columns (x)] to [x, y] array
@@ -151,7 +156,7 @@ if __name__ == "__main__":
     from PIL import Image
     real_img = np.array(Image.open(img_path))
     MTC = ModelTissueDetection(ckpt_path)
-    results = MTC.detect(real_img, 'apical')
+    results = MTC.detect(real_img)
     # path to image
     # path to model
     # instantiate tissue detector

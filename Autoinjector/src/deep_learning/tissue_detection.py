@@ -8,8 +8,8 @@ from matplotlib import pyplot as plt
 from PyQt6.QtCore import QObject
 from src.deep_learning.edge_utils.error_utils import EdgeNotFoundError
 from src.miscellaneous.standard_logger import StandardLogger
-from src.deep_learning.edge_postprocessing import reachable_edges, largest_connected_component
-from src.deep_learning.edge_utils.general import sort_path_along_binary_trajectory
+from src.deep_learning.edge_postprocessing import postprocess_edges
+from src.deep_learning.edge_utils.general import sort_paths_along_binary_trajectory
 from src.deep_learning.predict import Predicter
 from src.deep_learning.inference import TissueEdgeClassifier, SegmenterWrapper
 
@@ -50,7 +50,7 @@ class ModelTissueDetection():
             'edge_image': edge_cc}
         return detection_dict
     
-    def longest_reachable_edge_of_type(self, detection_dict:dict, edge_type:str, pip_orient_RH:float=None):
+    def get_edges_of_type(self, detection_dict:dict, edge_type:str, is_reachable:bool=False, pip_orient_RH:float=None):
         """
         Post-process the detected edge and return the longest edge of a specific
         type (like 'apical' or 'basal') that can be reached by the pipette
@@ -61,6 +61,8 @@ class ModelTissueDetection():
                 'segmentation_image': np.ndarray,
                 'edge_image': np.ndarray}
             edge_type (str): type of edge to return (like 'apical' or 'basal')
+            is_reachable (bool): Whether to assess for reachablity by using calibrated pipette
+            angle and tissue to determine what edges can be injected.
             pip_orient_RH (float): Orientation of pipette x-axis (projecting out and
             away from pipette tip) in degrees relative to RH coordinate system (positve is
             CCW from pointing to the right)
@@ -69,6 +71,8 @@ class ModelTissueDetection():
             edge_coords (np.ndarray): numpy array of pixel coordinates as [[x,y],...] (or None)
             err: Error raised during post-processing (or None)
         """
+        if is_reachable is True and pip_orient_RH is None:
+            raise ValueError('If requesting reachable edges, must pass pipette orientation argument.')
         # Get edge mask
         if edge_type.lower() == 'reachable':
             edge_mask = detection_dict['edge_image']>0
@@ -76,45 +80,20 @@ class ModelTissueDetection():
             edge_mask = self._edge_mask_of_type(detection_dict, edge_type)
         # Only return reachable edges
         mask_cc = detection_dict['segmentation_image']
-        edge_mask = reachable_edges(edge_mask=edge_mask,
-                                    tiss_mask=mask_cc>0,
-                                    pip_orient_RH=pip_orient_RH,
-                                    ang_thresh=20,
-                                    bound_perc=0.1)
-        # Get coordinates of edge from connected component edge image
-        edge_coords = np.asarray(sort_path_along_binary_trajectory(edge_mask))
-        # Convert from [rows (y), columns (x)] to [x, y] array
-        edge_coords[:,[0,1]] = edge_coords[:,[1,0]]
-        return edge_coords
-
-    def longest_edge_of_type(self, detection_dict:dict, edge_type:str):
-        """
-        Post-process the detected edge and return the longest edge of a specific
-        type (like 'apical' or 'basal')
-
-        Args:
-            detection_dict (dict): Dictionary output from `detect` as:
-                {'detection_data': pd.DataFrame,
-                'segmentation_image': np.ndarray,
-                'edge_image': np.ndarray}
-            edge_type (str): type of edge to return (like 'apical' or 'basal')
-
-        Returns:
-            edge_coords (np.ndarray): numpy array of pixel coordinates as [[x,y],...] (or None)
-            err: Error raised during post-processing (or None)
-        """
-        # Get edge mask
-        if edge_type.lower() == 'reachable':
-            edge_mask = detection_dict['edge_image']>0
+        if is_reachable is True:
+            edge_mask = postprocess_edges(edge_mask=edge_mask,
+                                        bound_perc=0.1,
+                                        is_reachable=is_reachable,
+                                        tiss_mask=mask_cc>0,
+                                        pip_orient_RH=pip_orient_RH,
+                                        ang_thresh=20,
+                                        )
         else:
-            edge_mask = self._edge_mask_of_type(detection_dict, edge_type)
-        edge_mask = largest_connected_component(edge_mask)
-        # Get coordinates of edge from connected component edge image
-        edge_coords = np.asarray(sort_path_along_binary_trajectory(edge_mask))
-        # Convert from [rows (y), columns (x)] to [x, y] array
-        edge_coords[:,[0,1]] = edge_coords[:,[1,0]]
-        return edge_coords
-
+            edge_mask = postprocess_edges(edge_mask=edge_mask,
+                                    bound_perc=0.1,
+                                    is_reachable=is_reachable)
+        edges = sort_paths_along_binary_trajectory(edge_mask)
+        return edges
     def _edge_mask_of_type(self, detection_dict:dict, edge_type:str):
         """
         Return binary mask of the longest edge of specific type.

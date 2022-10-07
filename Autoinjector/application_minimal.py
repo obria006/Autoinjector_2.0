@@ -1529,14 +1529,16 @@ class ControlWindow(QMainWindow):
             # right hand coordinate system, negate the angle of the pipette rotation to
             # compute the angel of the pipette realtive to a RH coordinate system
             ang_RH = -self.pip_cal.model.compute_pipette_rotation_deg()
-            edge_pixels = self.tissue_model.longest_reachable_edge_of_type(detection_dict=detection_dict, edge_type=edge_type, pip_orient_RH=ang_RH)
+            edge_pixels = self.tissue_model.get_edges_of_type(detection_dict=detection_dict, edge_type=edge_type, is_reachable=True, pip_orient_RH=ang_RH)
         else:
-            edge_pixels = self.tissue_model.longest_edge_of_type(detection_dict=detection_dict, edge_type=edge_type)
-        # Add annotation as 3d list of [[x1, y1, z], [x2, y2, z],...]
-        if z_scope is None:
-            z_scope = self.zen_controller.get_focus_um()
-        annotated_3d_edge = [[ele for ele in coord] + [z_scope] for coord in edge_pixels]
-        return annotated_3d_edge
+            edge_pixels = self.tissue_model.get_edges_of_type(detection_dict=detection_dict, edge_type=edge_type)
+        annotated_3d_edges = []
+        for edge in edge_pixels:
+            # Add annotation as 3d list of [[x1, y1, z], [x2, y2, z],...]
+            if z_scope is None:
+                z_scope = self.zen_controller.get_focus_um()
+            annotated_3d_edges.append([[ele for ele in coord] + [z_scope] for coord in edge])
+        return annotated_3d_edges
 
     def single_automatic_annotation(self):
         """
@@ -1558,7 +1560,7 @@ class ControlWindow(QMainWindow):
         # image = np.copy(self.vid_display.test_img)
         try:
             # Make detection of tissue edge
-            annotated_3d_edge = self.automatic_tissue_annotation(image=image, edge_type=edge_type, z_scope=None)
+            annotated_3d_edges = self.automatic_tissue_annotation(image=image, edge_type=edge_type, z_scope=None)
         except EdgeNotFoundError as e:
             # ONly show error boxes when not zstack. During zstack pass errors to log.
             msg = f"{e}\n\nManually annotate the edge."
@@ -1569,7 +1571,7 @@ class ControlWindow(QMainWindow):
         else:
             # Add the detected edge coordiantes to the list of targets to be injected
             # (which will emit a signal to set a new injection trajectory)
-            self.annot_mgr.add_annotation(annotated_3d_edge)
+            self.annot_mgr.add_annotations(annotated_3d_edges)
 
     def zstack_automatic_annotation(self)->Tuple[np.ndarray, Union[list[list[float,float,float]],None]]:
         """
@@ -1816,10 +1818,10 @@ class ControlWindow(QMainWindow):
         Performs automatic tissue annotation on current video frame, and sends
         the image and annotation to the z-stack
         """
-        image, annotation = self.zstack_automatic_annotation()
-        if annotation is not None:
-            self.annot_mgr.add_annotation(annotation)
-        self.zstack.set_stack_data(image=image, annotation=annotation)
+        image, annotations = self.zstack_automatic_annotation()
+        if annotations is not None:
+            self.annot_mgr.add_annotations(annotations)
+        self.zstack.set_stack_data(image=image, annotation=annotations)
 
     def process_zstack_data(self, zstack_data:ZStackDataWithAnnotations):
         """
@@ -1843,9 +1845,9 @@ class ControlWindow(QMainWindow):
             zstack_data (dataclass): Dataclass from z-stack
         """
         annot_counter = 0
-        for annotation in zstack_data.get_annotations():
-            if annotation is not None:
-                # self.annot_mgr.add_annotation(annotation)
+        for annotations in zstack_data.get_annotations():
+            if annotations is not None:
+                # self.annot_mgr.add_annotations(annotations)
                 annot_counter += 1
         self.zstack_status.setText(f"{annot_counter} of {len(zstack_data.annotations)} annotated")
 

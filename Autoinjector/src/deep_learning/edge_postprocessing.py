@@ -6,37 +6,55 @@ from skimage.morphology import skeletonize
 from src.deep_learning.edge_utils.error_utils import EdgeNotFoundError
 from src.miscellaneous.validify import val_binary_image
 
-def reachable_edges(edge_mask:np.ndarray, tiss_mask:np.ndarray, pip_orient_RH:float, ang_thresh:float=20, bound_perc:float=0.1)-> np.ndarray:
+def postprocess_edges(
+        edge_mask:np.ndarray,
+        bound_perc:float,
+        is_reachable:bool,
+        tiss_mask:np.ndarray=None,
+        pip_orient_RH:float=None,
+        ang_thresh:float=None,
+    )-> np.ndarray:
     """
-    Extract the reachable edges from the edge mask. Reachable meaning that
-    the edges make a desired angle w/ the pipette (like 90 deg), don't 
-    extend to the edges of the FOV, and are not obsucured by tissue (aka
-    doesn't try to inject an edge behind a wall of tissue).
+    Extracts the "desireable" or "reachable" edges from the edge mask.
+
+    !! If `is_reachable` is true, must pass values for all arguments !!
+    
+    "Desireable" meaning that the edges are are sizeable and don't extend
+    to the edges of the FOV. "Reachable" satisfies what was already mentioned
+    but also means that the edges make a desired angle w/ the pipette (like
+    90 deg) and that the edges are not obscured by the tissue (so that the
+    pipette doesnt' try to inject and edge behind a wall of tissue).
+
 
     Downsizes masks to 128x128 to speed up processing, then resizes up 
     to original size upon return.
 
     Args:
         edge_mask (np.ndarray): 0-1 binary edge mask
+        bound_perc (np.ndarray): Perecentage of image width/height to set to 0 (to
+            trim edges that extend to edge of FOV)
+        is_reachable (bool): Whether to assess for reachablity by using calibrated pipette
+            angle and tissue to determine what edges can be injected.
         tiss_mask (np.ndarray): 0-1 binary tissue mask
         pip_orient_RH (float): Orientation of pipette x-axis (projecting out and
             away from pipette tip) in degrees relative to RH coordinate system (positve is
             CCW from pointing to the right)
         ang_thresh (float): Mininum appropriate angle between the pipette and the
             edges in degrees. Edges below the angle will be removed
-        bound_perc (np.ndarray): Perecentage of width/height to set to 0
 
     Returns:
         (np.ndarray) 0-1 binary mask of reachable edges
     """
-    # Validate masks
+    # Validate
     val_binary_image(edge_mask)
-    val_binary_image(tiss_mask)
-    if edge_mask.shape != tiss_mask.shape:
-        raise ValueError(f"Mask shapes must match. Edge mask shape ({edge_mask.shape}) different than tissue mask shape ({tiss_mask.shape}).")
+    if is_reachable is True:
+        val_binary_image(tiss_mask)
+        if tiss_mask is None or pip_orient_RH is None or ang_thresh is None:
+            raise ValueError('When assessing `is_reachable` edges, all arguments must not be None')
+        if edge_mask.shape != tiss_mask.shape:
+            raise ValueError(f"Mask shapes must match. Edge mask shape ({edge_mask.shape}) different than tissue mask shape ({tiss_mask.shape}).")
     # Copy arrays not to modify arguments
     edge_mask = np.copy(edge_mask).astype(np.uint8)
-    tiss_mask = np.copy(tiss_mask).astype(np.uint8)
     # Resize to 128
     SQ_DIM = 128
     # Add 1 to kszise so that now gaps in edges when downsized 
@@ -44,23 +62,29 @@ def reachable_edges(edge_mask:np.ndarray, tiss_mask:np.ndarray, pip_orient_RH:fl
     kern = cv2.getStructuringElement(shape=cv2.MORPH_RECT, ksize=ksz)
     dil = cv2.dilate(edge_mask, kern)
     edge_mask_rsz = cv2.resize(dil, (SQ_DIM, SQ_DIM), interpolation=cv2.INTER_AREA)
-    tiss_mask_rsz = cv2.resize(tiss_mask, (SQ_DIM, SQ_DIM), interpolation=cv2.INTER_AREA)
-    # Rotate image as if the pipette was at the right side of the screen point left
-    rot_ang = 180-pip_orient_RH
-    edge_mask_rsz_rot, inv = rotate_image(edge_mask_rsz, rot_ang)
-    tiss_mask_rsz_rot, inv = rotate_image(tiss_mask_rsz, rot_ang)
-    # Threshold to edge that makes angles with pipette
-    edge_mask_rsz_rot = edge_angle_thresholding(edge_mask_rsz_rot, min_ang_deg = ang_thresh)
-    # Get only edges that are not obscurred by tissue or mask
-    edge_mask_rsz_rot = unobscurred_rightmost_edges(edge_mask_rsz_rot, tiss_mask_rsz_rot)
-    # Rotate back to the original orientaion
-    edge_mask_rsz = invert_rotation(edge_mask_rsz_rot, inv, SQ_DIM, SQ_DIM)
+    if is_reachable is True:
+        tiss_mask = np.copy(tiss_mask).astype(np.uint8)
+        tiss_mask_rsz = cv2.resize(tiss_mask, (SQ_DIM, SQ_DIM), interpolation=cv2.INTER_AREA)
+        # Rotate image as if the pipette was at the right side of the screen point left
+        rot_ang = 180-pip_orient_RH
+        edge_mask_rsz_rot, inv = rotate_image(edge_mask_rsz, rot_ang)
+        tiss_mask_rsz_rot, inv = rotate_image(tiss_mask_rsz, rot_ang)
+        # Threshold to edge that makes angles with pipette
+        edge_mask_rsz_rot = edge_angle_thresholding(edge_mask_rsz_rot, min_ang_deg = ang_thresh)
+        # Get only edges that are not obscurred by tissue or mask
+        edge_mask_rsz_rot = unobscurred_rightmost_edges(edge_mask_rsz_rot, tiss_mask_rsz_rot)
+        # Rotate back to the original orientaion
+        edge_mask_rsz = invert_rotation(edge_mask_rsz_rot, inv, SQ_DIM, SQ_DIM)
     # Elminate edges near image boundary
     edge_mask_rsz = zeroify_boundaries(edge_mask_rsz, perc=bound_perc)
-    # Get the longest contigous edge
+    # Get the the sizeable edges
+    edge_mask_rsz = size_threshold_connected_components(skeletonize(edge_mask_rsz), 15)
+    # throw error if no edges exist afte rpost processing
     if len(np.unique(edge_mask_rsz)) == 1:
-        raise EdgeNotFoundError(f"Could not find the desired edge type given the orientation between the tissue and pipette.")
-    edge_mask_rsz = largest_connected_component(edge_mask_rsz)
+        if is_reachable is True:
+            raise EdgeNotFoundError(f"Could not find sizeable edges of the desired edge type given the orientation between the tissue and pipette.")
+        else:
+            raise EdgeNotFoundError(f"Could not find sizeable edges of the desired edge type.")
     # Dialate the smaller image so when intersect upsized version and orignal edge, there will definintly be an intersection
     kern = cv2.getStructuringElement(shape=cv2.MORPH_RECT, ksize=(3,3))
     edge_mask_rsz = cv2.dilate(edge_mask_rsz.astype(np.uint8), kern)
@@ -228,6 +252,30 @@ def largest_connected_component(mask:np.ndarray)->np.ndarray:
     longest = mask_cc == mask_size[max_area]
     longest = longest.astype(mask.dtype)
     return longest
+
+def size_threshold_connected_components(mask:np.ndarray, thresh_size:int, inv:bool=False)->np.ndarray:
+    """
+    Return connected components larger than the size threshold (or smaller if
+    `inv` is True).
+
+    Args:
+        mask (np.ndarray): Binary image to assess
+        thresh_size (int): Pixel size to threshold at.
+        inv (bool): Whether to return smaller. If true, returns compponents smaller
+        than thresh.
+
+    Returns:
+        np.ndarray binary 0-1 like mask w/ components meeting threshold
+    """
+    num_labels, mask_cc, mask_stats, _ = cv2.connectedComponentsWithStats(mask.astype(np.uint8))
+    # Get areas of labels while ignoring the first component 0 which is the backgorund
+    mask_areas = list(mask_stats[1:, cv2.CC_STAT_AREA])
+    # Iterate throught the mask areas with enumeration starting at 1 to disregard background (label=0)
+    ret_mask = np.zeros_like(mask)
+    for label, area in enumerate(mask_areas, start=1):
+        if area>thresh_size:
+            ret_mask = ret_mask | (mask_cc == label)
+    return ret_mask
 
 def rotate_image(image:np.ndarray, angle:float, bound:bool = True):
     '''

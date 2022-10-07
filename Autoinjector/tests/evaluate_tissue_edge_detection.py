@@ -12,8 +12,8 @@ from src.deep_learning.tissue_detection import ModelTissueDetection
 from src.deep_learning.edge_utils.error_utils import EdgeNotFoundError
 
 ckpt_path = "Autoinjector/src/deep_learning/weights/20220824_180000_Colab_gpu/best.pth"
-img_dir = "T:/Autoinjector/tissue_images/mouse/tissue_seg/jpeg/images"
-# img_dir = "T:/Autoinjector/data/machine_learning/tissue_segmentation/uncropped/train/images"
+# img_dir = "T:/Autoinjector/tissue_images/mouse/tissue_seg/jpeg/images"
+img_dir = "T:/Autoinjector/data/machine_learning/tissue_segmentation/uncropped/train/images"
 out_dir = "C:/Users/Public/Documents/envs/Autoinjector_2/Autoinjector/results/edge_classification"
 
 # make results directory
@@ -39,7 +39,7 @@ for img_path in img_paths:
             res = MTC.detect(img)
             t1 = time.time()
             proc.append(t1- t0)
-            edge_coords = MTC.longest_reachable_edge_of_type(res, edge_type, -178.5)
+            edge_coords = MTC.get_edges_of_type(res, edge_type, is_reachable=True, pip_orient_RH=-178.5)
             print(f"Total: {round(time.time()-t0,4)}\tDetection: {round(t1-t0,4)}\tProcessing: {round(time.time()-t1,4)}")
         except EdgeNotFoundError as e:
             print(f"Image: {img_path}")
@@ -69,20 +69,21 @@ for img_path in img_paths:
             rgb = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
             rgb = utils.alpha_compost_A_over_B(seg_rgb, rgb, 0.25)
             if edge_coords is not None:
-                rgb = cv2.polylines(
-                        img = rgb,
-                        pts = [edge_coords],
-                        isClosed = False,
-                        color = [0,0,0],
-                        thickness = 9
-                    )
-                rgb = cv2.polylines(
-                        img = rgb,
-                        pts = [edge_coords],
-                        isClosed = False,
-                        color = [255,255,255],
-                        thickness = 5
-                    )
+                for edge in edge_coords:
+                    rgb = cv2.polylines(
+                            img = rgb,
+                            pts = [np.asarray(edge)],
+                            isClosed = False,
+                            color = [0,0,0],
+                            thickness = 9
+                        )
+                    rgb = cv2.polylines(
+                            img = rgb,
+                            pts = [np.asarray(edge)],
+                            isClosed = False,
+                            color = [255,255,255],
+                            thickness = 5
+                        )
             plt.imshow(rgb)
             plt.show()
             # im = Image.fromarray(rgb)

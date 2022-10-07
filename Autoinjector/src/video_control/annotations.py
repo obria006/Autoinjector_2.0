@@ -27,7 +27,7 @@ class AnnotationManager(QObject):
 
     def add_annotation(self, annot:list):
         """
-        Add annotation to annotation annotation dict
+        Add annotation to annotation dict
 
         Args:
             annot (list): Ordered list of annotation as [[x1,y1,z1],[x2,y2,z2],...]
@@ -42,6 +42,26 @@ class AnnotationManager(QObject):
         self.annotation_dict['interpolated'].append(inter_annot)
         self.new_annotation.emit()
         self.annotation_changed.emit(self.annotation_dict['interpolated'])
+
+    def add_annotations(self, annots:list):
+        """
+        Adds multiple annotations to annotation dict
+
+        Args:
+            annots (list): Ordered list of annotations as
+                [
+                    [[x11, y11, z11], [x12, y12, z12],...],
+                    [[x21, y21, z21], [x22, y22, z22],...],
+                    ...,
+                ]
+        """
+        if not isinstance(annots, list):
+            raise TypeError(f"Invalid annotations. Annotations must be a nested list of annotations.")
+        for annot in annots:
+            if not isinstance(annot, Iterable):
+                raise TypeError(f"Invalid annotation. Each annotation must be an iterable of annotation coordinates.")
+        for annot in annots:
+            self.add_annotation(annot)
 
     def get_annotations(self, type_:str, coords:str)->list:
         """

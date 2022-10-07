@@ -2108,8 +2108,8 @@ class ControlWindow(QMainWindow):
         """ Reactivates widgets that may have been disabled during injection """
         self.run_button.setEnabled(True)
         self.pip_cal_group.setEnabled(True)
-        # self.default_annotation_group.setEnabled(True)
-        self.full_zen_app.zen_group.setEnabled(True)
+        self.default_annotation_group.setEnabled(True)
+        # self.full_zen_app.zen_group.setEnabled(True)
         self.full_zen_app.foc_disp.setEnabled(True)
         self.full_zen_app.foc_inc.setEnabled(True)
         self.full_zen_app.btn_minus.setEnabled(True)

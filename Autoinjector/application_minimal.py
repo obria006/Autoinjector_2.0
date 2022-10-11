@@ -1762,7 +1762,17 @@ class ControlWindow(QMainWindow):
             return
         try:
             self.interpolated_pixels = []
-            for edge in annotation:
+            # If the subsequent annotation end point is closer to the preceding annotation end point
+            # then reverse the direction of tha injection path to speed up injections.
+            for ind, edge in enumerate(annotation):
+                if ind > 0:
+                    prev_annot = annotation[ind-1]
+                    cur_annot = annotation[ind]
+                    back_to_back_dist = np.linalg.norm(np.asarray(prev_annot[-1]) - np.asarray(cur_annot[-1]))
+                    back_to_front_dist = np.linalg.norm(np.asarray(prev_annot[-1]) - np.asarray(cur_annot[0]))
+                    if back_to_back_dist < back_to_front_dist:
+                        edge = list(edge)
+                        edge.reverse()
                 self.interpolated_pixels.append(edge)
             self._annotation_complete.emit(True)
         except Exception as e:

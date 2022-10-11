@@ -142,6 +142,10 @@ class Calibrator():
         x_0 = cal_dict['x_0']
         self.model.set_model(T_mxyzd_to_mxyz=T_mxyzd_to_mxyz, T_mxyz_to_exxyz=T_mxyz_to_exxyz, x_0=x_0)
 
+    def is_calibrated(self):
+        """ Returns true if model is currently calibrtated """
+        return self.model._is_calibrated
+
 class ModelStorage():
     ''' Handles storing models for calibrator '''
 
@@ -625,7 +629,7 @@ class CalibrationModel():
         T_mxyzd_to_mxyz (np.ndarray): delta 4-axis man. pos. to delta 3-axis man. pos. matrix
         T_mxyz_to_exxyz (np.ndarray): delta 3-axis man. pos. to delta 3-axis ext. pos matrix
         x_0 (np.ndarray): Reference state matrix
-        is_calibrated (bool): Inidicator for whehter or not calibrtion exists
+        _is_calibrated (bool): Inidicator for whehter or not calibrtion exists
 
     The model assumes a simple linear model for the system. Where the systems position (X) at some
     instance is its intial position plus the change in position. Formally: 
@@ -683,7 +687,7 @@ class CalibrationModel():
 
     def reset_calibration(self):
         '''
-        Resests the calibration attributes (A, B, C, D, x_0) to None and is_calibrated to False
+        Resests the calibration attributes (A, B, C, D, x_0) to None and _is_calibrated to False
         '''
         self.A = None
         self.B = None
@@ -693,7 +697,7 @@ class CalibrationModel():
         self.T_mxyzd_to_mxyz = None
         self.T_mxyz_to_exxyz = None
         self.pixel_size_nm = None
-        self.is_calibrated = False
+        self._is_calibrated = False
         
     def compute_transform_simplest(self, data:CalibrationData, z_polarity:int, pip_angle:float):
         '''
@@ -844,7 +848,7 @@ class CalibrationModel():
         Returns:
             (float) rotation angle between pipettee and ex CSYS in degrees
         """
-        if self.is_calibrated is False:
+        if self._is_calibrated is False:
             raise CalibrationError('Cannot pipette rotation because calibration is incomplete')
         dy_ex = self.T_mxyz_to_exxyz[1][0]
         dx_ex = self.T_mxyz_to_exxyz[0][0]
@@ -911,7 +915,7 @@ class CalibrationModel():
                                                       self.B[1,0],
                                                       self.B[1,1])
         # Set calibration boolean
-        self.is_calibrated = True
+        self._is_calibrated = True
 
 
     def forward(self, man:list)->list:
@@ -924,7 +928,7 @@ class CalibrationModel():
         Returns:
             list of computed external position as [x,y,z]
         '''
-        if self.is_calibrated:
+        if self._is_calibrated:
             _val_positions(man=man)
             # Compute change in manipulator positoin
             man_1 = np.array(man).reshape(4,1)
@@ -950,7 +954,7 @@ class CalibrationModel():
         Returns
             Change in 3-axis manipulator coordinates [x, y, z]
         ''' 
-        if self.is_calibrated:
+        if self._is_calibrated:
             _val_positions(man=del_man_4)
             del_man_4_arr = np.array(del_man_4).reshape(4,1)
             del_man_3_arr = np.dot(self.T_mxyzd_to_mxyz, del_man_4_arr)
@@ -969,7 +973,7 @@ class CalibrationModel():
         Returns
             Change in 3-axis manipulator coordinates [x, y, z]
         ''' 
-        if self.is_calibrated:
+        if self._is_calibrated:
             if not val.is_of_types(del_man_3, [list, tuple]):
                 raise TypeError(f'Delta-3 manipulator position ({del_man_3}) must be list or tuple')
             if len(del_man_3) != 3:
@@ -1014,7 +1018,7 @@ class CalibrationModel():
 
         and now we can solve for m_.
         '''
-        if self.is_calibrated:
+        if self._is_calibrated:
             _val_positions(ex=ex)
             if man_axis_const not in ['x', 'y', 'z', 'd']:
                 raise ValueError(f"Constant manipulator axis {man_axis_const} must be in ['x', 'y', 'z', 'd']")

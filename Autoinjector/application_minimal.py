@@ -1006,7 +1006,7 @@ class ControlWindow(QMainWindow):
         If user clicks no (or not calibrated), nothing happens
         If user clicks yes, resets calibration
         '''
-        if self.pip_cal.model.is_calibrated is True:
+        if self.pip_cal.is_calibrated() is True:
             qm = QMessageBox()
             ret = qm.question(self,'New angle?','Calibration is complete, and changing the angle will invalidate the current calibration. Do you still want to change the angle ?')
             if ret == QMessageBox.StandardButton.No:
@@ -1204,7 +1204,7 @@ class ControlWindow(QMainWindow):
 
     def update_calibration_pressed(self):
         # Doesn't permit calibrtion if non existent calibration
-        if self.pip_cal.model.is_calibrated is False:
+        if self.pip_cal.is_calibrated() is False:
             msg = "System is not calibrated. Can not update non-existent calibration.\n\nConduct a new calibration or load an exsisting calibration before updating."
             self.show_warning_box(msg)
         else:
@@ -1378,7 +1378,7 @@ class ControlWindow(QMainWindow):
 
     def save_calibration(self):
         ''' Saves calibration to a file '''
-        if self.pip_cal.model.is_calibrated is False:
+        if self.pip_cal.is_calibrated() is False:
             msg = "System is not calibrated. Can not save non-existent calibration.\n\nConduct a new calibration or load and update an existing calibration before saving."
             self.show_warning_box(msg)
         else:
@@ -1393,7 +1393,7 @@ class ControlWindow(QMainWindow):
     def load_calibration(self):
         ''' Loads the most recent calibration '''
         # Ask if user wants to overwrite an existing calibration
-        if self.pip_cal.model.is_calibrated is True:
+        if self.pip_cal.is_calibrated() is True:
             qm = QMessageBox()
             ret = qm.question(self,'Load calibration?','System is already calibrated. Do you still want to load the most recent calibration?')
             if ret == QMessageBox.StandardButton.No:
@@ -1420,7 +1420,7 @@ class ControlWindow(QMainWindow):
         _, _, obj_mag = self.zen_controller.get_current_objective()
         _, _, opto_mag = self.zen_controller.get_current_optovar()
         # Use an existing calibration for this config or show warning if was already calibrated and now its not
-        if self.pip_cal.model.is_calibrated is True:
+        if self.pip_cal.is_calibrated() is True:
             try:
                 self.pip_cal.use_existing_model(obj_mag=obj_mag, opto_mag=opto_mag, ang_deg=np.rad2deg(self.pip_angle))
                 self._calibration_complete.emit(True)
@@ -1522,7 +1522,7 @@ class ControlWindow(QMainWindow):
         self.vid_display.set_masks(tissue_mask=tissue_mask, apical_mask=apical_mask, basal_mask=basal_mask)
         self.vid_display.display_masks()
         # Return the pixels of the detected edge
-        if self.pip_cal.model.is_calibrated is True:
+        if self.pip_cal.is_calibrated() is True:
             # Because image coordinate system has y axis in opposite direction of
             # right hand coordinate system, negate the angle of the pipette rotation to
             # compute the angel of the pipette realtive to a RH coordinate system
@@ -1924,7 +1924,7 @@ class ControlWindow(QMainWindow):
         if self.disp_mod_controller.display_calibration_bool is True:
             if self.pip_disp_timer.isActive() is False:
                 self.pip_disp_timer.start(self.pip_disp_timeout)
-            if self.pip_cal.model.is_calibrated is True:
+            if self.pip_cal.is_calibrated() is True:
                 self.vid_display.show_tip_position(True)
                 dev = SensapexDevice(1)
                 pos = dev.get_pos()
@@ -2211,7 +2211,7 @@ class ControlWindow(QMainWindow):
             self.show_exception_box("Error while moving away pipette.\n\nSee log for more info.")
 
     def moveto_center_position(self):
-        if self.pip_cal.model.is_calibrated is False:
+        if self.pip_cal.is_calibrated() is False:
             msg = "Calibration incomplete. Cannot move to center without calibration."
             self.show_warning_box(msg)
             return

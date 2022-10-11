@@ -54,7 +54,6 @@ class ControlWindow(QMainWindow):
     _scope_complete = pyqtSignal(bool)
     _angle_complete = pyqtSignal(bool)
     _calibration_complete = pyqtSignal(bool)
-    _annotation_complete = pyqtSignal(bool)
     _parameter_complete = pyqtSignal(bool)
     leaving_calibration = pyqtSignal()
     cal_pos_added = pyqtSignal()
@@ -663,7 +662,7 @@ class ControlWindow(QMainWindow):
         self.vid_display.clicked_camera_pixel.connect(self.add_cal_positions)
         self.vid_display.drawn_edge_camera_pixels.connect(self.handle_drawn_edge)
         self.vid_display.ask_for_focus_z.connect(self.send_focus_z_to_display)
-        self.annot_mgr.annotation_changed.connect(self.set_trajectory)
+        self.annot_mgr.annotation_changed.connect(self.change_annotation_status)
         self.annot_mgr.new_annotation.connect(self.acquire_tissue_data)
     
 
@@ -803,7 +802,6 @@ class ControlWindow(QMainWindow):
         self.stop_button.clicked.connect(self.stoptrajectory)
         self._angle_complete.connect(self._set_angle_ind)
         self._calibration_complete.connect(self._set_calibration_ind)
-        self._annotation_complete.connect(self._set_annotation_ind)
         self._parameter_complete.connect(self._set_parameter_ind)
 
 
@@ -1720,9 +1718,8 @@ class ControlWindow(QMainWindow):
         """ Remove annotation and show annotation complete as false """
         # Nullify any interpolated edge coordinates if they exist
         self.annot_mgr.reset_annotations()
-        self.interpolated_pixels = []
         self.vid_display.reset_interpolated_annotation()
-        self._annotation_complete.emit(False)
+        self._set_annotation_ind(False)
 
     def handle_drawn_edge(self, annotated_cam_edge:list):
         """
@@ -1743,7 +1740,7 @@ class ControlWindow(QMainWindow):
             msg = "Error while annotating target.\n\n See logs for more info"
             self.show_exception_box(msg)
 
-    def set_trajectory(self, annotation:list):
+    def change_annotation_status(self, annotation:list):
         """
         Set the trajectory to the `annotation`.
 
@@ -1757,27 +1754,9 @@ class ControlWindow(QMainWindow):
         """
         # Annotation may be empty (e.g. if user deletes annotation), so dont set trajectory
         if len(annotation) == 0:
-            self.interpolated_pixels = []
-            self._annotation_complete.emit(False)
-            return
-        try:
-            self.interpolated_pixels = []
-            # If the subsequent annotation end point is closer to the preceding annotation end point
-            # then reverse the direction of tha injection path to speed up injections.
-            for ind, edge in enumerate(annotation):
-                if ind > 0:
-                    prev_annot = annotation[ind-1]
-                    cur_annot = annotation[ind]
-                    back_to_back_dist = np.linalg.norm(np.asarray(prev_annot[-1]) - np.asarray(cur_annot[-1]))
-                    back_to_front_dist = np.linalg.norm(np.asarray(prev_annot[-1]) - np.asarray(cur_annot[0]))
-                    if back_to_back_dist < back_to_front_dist:
-                        edge = list(edge)
-                        edge.reverse()
-                self.interpolated_pixels.append(edge)
-            self._annotation_complete.emit(True)
-        except Exception as e:
-            self.show_exception_box("Error while setting trajectory\n\nSee logs for more info.")
-            self.interpolated_pixels = []
+            self._set_annotation_ind(False)
+        else:
+            self._set_annotation_ind(True)
 
     def send_focus_z_to_display(self):
         """
@@ -2087,9 +2066,10 @@ class ControlWindow(QMainWindow):
             cal = self.pip_cal
             goto_z = self.zen_controller.goto_focus_absolute
             self.inj_trajectory = TrajectoryManager(goto_z)
-            for ind, edge_3D in enumerate(self.interpolated_pixels):
+            edges_3D = self.compile_line_trajectory()
+            for ind, edge_3D in enumerate(edges_3D):
                 # Have trajectory end at the "finish" position if its the last trajectoyr
-                end_at_fin_pos = ind == len(self.interpolated_pixels) - 1
+                end_at_fin_pos = ind == len(edges_3D) - 1
                 self.inj_trajectory.add_trajectory(SurfaceLineTrajectory3D(dev, cal, edge_3D, approach_nm, depth_nm, spacing_nm, speed_ums, pullout_nm, end_at_fin_pos))
             self.inj_trajectory.n_injected_signal.connect(lambda n: self.show_n_injected(n))
             self.inj_trajectory.started.connect(self.on_trajectory_started)
@@ -2107,6 +2087,45 @@ class ControlWindow(QMainWindow):
         except:
             msg = "Error occured while trying to start injections.\n\nSee logs for more info."
             self.show_exception_box(msg)
+
+    def compile_line_trajectory(self, optimize:bool = True) -> list[ list[ list[float, float, float]]]:
+        """
+        Compile line annotations into a injection trajectory. 
+        
+        Raises:
+            AnnotationError if AnnotationManager is empty
+
+        Args:
+            optimize (bool): Whether to optimize trajectories. If True, then
+            reverses subsequent trajectory directions if shortens travel distance.
+            
+        Returns:
+            list of line trajectory coordinates as:
+                [
+                    [[x11, y11, z11], [x12, y12, z12],... ],
+                    [[x21, y21, z21], [x22, y22, z22],... ],
+                    ...,
+                ]
+        """
+        if self.annot_mgr.is_empty():
+            raise AnnotationError('No target annotations exist.')
+        trajectory = []
+        annotations_3d = self.annot_mgr.get_annotations(type_='interpolated',coords='xyz')
+        for ind, edge in enumerate(annotations_3d):
+            # If the subsequent annotation end point is closer than the starting point to the
+            # preceding annotation end point then reverse the direction of the subsequent
+            # injection path to speed up injections.
+            if optimize is True and ind > 0:
+                prev_annot = trajectory[ind-1]
+                cur_annot = edge
+                back_to_back_dist = np.linalg.norm(np.asarray(prev_annot[-1]) - np.asarray(cur_annot[-1]))
+                back_to_front_dist = np.linalg.norm(np.asarray(prev_annot[-1]) - np.asarray(cur_annot[0]))
+                if back_to_back_dist < back_to_front_dist:
+                    edge = list(edge)
+                    edge.reverse()
+            trajectory.append(edge)
+        
+        return trajectory
 
     def on_trajectory_started(self):
         """ Handles what to do when trajectory starts """

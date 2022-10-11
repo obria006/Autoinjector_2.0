@@ -25,6 +25,11 @@ class AnnotationManager(QObject):
         super().__init__()
         self.annotation_dict = {'raw':[], 'interpolated':[]}
 
+    
+    def is_empty(self) -> bool:
+        """ Returns true if no annotations exist """
+        return len(self.annotation_dict['raw']) == 0 or len(self.annotation_dict['interpolated']) == 0
+
     def add_annotation(self, annot:list):
         """
         Add annotation to annotation dict
@@ -32,8 +37,11 @@ class AnnotationManager(QObject):
         Args:
             annot (list): Ordered list of annotation as [[x1,y1,z1],[x2,y2,z2],...]
         """
+        # Validate
         if isinstance(annot, np.ndarray):
             annot = np.copy(annot).tolist()
+        if len(annot) < 1:
+            raise ValueError("Cannot add empty annotations.")
         annot_dims = np.asarray(annot).shape
         if annot_dims[1] != 3:
             raise ValueError(f"Invalid annotation because not 3D. Annotation shape is {annot_dims}")
@@ -55,8 +63,11 @@ class AnnotationManager(QObject):
                     ...,
                 ]
         """
+        # Validate
         if not isinstance(annots, list):
             raise TypeError(f"Invalid annotations. Annotations must be a nested list of annotations.")
+        if len(annots) < 1:
+            raise ValueError("Cannot add empty annotations.")
         for annot in annots:
             if not isinstance(annot, Iterable):
                 raise TypeError(f"Invalid annotation. Each annotation must be an iterable of annotation coordinates.")

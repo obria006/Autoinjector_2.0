@@ -129,7 +129,7 @@ class VideoDisplay(QWidget):
             annotation and `camera_pixel` less than this value, then annotation removed.
         """
         # Dont attempt to remove any annotations if there aren't any to remove
-        if len(self.annot_mgr.get_annotations(type_='interpolated', coords='xy')) == 0:
+        if self.annot_mgr.is_empty():
             return
         # Create list of minimum distances between annotations and camera_pixel
         min_dists = []

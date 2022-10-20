@@ -40,6 +40,7 @@ from src.ZEN_interface.ZEN_mvc import ModelZEN, ControllerZEN, ViewZENComplete, 
 from src.ZEN_interface.z_stack import ZStackManager, ZStackDataWithAnnotations
 from src.deep_learning.tissue_detection import ModelTissueDetection
 from src.deep_learning.edge_utils.error_utils import EdgeNotFoundError
+from src.pressure_control.pressure_mvc import PressureModel, PressureController, PressureView
 
 
 
@@ -229,6 +230,10 @@ class ControlWindow(QMainWindow):
         self.disp_mod_controller = disp_mod_mvc.Controller()
         self.disp_mod_view = disp_mod_mvc.View(self.disp_mod_controller)
         self.disp_mod_view_alt = disp_mod_mvc.View(self.disp_mod_controller)
+        # Pressure control mvc
+        self.pres_model = PressureModel(arduino=arduino)
+        self.pres_controller = PressureController(model= self.pres_model)
+        self.pres_view = PressureView(controller=self.pres_controller)
 
     def make_widgets(self):
         """ Create the GUI's widgets """
@@ -688,13 +693,9 @@ class ControlWindow(QMainWindow):
         self.speed_entry = QLineEdit(self)
         # self.speed_display = QLineEdit()
         # self.speed_display.setReadOnly(True)
-        self.pressure_slider = QSlider(Qt.Orientation.Horizontal)
-        self.pressure_slider.setMinimum(10)
-        self.pressure_slider.setMaximum(255)
-        self.pressure_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
-        self.pressure_slider.setTickInterval(30)
+        self.pressure_slider = self.pres_view.pressure_slider
         pressure_label = QLabel("Pressure")
-        self.pressure_display = QLineEdit(self)
+        self.pressure_display = self.pres_view.pressure_display
         # self.pressure_display2 = QLineEdit(self)
         # self.pressure_display2.setReadOnly(True)
         self.set_values_button = QPushButton("Set Values")
@@ -711,17 +712,18 @@ class ControlWindow(QMainWindow):
         grid.addWidget(speed_label, 3, 0, 1, 1)
         grid.addWidget(self.speed_entry, 3, 1, 1, 1)
         # grid.addWidget(self.speed_display, 3, 2, 1, 1)
-        grid.addWidget(pressure_label, 4, 0, 1, 1)
-        grid.addWidget(self.pressure_slider, 5, 0, 1, 1)
-        grid.addWidget(self.pressure_display, 5, 1, 1, 1)
-        grid.addWidget(self.set_values_button, 6, 0, 1, 2)
+        grid.addWidget(self.set_values_button, 4, 0, 1, 2)
+        grid.addWidget(QHLine(), 5, 0, 1, 2)
+        grid.addWidget(pressure_label, 6, 0, 1, 1)
+        grid.addWidget(self.pressure_slider, 7, 0, 1, 1)
+        grid.addWidget(self.pressure_display, 7, 1, 1, 1)
         self.inj_parameter_group = QGroupBox('Automated Microinjection Controls')
         self.inj_parameter_group.setLayout(grid)
 
     def set_inject_parameter_connections(self):
         """ Sets signal/slot connections for injection parameter widgets """
-        self.pressure_slider.valueChanged.connect(self.valuechange)
         self.set_values_button.clicked.connect(self.setautomatedparameters)
+        self.pres_controller.errors.connect(self.show_recieved_exception)
     
     def stateify_injection_parameter_widgets(self):
         ''' set initial states for injection parameter widgets'''
@@ -729,7 +731,6 @@ class ControlWindow(QMainWindow):
         self.depth_entry.insert('20')
         self.spacing_entry.insert('50')
         self.speed_entry.insert('1000')
-        self.pressure_slider.setValue(20)
 
     """
     Initialize manipulator widgets ---------------------------------------------------------
@@ -946,8 +947,7 @@ class ControlWindow(QMainWindow):
 
     def closeEvent(self, event):
         """ Functions to call when gui is closed (`X` is clicked) """
-        close_pressure = injection(arduino,0, 0,0,0,'bp')
-        close_pressure.start()
+        self.pres_controller.zero_bp()
         self.vid_display.stop()
         time.sleep(0.5)
         self.close()
@@ -2009,28 +2009,19 @@ class ControlWindow(QMainWindow):
     """
     def setautomatedparameters(self):
         try:
-            self.compensationpressureval = self.pressureslidervalue
-            self.compensationpressureval =str(self.compensationpressureval)
             self.approachdist = self.approach_entry.text()
             self.depthintissue = self.depth_entry.text()
             self.stepsize = self.spacing_entry.text()
             self.motorspeed = self.speed_entry.text()
-            self.injectpressurevoltage = self.compensationpressureval
             self.response_monitor_window.append(">> Values set")
-            self.injector_compensate = injection(arduino,self.compensationpressureval, 0,self.injectpressurevoltage,0,'bp')
-            self.injector_compensate.start()
 
         except:
-            msg = "Error, did you enter all parameters? Is the arduino plugged in? \nPython error = \n" + str(sys.exc_info()[1])
+            msg = "Error, did you enter all parameters? \nPython error = \n" + str(sys.exc_info()[1])
             self.show_error_box(msg)
             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
         else:
             self._parameter_complete.emit(True)
 
-    def valuechange(self):
-        self.pressureslidervalue= self.pressure_slider.value()
-        self.displaypressure = int(self.pressureslidervalue/2.55)
-        self.pressure_display.setText(str(self.displaypressure)+'%')
 
     def validate_ready_for_injection(self):
         """ Check that all conditions are met for injections to proceed """
@@ -2047,6 +2038,11 @@ class ControlWindow(QMainWindow):
         try:
             # Validate that everything is ready for injections
             self.validate_ready_for_injection()
+            if self.pres_controller.get_current_bp() == 0:
+                qm = QMessageBox()
+                ret = qm.question(self,'Inject with 0 pressure?','Pressure is 0. Do you still want to inject?')
+                if ret == QMessageBox.StandardButton.No:
+                    return
             if hasattr(self, "inj_trajectory"):
                 if self.inj_trajectory.is_running():
                     raise TrajectoryError("Cannot run injection trajectory because an injection trajectory is currently running.")

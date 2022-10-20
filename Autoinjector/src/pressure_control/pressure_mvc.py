@@ -210,6 +210,10 @@ class PressureController(QObject):
             self._logger.exception(msg)
             self.errors.emit(msg)
 
+    def get_current_bp(self)->int:
+        """ Return current pressure in model scale """
+        return int(self._current_bp)
+
 
 class PressureView(QObject):
     """ 

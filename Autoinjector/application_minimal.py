@@ -2013,13 +2013,31 @@ class ControlWindow(QMainWindow):
             self.depthintissue = self.depth_entry.text()
             self.stepsize = self.spacing_entry.text()
             self.motorspeed = self.speed_entry.text()
-            self.response_monitor_window.append(">> Values set")
-
+            if not val.is_valid_number(self.approachdist):
+                raise InjectionParameterError(f"Invalid approach distance: {self.approachdist}. Must be a valid number.")
+            if float(self.approachdist) < 0:
+                raise InjectionParameterError(f"Invalid approach distance: {self.approachdist}. Must be positive.")
+            if not val.is_valid_number(self.depthintissue):
+                raise InjectionParameterError(f"Invalid depth: {self.depthintissue}. Must be a valid number.")
+            if float(self.depthintissue) < 0:
+                raise InjectionParameterError(f"Invalid approach distance: {self.depthintissue}. Must be positive.")
+            if not val.is_valid_number(self.stepsize):
+                raise InjectionParameterError(f"Invalid spacing: {self.stepsize}. Must be a valid number.")
+            if float(self.stepsize) < 0:
+                raise InjectionParameterError(f"Invalid approach distance: {self.stepsize}. Must be positive.")
+            if not val.is_valid_number(self.motorspeed):
+                raise InjectionParameterError(f"Invalid speed: {self.motorspeed}. Must be a valid number.")
+            if float(self.motorspeed) < 0:
+                raise InjectionParameterError(f"Invalid approach distance: {self.motorspeed}. Must be positive.")
+        except InjectionParameterError as e:
+            self.show_error_box(str(e))
+            self.response_monitor_window.append(f">> User error = {e}")
         except:
             msg = "Error, did you enter all parameters? \nPython error = \n" + str(sys.exc_info()[1])
             self.show_error_box(msg)
             self.response_monitor_window.append(">> Python error = " + str(sys.exc_info()))
         else:
+            self.response_monitor_window.append(">> Values set")
             self._parameter_complete.emit(True)
 
 

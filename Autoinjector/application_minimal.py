@@ -2188,6 +2188,7 @@ class ControlWindow(QMainWindow):
         """ move pipette to unload position so user can change pipette"""
         try:
             self.convenience_trajectories.goto_unloaded()
+            self.pres_controller.zero_bp()
         except TrajectoryError as e:
             self.show_error_box(e)
         except:
@@ -2218,7 +2219,10 @@ class ControlWindow(QMainWindow):
 
     def moveto_undo_position(self):
         try:
+            prev = self.convenience_trajectories.get_previous_name()
             self.convenience_trajectories.goto_undo()
+            if prev == "unload":
+                self.pres_controller.reload_bp()
         except TrajectoryError as e:
             self.show_error_box(e)
         except:

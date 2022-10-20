@@ -138,6 +138,7 @@ class ConvenienceTrajectories():
         self.is_moving = False
         self._model = TrajectoryModel(dev, speed_ums)
         self._model.moving.connect(self._update_is_moving)
+        self._previous_trajectory = None
 
     def _update_is_moving(self, status:bool):
         """ Sets `is_moving` to `status`.
@@ -153,6 +154,7 @@ class ConvenienceTrajectories():
             raise TrajectoryError("Cannot move micromanipulator to unload position. Micromanipulator is currently moving.")
         else:
             self._model.start_unload()
+            self._previous_trajectory = "unload"
 
     def goto_displaced(self):
         """ Move micromanipulator to the 'displaced' position """
@@ -160,6 +162,7 @@ class ConvenienceTrajectories():
             raise TrajectoryError("Cannot move micromanipulator to displaced position. Micromanipulator is currently moving.")
         else:
             self._model.start_displace()
+            self._previous_trajectory = "displace"
 
     def goto_centered(self, cal, center_pos:list):
         """ Move micromanipulator (micropipette) to center of FOV 
@@ -172,6 +175,7 @@ class ConvenienceTrajectories():
             raise TrajectoryError("Cannot move micromanipulator to centered position. Micromanipulator is currently moving.")
         else:
             self._model.start_center(cal, center_pos)
+            self._previous_trajectory = "center"
 
     def goto_undo(self):
         """ Undo the previous move """
@@ -179,4 +183,9 @@ class ConvenienceTrajectories():
             raise TrajectoryError("Cannot undo micromanipulator move. Micromanipulator is currently moving.")
         else:
             self._model.start_undo()
+            self._previous_trajectory = "undo"
+
+    def get_previous_name(self)->str:
+        """ Returns name of previously executed trajectory """
+        return str(self._previous_trajectory)
     

@@ -1351,7 +1351,7 @@ class ControlWindow(QMainWindow):
         try:
             dets = self.yolo_detect_tip()
         except TipNotFoundError as e:
-            msg = "Error: {e}.\n\nPlease manually click on tip to continue calibration."
+            msg = f"Error: {e}.\n\nPlease manually click on tip to continue calibration."
             self.show_warning_box(msg)
         except Exception as e:
             msg = f"Error while detecting tip: {e}\n\nSee logs for more information."

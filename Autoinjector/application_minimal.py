@@ -39,6 +39,7 @@ from src.manipulator_control.convenience_trajectories import ConvenienceTrajecto
 from src.ZEN_interface.ZEN_mvc import ModelZEN, ControllerZEN, ViewZENComplete, ViewZENFocus
 from src.ZEN_interface.z_stack import ZStackManager, ZStackDataWithAnnotations
 from src.deep_learning.tissue_detection import ModelTissueDetection
+from src.deep_learning.yolov5_servers import Yolov5PipetteDetector
 from src.deep_learning.edge_utils.error_utils import EdgeNotFoundError
 from src.pressure_control.pressure_mvc import PressureModel, PressureController, PressureView
 
@@ -137,6 +138,8 @@ class ControlWindow(QMainWindow):
         self.angle_io = AngleIO(ang_data_dir=self.cal_data_dir)
         ckpt_path = "Autoinjector/src/deep_learning/weights/20220824_180000_Colab_gpu/best.pth"
         self.tissue_model = ModelTissueDetection(ckpt_path)
+        yolo_path = "Autoinjector/src/deep_learning/weights/yolov5_train_exp6/best.onnx"
+        self.tip_detector = Yolov5PipetteDetector(yolo_path)
         dev = SensapexDevice(1)
         self.convenience_trajectories = ConvenienceTrajectories(dev=dev)
 

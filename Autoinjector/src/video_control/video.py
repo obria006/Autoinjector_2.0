@@ -235,6 +235,21 @@ class VideoDisplay(QWidget):
         canvas_position.append(delta_z_um)
         # Set painter coordinate
         self.canvas.painter.calibrated_tip_points = [canvas_position]
+    
+    def set_detected_tip_position(self, x:int, y:int):
+        """
+        Sets the `Painter`'s ML detected tip position coordinate
+
+        Args:
+            x (int): x coordiante of tip in camera image
+            y (int): y coordinate of tip in camera image
+            delta_z_um (float): Deviation between tip z and focus plane in um (tip - focus)
+        """
+        # Covnert from camera pixel to canvas pixel location
+        camera_pixel = [x,y]
+        canvas_position = self.convert_camera_to_canvas(camera_pixel)
+        # Set painter coordinate
+        self.canvas.painter.detected_points = [canvas_position]
 
     def show_drawn_annotation(self, bool_:bool):
         """
@@ -525,6 +540,7 @@ class Painter():
         self.calibration_points = []
         self.calibrated_tip_points = []
         self.clicked_points = []
+        self.detected_points = []
         self.drawn_edge = []
         self.interpolated_edges = []
         self.tissue_mask = None
@@ -711,6 +727,14 @@ class Painter():
         if self._show_clicked_points_bool is True:
             for pixel in self.clicked_points:
                 image = utils.display_x(
+                    image = image, 
+                    center_xy = pixel,
+                    radius = 3,
+                    color = self.WHITE,
+                    thickness=1
+                    )
+            for pixel in self.detected_points:
+                image = utils.display_cross(
                     image = image, 
                     center_xy = pixel,
                     radius = 3,

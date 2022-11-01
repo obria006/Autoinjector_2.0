@@ -33,6 +33,7 @@ from src.manipulator_control.error_utils import (CalibrationError,
                                                 AngleFileError,
                                                 TrajectoryError)
 from src.manipulator_control.sensapex_utils import SensapexDevice
+from src.manipulator_control.trajectories import ManipulatorModel, XYCalibrationTrajectory
 from src.manipulator_control.injection_trajectory import SurfaceLineTrajectory3D, TrajectoryManager
 from src.manipulator_control.calibration_trajectory import SemiAutoCalibrationTrajectory
 from src.manipulator_control.convenience_trajectories import ConvenienceTrajectories
@@ -41,6 +42,7 @@ from src.ZEN_interface.z_stack import ZStackManager, ZStackDataWithAnnotations
 from src.deep_learning.tissue_detection import ModelTissueDetection
 from src.deep_learning.yolov5_servers import Yolov5PipetteDetector
 from src.deep_learning.edge_utils.error_utils import EdgeNotFoundError
+from src.deep_learning.error_utils import TipNotFoundError
 from src.pressure_control.pressure_mvc import PressureModel, PressureController, PressureView
 
 
@@ -379,6 +381,7 @@ class ControlWindow(QMainWindow):
         cal_type_label = QLabel("Calibration Type:")
         self.cal_type_display = QLabel("")
         self.complete_calibration_but = QPushButton("Complete Calibration")
+        self.auto_calibrate_but = QPushButton("Run Auto-Calibration")
         self.save_complete_calibration_but = QPushButton("Save and Complete Calibration")
         self.exit_calibration_but = QPushButton("Exit")
         h_sep2 = QHLine()
@@ -393,6 +396,8 @@ class ControlWindow(QMainWindow):
         alt_layout.addWidget(self.save_complete_calibration_but)
         alt_layout.addWidget(self.exit_calibration_but)
         alt_layout.addWidget(h_sep2)
+        alt_layout.addWidget(self.auto_calibrate_but)
+        alt_layout.addWidget(QHLine())
         alt_layout.addWidget(self.calibration_guidance)
         self.alt_pip_cal_group = QGroupBox('Pipette Calibration')
         self.alt_pip_cal_group.setLayout(alt_layout)
@@ -400,6 +405,7 @@ class ControlWindow(QMainWindow):
     def set_pipette_calibrator_connections(self):
         """ Set the signal/slot connections for the pipette calibrator widgets """
         self.conduct_calibration_but.clicked.connect(self.conduct_calibration_pressed)
+        self.auto_calibrate_but.clicked.connect(self.auto_calibrate)
         self.update_calibration_but.clicked.connect(self.update_calibration_pressed)
         self.save_calibration_but.clicked.connect(self.save_calibration)
         self.load_calibration_but.clicked.connect(self.load_calibration)
@@ -1157,13 +1163,11 @@ class ControlWindow(QMainWindow):
         self.logger.info(info_str)
         self.response_monitor_window.append(f">> {info_str}")
         if cal_mode == "Automatic":
-            self.cal_mode_box.setCurrentText('Semi-Auto.')
-            msg = f"Automatic calibration not yet implimented. Defaulting to 'Semi-Auto.' calibration mode."
-            self.show_warning_box(msg)
+            self.auto_calibrate_but.setEnabled(True)
         if cal_mode == "Semi-Auto.":
-            pass
+            self.auto_calibrate_but.setEnabled(False)
         if cal_mode == "Manual":
-            pass
+            self.auto_calibrate_but.setEnabled(False)
 
     def add_cal_positions(self,pixel):
         ''' Adds clicked calibration positions to calibration data '''
@@ -1277,37 +1281,28 @@ class ControlWindow(QMainWindow):
                 "center.\n5. 'Complete Calibration' or 'Save and Complete Calibration' to finish "
                 "and return to the main screen.")
             elif cal_mode.lower() == 'automatic':
-                msg = ("Prcess:\nNot implimented.")
+                msg = ("Process:\n1. Ensure the field-of-view is free of obstructions. (The "
+                "pipette will automatically move to the edges of the field-of-view.)\n2. Using "
+                "the focus knob/widgets or manipulator wheels, bring tip into focus near center.\n"
+                "2. Click ONCE on `Auto-Calibrate`.\n3. Wait as the pipette automatically moves "
+                "to the four corners and the center.\n4. 'Complete Calibration' or 'Save and "
+                "Complete Calibration' to finish and return to the main screen.")
         msg = f"{msg}\n\n{cal_notes}"
         self.calibration_guidance.setText(msg)
 
-
-    def conduct_manual_calibration(self):
-        ''' Conducts manual calibration process '''
-        self.logger.debug('Doing manual calibration')
-
-    def conduct_semi_auto_calibration(self):
-        self.logger.debug('Doing Semi-Auto. calibration')
+    def instantiate_calibration_trajectory(self):
         # Initalize for the calibration trajectory
-        dev = SensapexDevice(1)
         img_width = self.cam_MM.width
         img_height = self.cam_MM.height
         _, _, obj_mag = self.zen_controller.get_current_objective()
         _, _, opto_mag = self.zen_controller.get_current_optovar()
         z_polarity = self.cfg.values.z_polarity
-        self.cal_trajectory = SemiAutoCalibrationTrajectory(dev=dev, cal=self.pip_cal, img_w=img_width, img_h=img_height, z_polarity=z_polarity,pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
+        self.cal_trajectory = XYCalibrationTrajectory(mdl = self.mdl, cal=self.pip_cal, img_w=img_width, img_h=img_height, z_polarity=z_polarity,pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
         self.cal_pos_added.connect(self.cal_trajectory.next_cal_position)
         # delete calibraiton trajecotory otherwise it will conintue to handle stuff from
         # its connections even after it is finished
         self.cal_trajectory.finished.connect(self.cal_trajectory.deleteLater)
         self.leaving_calibration.connect(self.cal_trajectory.deleteLater)
-
-    def conduct_auto_calibration(self):
-        ''' Conducts automatic calibration process '''
-        self.cal_mode_box.setCurrentText('Semi-Auto.')
-        msg = "Automatic calibration not yet implimented. Defaulting to 'Semi-Auto.' calibration mode."
-        self.show_warning_box(msg)
-
 
     def start_calibration_process(self):
         """
@@ -1318,16 +1313,65 @@ class ControlWindow(QMainWindow):
         try:
             cal_mode = self.cal_mode_box.currentText()
             if cal_mode == "Automatic":
-                self.conduct_auto_calibration()
-            elif cal_mode == 'Manual':
-                self.conduct_manual_calibration()
+                self.instantiate_calibration_trajectory()
             elif cal_mode == 'Semi-Auto.':
-                self.conduct_semi_auto_calibration()
+                self.instantiate_calibration_trajectory()
         except ValueError as e:
             msg = str(e)
             self.show_error_box(msg)
         except Exception as e:
             msg = f"Error while calibrating: {str(e)}.\n\nSee logs for more info."
+            self.show_exception_box(msg)
+
+    def yolo_detect_tip(self):
+        """
+        Run yolo tip detection on current image from camera
+
+        Raises:
+            TipNotFoundError if no tip is detected
+        
+        Returns
+            dict of detection info
+        """
+        # Get image from camera and convert to yolo anticipated BGR format
+        image = self.vid_display.get_frame()
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        # Detect tip in image
+        dets = self.tip_detector.detect(image)
+        # Raise error if no tip, else show the tip in the video
+        if dets['xy_og'] is None:
+            raise TipNotFoundError("Could not detect pipette tip.")
+        else:
+            print(f"Focus: {dets['class']}\tConf: {dets['score']}")
+            self.vid_display.set_detected_tip_position(dets['xy_og'][0], dets['xy_og'][1])
+        return dets
+    
+    def detect_calibration_point(self):
+        """ Attempts tip detection and pass coordinates to calibration data """
+        try:
+            dets = self.yolo_detect_tip()
+        except TipNotFoundError as e:
+            msg = "Error: {e}.\n\nPlease manually click on tip to continue calibration."
+            self.show_warning_box(msg)
+        except Exception as e:
+            msg = f"Error while detecting tip: {e}\n\nSee logs for more information."
+            self.show_exception_box(msg)
+        else:
+            self.add_cal_positions(dets['xy_og'])
+
+    def auto_calibrate(self):
+        try:
+            # Every time the move is finsihed, detect tip and send coordinates
+            self.cal_trajectory.move_completed.connect(self.detect_calibration_point)
+            # Run initial detection to add a calibration point
+            self.detect_calibration_point()
+        except RuntimeError as e:
+            # Raise runtime error when the cal_trajectory was deleted (like after finishgin)
+            # So try instantiating a new version and retyring
+            self.instantiate_calibration_trajectory()
+            self.auto_calibrate()
+        except Exception as e:
+            msg(f"Error while auto-calibrating: {e}\n\nSee logs for more info.")
             self.show_exception_box(msg)
 
 

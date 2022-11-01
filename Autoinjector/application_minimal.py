@@ -405,7 +405,7 @@ class ControlWindow(QMainWindow):
     def set_pipette_calibrator_connections(self):
         """ Set the signal/slot connections for the pipette calibrator widgets """
         self.conduct_calibration_but.clicked.connect(self.conduct_calibration_pressed)
-        self.auto_calibrate_but.clicked.connect(self.auto_calibrate)
+        self.auto_calibrate_but.clicked.connect(self.auto_calibration_pressed)
         self.update_calibration_but.clicked.connect(self.update_calibration_pressed)
         self.save_calibration_but.clicked.connect(self.save_calibration)
         self.load_calibration_but.clicked.connect(self.load_calibration)
@@ -1359,6 +1359,14 @@ class ControlWindow(QMainWindow):
         else:
             self.add_cal_positions(dets['xy_og'])
 
+    @pyqtSlot()
+    def auto_calibration_pressed(self):
+        if self.cal_type_display.text() == "Update":
+            print('auto updating')
+            self.auto_update()
+        else:
+            self.auto_calibrate()
+
     def auto_calibrate(self):
         try:
             # Every time the move is finsihed, detect tip and send coordinates
@@ -1374,6 +1382,8 @@ class ControlWindow(QMainWindow):
             msg(f"Error while auto-calibrating: {e}\n\nSee logs for more info.")
             self.show_exception_box(msg)
 
+    def auto_update(self):
+        self.detect_calibration_point()
 
     def compute_calibration(self):
         ''' Computes calibration from calibration data '''

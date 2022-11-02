@@ -144,6 +144,9 @@ class ControlWindow(QMainWindow):
         self.tip_detector = Yolov5PipetteDetector(yolo_path)
         dev = SensapexDevice(1)
         self.convenience_trajectories = ConvenienceTrajectories(dev=dev)
+        z_polarity = self.cfg.values.z_polarity
+        self.mdl = ManipulatorModel(dev)
+        self.mdl.errors.connect(self.show_recieved_exception)
 
         # Instantiate the imported camera
         try:
@@ -1316,6 +1319,7 @@ class ControlWindow(QMainWindow):
         self.cal_pos_added.connect(self.cal_trajectory.next_cal_position)
         # delete calibraiton trajecotory otherwise it will conintue to handle stuff from
         # its connections even after it is finished
+        self.cal_trajectory.errors.connect(self.show_recieved_exception)
         self.cal_trajectory.finished.connect(self.delete_calibration_trajectory)
         self.leaving_calibration.connect(self.delete_calibration_trajectory)
 

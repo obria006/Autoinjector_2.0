@@ -17,6 +17,7 @@ class ManipulatorModel(QObject):
     move_started = pyqtSignal()
     move_completed = pyqtSignal()
     _internal_move_completed = pyqtSignal()
+    errors = pyqtSignal(Exception)
 
     def __init__(self, dev:SensapexDevice):
         """
@@ -49,15 +50,18 @@ class ManipulatorModel(QObject):
             pos (list): list of absolute axis positions [x,y,z,d]
             speed (int): speed of movement in um/s
         """
-        # if self.is_moving() is True:
-        #     raise TrajectoryError("Cannot command manipulator move because it is already moving")
-        self.move_started.emit()
-        self._moving = True
-        self.move_request = self.dev.goto_pos(pos, speed)
-        # Thread the blocking `_wait_for_move` function to maintain GUI responsiveness
-        self._worker = aQWorker(self._wait_for_move, self.move_request)
-        self._threader = aQThreader(self._worker)
-        self._threader.start()
+        try:
+            if self.is_moving() is True:
+                raise TrajectoryError("CRITICAL ERROR: Manipulator move commanded when already moving.")
+            self.move_started.emit()
+            self._moving = True
+            self.move_request = self.dev.goto_pos(pos, speed)
+            # Thread the blocking `_wait_for_move` function to maintain GUI responsiveness
+            self._worker = aQWorker(self._wait_for_move, self.move_request)
+            self._threader = aQThreader(self._worker)
+            self._threader.start()
+        except Exception as e:
+            self.errors.emit(e)
     
     def _wait_for_move(self, move_request):
         """
@@ -80,9 +84,12 @@ class ManipulatorModel(QObject):
         `is_moving()` returns correct status.
         """
         # Wait to give time for thread to be deleted before another move can be called
-        QTest.qWait(50)
-        self.move_completed.emit()
+        QTimer.singleShot(50,self._emit_move_completed)
+
+    def _emit_move_completed(self):
         self._moving = False
+        self.move_completed.emit()
+        
 
 class XYCalibrationTrajectory(QObject):
     """
@@ -97,6 +104,7 @@ class XYCalibrationTrajectory(QObject):
     finished = pyqtSignal()
     move_completed = pyqtSignal()
     move_started = pyqtSignal()
+    errors = pyqtSignal(Exception)
 
     def __init__(self, mdl:ManipulatorModel, cal:Calibrator, img_w:int, img_h:int, z_polarity:int, pip_angle:float, obj_mag:float, opto_mag:float, delta_nm:float=50000, speed_ums:int=1000):
         """
@@ -180,7 +188,7 @@ class XYCalibrationTrajectory(QObject):
 
     @pyqtSlot()
     def _on_finished(self):
-         """ When trajectory is started, set `_active` to False """
+        """ When trajectory is started, set `_active` to False """
         self._active = False
         self._move_index = 0
         self._man_positions = []
@@ -213,35 +221,38 @@ class XYCalibrationTrajectory(QObject):
         compute secondary calibraiton positoins of manipulator near FOV corners and center.
         Waits for user to click those positiosn as it automatically moves to those points.
         """
-        # Compute calibration if have reached first 3 calibraiton points
-        if self._move_index == len(self._man_disps):
-            # Dont save temp calibration model
-            self.cal.compute(z_polarity=self.z_polarity, pip_angle=self.pip_angle, obj_mag=self.obj_mag, opto_mag=self.opto_mag, save=False)
-            # COmpute secondary calibration positiosn
-            ex_z = np.mean(self.cal.data.data_df['ex_z'].to_numpy())
-            self.compute_man_positions(ex_z=ex_z)
-            # reset calibration after positoins are computed
-            self.cal.data.rm_all()
-            self.cal.model.reset_calibration()
-        # Emit finished when all points have been reached
-        if self._move_index == (len(self._man_disps) + len(self._ex_positions)):
-            self.finished.emit()
-            return None
-        # Prelimnary calibration with small displacements around start positoin
-        if self._move_index < len(self._man_disps):
-            if self._move_index == 0:
-                self.started.emit()
-            cur_pos = self.mdl.get_pos()
-            disp = self._man_disps[self._move_index]
-            new_pos = [axis_pos + disp[axis] for axis, axis_pos in enumerate(cur_pos)]
-            self.mdl.goto_pos(new_pos, self.speed_ums)
-        # Secondary calibration with moving to the corners and center
-        else:
-            tmp_index = self._move_index - len(self._man_disps)
-            new_man_pos = self._man_positions[tmp_index]
-            self.mdl.goto_pos(new_man_pos, self.speed_ums)
-        # Increment move index
-        self._move_index += 1
+        try:
+            # Compute calibration if have reached first 3 calibraiton points
+            if self._move_index == len(self._man_disps):
+                # Dont save temp calibration model
+                self.cal.compute(z_polarity=self.z_polarity, pip_angle=self.pip_angle, obj_mag=self.obj_mag, opto_mag=self.opto_mag, save=False)
+                # COmpute secondary calibration positiosn
+                ex_z = np.mean(self.cal.data.data_df['ex_z'].to_numpy())
+                self.compute_man_positions(ex_z=ex_z)
+                # reset calibration after positoins are computed
+                self.cal.data.rm_all()
+                self.cal.model.reset_calibration()
+            # Emit finished when all points have been reached
+            if self._move_index == (len(self._man_disps) + len(self._ex_positions)):
+                self.finished.emit()
+                return None
+            # Prelimnary calibration with small displacements around start positoin
+            if self._move_index < len(self._man_disps):
+                if self._move_index == 0:
+                    self.started.emit()
+                cur_pos = self.mdl.get_pos()
+                disp = self._man_disps[self._move_index]
+                new_pos = [axis_pos + disp[axis] for axis, axis_pos in enumerate(cur_pos)]
+                self.mdl.goto_pos(new_pos, self.speed_ums)
+            # Secondary calibration with moving to the corners and center
+            else:
+                tmp_index = self._move_index - len(self._man_disps)
+                new_man_pos = self._man_positions[tmp_index]
+                self.mdl.goto_pos(new_man_pos, self.speed_ums)
+            # Increment move index
+            self._move_index += 1
+        except Exception as e:
+            self.errors.emit(e)
 
     def compute_man_positions(self, ex_z:float)-> list:
         """

@@ -1171,7 +1171,15 @@ class ControlWindow(QMainWindow):
 
     def add_cal_positions(self,pixel):
         ''' Adds clicked calibration positions to calibration data '''
+        # Don't allow adding calibration position when calibration trajectroy is moving
+        # between positions. This is only applicable for semi-auto and auto calibration
+        if hasattr(self, 'cal_trajectory'):
+            if self.cal_trajectory.is_available() is False:
+                self.show_warning_box("Cannot select calibration points because manipulator is moving between positions.\n\nWait for manipulator to finish moving before selecting calibration point.")
+                return
+
         x_click, y_click = pixel
+        # Append data point to calibration data if doing a new calibration
         if self.conducting_calibration is True:
             z_scope = self.zen_controller.get_focus_um()
             ex_pos = [x_click, y_click, z_scope]
@@ -1183,6 +1191,8 @@ class ControlWindow(QMainWindow):
                 tip_dict = {'x':x_click, 'y':y_click}
                 self.save_pip_cal_data(tip_dict)
 
+        # Remove existing data and add single data point for update calibration
+        # Update calibratoin only permits a single data point.
         if self.updating_calibration is True:
             self.pip_cal.data.rm_all()
             z_scope = self.zen_controller.get_focus_um()
@@ -1291,6 +1301,11 @@ class ControlWindow(QMainWindow):
         self.calibration_guidance.setText(msg)
 
     def instantiate_calibration_trajectory(self):
+        """
+        Make a calibration trajectory instance to be used by semi-auto
+        and automatic calibration. Delete the trajectory once it is finished
+        to prevent it from acting on its connections after it is compelete
+        """
         # Initalize for the calibration trajectory
         img_width = self.cam_MM.width
         img_height = self.cam_MM.height
@@ -1301,24 +1316,31 @@ class ControlWindow(QMainWindow):
         self.cal_pos_added.connect(self.cal_trajectory.next_cal_position)
         # delete calibraiton trajecotory otherwise it will conintue to handle stuff from
         # its connections even after it is finished
-        self.cal_trajectory.finished.connect(self.cal_trajectory.deleteLater)
-        self.leaving_calibration.connect(self.cal_trajectory.deleteLater)
+        self.cal_trajectory.finished.connect(self.delete_calibration_trajectory)
+        self.leaving_calibration.connect(self.delete_calibration_trajectory)
+
+    def delete_calibration_trajectory(self):
+        """ Delete the calibraoitn trajectory object from memory """
+        if hasattr(self, "cal_trajectory"):
+            self.cal_trajectory.deleteLater()
+            del self.cal_trajectory
 
     def start_calibration_process(self):
         """
-        Starts the calibration process if proper conditions are met (update calibration 
-        must be unchecked and a calibration mode must be selected).
+        Makes calibraiotn trajectory for automatic/semi-auto and enable/disable
+        auto-calibrate button.
         """
         # Asks user to if conditions valid for calibrating
         try:
             cal_mode = self.cal_mode_box.currentText()
             if cal_mode == "Automatic":
+                self.auto_calibrate_but.setEnabled(True)
                 self.instantiate_calibration_trajectory()
-            elif cal_mode == 'Semi-Auto.':
+            if cal_mode == "Semi-Auto.":
+                self.auto_calibrate_but.setEnabled(False)
                 self.instantiate_calibration_trajectory()
-        except ValueError as e:
-            msg = str(e)
-            self.show_error_box(msg)
+            if cal_mode == "Manual":
+                self.auto_calibrate_but.setEnabled(False)                
         except Exception as e:
             msg = f"Error while calibrating: {str(e)}.\n\nSee logs for more info."
             self.show_exception_box(msg)
@@ -1361,26 +1383,41 @@ class ControlWindow(QMainWindow):
 
     @pyqtSlot()
     def auto_calibration_pressed(self):
-        if self.cal_type_display.text() == "Update":
-            print('auto updating')
+        """ Performs auto-calibrate or auto-update depending on the mode """
+        if self.updating_calibration is True:
             self.auto_update()
-        else:
+        elif self.conducting_calibration is True:
             self.auto_calibrate()
 
     def auto_calibrate(self):
-        try:
-            # Every time the move is finsihed, detect tip and send coordinates
-            self.cal_trajectory.move_completed.connect(self.detect_calibration_point)
-            # Run initial detection to add a calibration point
-            self.detect_calibration_point()
-        except RuntimeError as e:
-            # Raise runtime error when the cal_trajectory was deleted (like after finishgin)
-            # So try instantiating a new version and retyring
+        # If no trajectory exists (or it did exist and was deleted), make a new one
+        # This is really only needed to sequentially run auto calibrations because
+        # calibration trajectories are deleted after they finish
+        if hasattr(self, "cal_trajectory") is False:
             self.instantiate_calibration_trajectory()
-            self.auto_calibrate()
+
+        # Makes so every time calibration finishes move, the tip is detected and added
+        # to calibration
+        try:
+            if self.cal_trajectory.is_auto() is False:
+                # !! THE FOLLOWING FUNCTIONS MUST NOT BE CALLED MORE THAN ONCE FOR
+                # A GIVEN INSTANCE OF THE `cal_trajectory` OBJECT OR THEY WILL CRASH
+                # HENCE WHY IT IS GATED BY `is_auto()` AND `make_auto()`
+                self.cal_trajectory.make_auto()
+                # Every time the move is finsihed, detect tip and send coordinates
+                self.cal_trajectory.move_completed.connect(self.detect_calibration_point)
+                # Run initial detection to add a calibration point
+                self.detect_calibration_point()
+            else:
+                msg = "Cannot run auto-calibration because it is already running.\n\nWait for it to complete."
+                self.show_warning_box(msg)
         except Exception as e:
-            msg(f"Error while auto-calibrating: {e}\n\nSee logs for more info.")
+            msg = f"Error while auto-calibrating: {e}\n\nSee logs for more info."
             self.show_exception_box(msg)
+        else:
+            # Disable button so user cant try to run simulatneous auto calibrations
+            self.auto_calibrate_but.setEnabled(False)
+            self.cal_trajectory.finished.connect(lambda: self.auto_calibrate_but.setEnabled(True))
 
     def auto_update(self):
         self.detect_calibration_point()

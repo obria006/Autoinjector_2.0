@@ -1,4 +1,5 @@
 """ Scripts/classes for coordinating manipulator trajectories """
+import time
 import numpy as np
 from PyQt6.QtCore import QObject, pyqtSignal, QMutex, QTimer, pyqtSlot
 from PyQt6.QtTest import QTest
@@ -97,8 +98,11 @@ class XYCalibrationTrajectory(QObject):
     then moving to the FOV 4 corners and the center.
     
     Signals:
+        started: emitted when the manipulator is commanded to first position
         finished: emitted when trajectory has moved through all positions
+        move_started: emitted when the manipulator starts moving to any position
         move_completed: emiited when manipulator arrives at new position
+        errors: emitted on exceptions
     """
     started = pyqtSignal()
     finished = pyqtSignal()
@@ -272,3 +276,187 @@ class XYCalibrationTrajectory(QObject):
             ex_pos = pix_pos.append(ex_z)
             new_man_pos = self.cal.model.inverse(ex=pix_pos, man_axis_const='d')
             self._man_positions.append(new_man_pos)
+
+class AutofocusTrajectory(QObject):
+    """
+    Performs autofocussing of pipette tip by soliciting focus detection from main GUI
+    (via a signal) and moving the manipulator towards "in-focus" based on focus detection.
+    Reduces movement increment by 50% if over shoot "in-focus"
+    
+    Signals:
+        finished: emitted when no longer doing autofocus (regardless if it fails or succeeds)
+        failed: exceeded when it could not autofocus the tip
+        succeeded: emitted when the focus detection was "in-focus"
+        ask_for_focus: emitted when needs new focus detection to move manipulator
+        errors: emitted on exceptions
+    """
+    finished = pyqtSignal()
+    failed = pyqtSignal()
+    succeeded = pyqtSignal()
+    ask_for_focus = pyqtSignal()
+    errors = pyqtSignal()
+
+    def __init__(self, mdl:SensapexDevice, z_polarity:int):
+        super().__init__()
+        self._logr = StandardLogger(__name__)
+        self.mdl = mdl
+        self.z_polarity = z_polarity
+        self.UM2NM = 1000
+        self.speed_ums = 1000
+        self.disp_limit = 250*self.UM2NM
+        self.move_limit = 25
+        self.time_limit = 10000
+        self._initialize()
+        self.timer = QTimer()
+        self.timer.timeout.connect(self._autofocus)
+        self.timeout = 200
+
+    def _initialize(self):
+        """ INitialize autofocus parameters """
+        self.t0 = time.time()
+        self.inc = 15*self.UM2NM
+        self._move_index = 0
+        self.history = {'focus':[], 'disp':[], 'pos':[]}
+        self.disp = 0
+        self.waiting_for_focus = True
+        self.focus = None
+    
+    def start(self):
+        """ 
+        Runs the autofocus procedure.
+
+        Starts a timer to periodically run `_autofocus` function and requests
+        first focus detection.
+        """
+        self._initialize()
+        # Start autofocus loop by calling timer to periodically run `_autofocus`
+        if self.timer.isActive() is False:
+            self.timer.start(self.timeout)
+        # Query the initial focus detection
+        self._request_focus()
+
+    def stop(self):
+        """
+        Stops the autofocus procedure.
+
+        Stops the timer running the `_autofocus` function and emit `finished`
+        """
+        if self.timer.isActive():
+            self.timer.stop()
+        self.finished.emit()
+        self.failed.emit()
+    
+    def _finish_as_fail(self):
+        """ Stop looping autofocus procedure and emit `failed` and `finished`"""
+        self.timer.stop()
+        self.failed.emit()
+        self.finished.emit()
+    
+    def _finish_as_success(self):
+        """ Stop looping autofocus procedure and emit `succeeded` and `finished`"""
+        self.timer.stop()
+        self.succeeded.emit()
+        self.finished.emit()
+
+    def _are_limits_reached(self) -> bool:
+        """
+        Evaluate whether the number of autofocus moves, total movement displacement,
+        or the time duration is exceeded
+        """
+        if self._move_index > self.move_limit:
+            return True
+        elif abs(self.disp) > self.disp_limit:
+            return True
+        elif (time.time() - self.t0) > self.time_limit:
+            return True
+        else:
+            return False
+
+    def _autofocus(self):
+        """ Autofocus procedure that is continuously looped with a timer """
+
+        try:
+            # Stop looping if # moves, total distance, or total time excceeded
+            if self._are_limits_reached():
+                self._finish_as_fail()
+                return
+
+            # Evaluate focus after manipulator done moving and recieve focus detection
+            if not self.waiting_for_focus and not self.mdl.is_moving():
+                focus = self.focus
+
+                # Stop autofocus procedure if in focus
+                if focus == 'in':
+                    self._finish_as_success()
+
+                # Move manipulator towards "in-focus" based on current focus detection
+                else:
+                    # Dont make another move if it will exceed the movement limits because
+                    # the focus level of the movement won't be detected (since we stop the
+                    # loop at the beginning of this function if limits exceeded)
+                    if self._move_index + 1 > self.move_limit:
+                        self._finish_as_fail()
+                    else:
+                        self.adjust_inc(focus)
+                        self.move_manip(focus)
+                        # Wait to give time for video latency before query another detection
+                        # The wait time must be shorter than the looping duration, so it can
+                        # recieve the focus detection before the next loop
+                        QTimer.singleShot(100, self._request_focus)
+
+        except Exception as e:
+            self.errors.emit(e)
+
+    def _request_focus(self):
+        '''
+        Emit signal to request focus detection and set attribute indicating
+        that we are waiting for a response.
+        '''
+        self.waiting_for_focus = True
+        self.ask_for_focus.emit()  
+                    
+    def recieve_focus(self, focus:str):
+        """
+        Set the focus value and indicator that it is recieved
+
+        Args:
+            focus (str): focus level as 'below', 'in', or 'above'
+        """
+        self.focus = focus
+        self.waiting_for_focus = False
+    
+    def adjust_inc(self, focus):
+        """
+        Adjust the manipulator movement increment.
+
+        Reduces increment by 50% if current focus detection does not match
+        the previous detection
+
+        Args:
+            focus (str): focus level as 'below', 'in', or 'above'
+        """
+        if len(self.history['focus'])>0:
+            if focus != self.history['focus'][-1]:
+                self.inc  = self.inc * 0.5
+
+    def move_manip(self, focus):
+        """
+        Move manipulator to new postion and add info to history
+
+        Args:
+            focus (str): focus level as 'below', 'in', or 'above'
+        """
+        if focus == 'above':
+            direction = -1
+        elif focus == 'below':
+            direction = 1
+        disp = direction * self.inc * self.z_polarity
+        pos = self.mdl.get_pos()
+        new_pos = pos[:]
+        new_pos[2] += disp
+        move_req = self.mdl.goto_pos(new_pos, self.speed_ums)
+        self.history['focus'].append(focus)
+        self.history['disp'].append(disp)
+        self.history['pos'].append(pos[2])
+        self.disp += disp
+        self._move_index += 1

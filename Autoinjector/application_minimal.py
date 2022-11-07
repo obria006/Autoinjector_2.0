@@ -81,7 +81,7 @@ class ControlWindow(QMainWindow):
             self.motorfound = True
         except:
             msg = "Manipulators not detected. Wait 2 minutes then relaunch the app. If this does not work, replug manipulators into computer."
-            self.show_error_box(msg)
+            self.show_exception_box(msg)
             print("Manipulators not detected")
             self.motorfound = False
 
@@ -93,9 +93,10 @@ class ControlWindow(QMainWindow):
             self.com = com
         except:
             arduino = None
-            msg = "Arduino not detected, make sure you selected the correct com port, plug in, and try again."
-            self.show_error_box(msg)
+            msg = f"Arduino not detected on {com}.\n\n1. Ensure Arduino cord (pressure controller) is plugged in.\n2. Ensure {com} is correct COM port.\n3. See logs for more info."
+            self.show_exception_box(msg)
             self.arduinofound = False
+            raise
 
         #initiate video stream thread using camera settings
         self.cam_ = cam
@@ -152,9 +153,14 @@ class ControlWindow(QMainWindow):
         try:
             mm_path = self.cfg.values.micromanager_path.replace('\\','/')
             self.cam_MM = MMCamera(mm_path, self.cam_, self.brand_, self.val_, self.bins_, self.rot_, self.imagevals_)
+        except RuntimeError as e:
+            msg = f"Error while interfacing with camera.\n\n1. Make sure camera is on.\n2. Make sure camera was turned on AFTER Zeiss ZEN pro is open an running\n3. See logs for more info."
+            self.show_exception_box(msg)
+            raise
         except Exception as e:
             msg = f"Error while interfacing with camera: {e}.\n\nSee logs for more info."
-            self.show_exception_box(e)
+            self.show_exception_box(msg)
+            raise
 
         # Instantiate imported widgets
         self.instantiate_mvcs()
@@ -229,7 +235,12 @@ class ControlWindow(QMainWindow):
     def instantiate_mvcs(self):
         """ Instantiate imported model view controllers """
         # Zeiss zen controller
-        zen_model = ModelZEN()
+        try:
+            zen_model = ModelZEN()
+        except Exception as e:
+            msg = "Error while interfacing with Zeiss ZEN pro software.\n\nEnsure Zeiss ZEN pro is opened and running or see logs for more info."
+            self.show_exception_box(msg)
+            raise
         self.zen_controller = ControllerZEN(zen_model)
         self.full_zen_app = ViewZENComplete(self.zen_controller)
         self.focus_zen_app1 = ViewZENFocus(self.zen_controller)

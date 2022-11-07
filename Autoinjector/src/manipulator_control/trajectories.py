@@ -151,6 +151,8 @@ class XYCalibrationTrajectory(QObject):
                               [0 + dw, h - dh],
                               [w/2, h/2]]
         self._man_positions = []
+        # Wipe calibration data to start with clean slate
+        self.cal.data.rm_all()
 
     @pyqtSlot()
     def _on_move_completed(self):

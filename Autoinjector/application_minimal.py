@@ -33,7 +33,7 @@ from src.manipulator_control.error_utils import (CalibrationError,
                                                 AngleFileError,
                                                 TrajectoryError)
 from src.manipulator_control.sensapex_utils import SensapexDevice
-from src.manipulator_control.trajectories import ManipulatorModel, XYCalibrationTrajectory
+from src.manipulator_control.trajectories import ManipulatorModel, XYCalibrationTrajectory, AutofocusTrajectory
 from src.manipulator_control.injection_trajectory import SurfaceLineTrajectory3D, TrajectoryManager
 from src.manipulator_control.calibration_trajectory import SemiAutoCalibrationTrajectory
 from src.manipulator_control.convenience_trajectories import ConvenienceTrajectories
@@ -1335,10 +1335,29 @@ class ControlWindow(QMainWindow):
         self.leaving_calibration.connect(self.delete_calibration_trajectory)
 
     def delete_calibration_trajectory(self):
-        """ Delete the calibraoitn trajectory object from memory """
+        """ Delete the calibration trajectory object from memory """
         if hasattr(self, "cal_trajectory"):
             self.cal_trajectory.deleteLater()
             del self.cal_trajectory
+
+    def instantiate_autofocus_trajectory(self):
+        """
+        Make a autofocus trajectory instance
+        """
+        z_polarity = self.cfg.values.z_polarity
+        self.autofocus = AutofocusTrajectory(self.mdl, z_polarity)
+        self.autofocus.ask_for_focus.connect(self.pass_focus)
+        self.autofocus.errors.connect(self.show_recieved_exception)
+        # delete autofocus trajectory otherwise it will conintue to handle stuff from
+        # its connections even after it is finished
+        self.autofocus.finished.connect(self.delete_autofocus_trajectory)
+        self.leaving_calibration.connect(self.delete_autofocus_trajectory)
+
+    def delete_autofocus_trajectory(self):
+        """ Delete the autofocus trajectory object from memory """
+        if hasattr(self, "autofocus"):
+            self.autofocus.deleteLater()
+            del self.autofocus
 
     def start_calibration_process(self):
         """
@@ -1397,12 +1416,79 @@ class ControlWindow(QMainWindow):
             self.add_cal_positions(dets['xy_og'])
 
     @pyqtSlot()
+    def autofocus_pressed(self):
+        self.instantiate_autofocus_trajectory()
+        self.autofocus_tip()
+
+    def autofocus_tip(self):
+        """ Start the autofocus process """
+        try:
+            self.autofocus.start()
+        except Exception as e:
+            self.show_exception_box(f"Error while autofocussing: {e}.\n\nSee logs for more info.")
+
+    def pass_focus(self):
+        """ Attempts tip detection and pass focus level to autofocuser """
+        try:
+            dets = self.yolo_detect_tip()
+        except TipNotFoundError as e:
+            msg = f"Error: {e}.\n\nPlease ensure the tip is near or in-focus."
+            self.show_warning_box(msg)
+            self.delete_autofocus_trajectory()
+        except Exception as e:
+            msg = f"Error while detecting tip for autofocus: {e}\n\nSee logs for more information."
+            self.show_exception_box(msg)
+        else:
+            self.autofocus.recieve_focus(dets['class'])
+
+    @pyqtSlot()
     def auto_calibration_pressed(self):
-        """ Performs auto-calibrate or auto-update depending on the mode """
+        """ Performs auto-calibrate or auto-update depending on the mode.
+        Starts by trying to autofocus the tip first """
         if self.updating_calibration is True:
-            self.auto_update()
+            self.instantiate_autofocus_trajectory()
+            # Disable the autocalibrate button and enable whether it fail or succeed
+            self.auto_calibrate_but.setEnabled(False)
+            self.autofocus.finished.connect(lambda: self.auto_calibrate_but.setEnabled(True))
+            # Auto update if autofocus successful
+            self.autofocus.succeeded.connect(lambda: QTimer.singleShot(300,self.auto_update))
+            # Show guidance what to do if autofocus fails
+            self.autofocus.failed.connect(self.failed_autofocus_guidance)
+            self.autofocus_tip()
+
         elif self.conducting_calibration is True:
-            self.auto_calibrate()
+            # If no trajectory exists (or it did exist and was deleted), make a new one
+            # This is really only needed to sequentially run auto calibrations because
+            # calibration trajectories are deleted after they finish
+            if hasattr(self, "cal_trajectory") is False:
+                self.instantiate_calibration_trajectory()
+
+            # IF the calibration trajectory is already started, don't do autofocussing
+            if self.cal_trajectory.is_active() is True:
+                self.auto_calibrate()
+
+            # Try to autofocus first and then autocalibrate (if autofocus successsful)
+            else:
+                self.instantiate_autofocus_trajectory()
+                # Disable the autocalibrate button and enable if autofocus fail
+                self.auto_calibrate_but.setEnabled(False)
+                self.autofocus.failed.connect(lambda: self.auto_calibrate_but.setEnabled(True))
+                # Autocalibrate if autofocus is successful
+                self.autofocus.succeeded.connect(lambda: QTimer.singleShot(300,self.auto_calibrate))
+                # Show guidance what to do if autofocus fails
+                self.autofocus.failed.connect(self.failed_autofocus_guidance)
+                self.autofocus_tip()
+
+    def failed_autofocus_guidance(self):
+        """ Show popup box guidances for user if autofocus fails during autocalibrate """
+        if self.updating_calibration is True:
+            msg = ("Could not autofocus on pipette tip.\n\n1. Manually bring tip into focus.\n"
+            "2. Click on tip in video display.\n3. (Save and) Complete calibration.")
+        if self.conducting_calibration is True:
+            msg = ("Could not autofocus on pipette tip.\n\nEither:\n1.'Run Auto-Calibration' "
+            "to try and re-autofocus.\n\nOR\n1. Manually bring tip into focus.\n2. Click on tip "
+            "in video display.\n3. Then 'Run Auto-Calibration' to skip the autofocus.")
+        self.show_warning_box(msg)
 
     def auto_calibrate(self):
         # If no trajectory exists (or it did exist and was deleted), make a new one

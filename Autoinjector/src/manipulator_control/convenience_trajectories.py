@@ -22,7 +22,7 @@ class TrajectoryModel(QObject):
         self._mutex = QMutex()
         self.dev = dev
         self.speed_ums = speed_ums
-        self._position_history = []
+        self._position_history = {}
         self.UM_TO_NM = 1000
 
     def start_unload(self):
@@ -34,7 +34,7 @@ class TrajectoryModel(QObject):
         pos2[3] = 1000*self.UM_TO_NM
         poses = [pos1, pos2]
         # Run the trajectory
-        self._worker = aQWorker(self._run_trajectory, poses)
+        self._worker = aQWorker(self._run_trajectory, poses, 'unload')
         self._threader = aQThreader(self._worker)
         self._threader.start()
 
@@ -47,7 +47,7 @@ class TrajectoryModel(QObject):
         pos2[0] = max(1000*self.UM_TO_NM, pos2[0] - 8000*self.UM_TO_NM)
         poses = [pos1, pos2]
         # Run the trajectory
-        self._worker = aQWorker(self._run_trajectory, poses)
+        self._worker = aQWorker(self._run_trajectory, poses, 'displace')
         self._threader = aQThreader(self._worker)
         self._threader.start()
 
@@ -73,7 +73,7 @@ class TrajectoryModel(QObject):
         pos3 = list(man_center_pos)
         poses = [pos1, pos2, pos3]
         # Run the trajectory
-        self._worker = aQWorker(self._run_trajectory, poses)
+        self._worker = aQWorker(self._run_trajectory, poses, 'center')
         self._threader = aQThreader(self._worker)
         self._threader.start()
 
@@ -82,13 +82,21 @@ class TrajectoryModel(QObject):
         if len(self._position_history) == 0:
             raise TrajectoryError("Cannot undo micromanipulator move because most recent moves have already been undone.")
         # Generate trajecotry that goes oppoiste the most recent trajectory
-        reverse_poses = list(self._position_history[::-1])
+        assert len(self._position_history) == 1, "Position history should only contain most recent move"
+        move_type = list(self._position_history.keys())[0]
+        prev_poses = list(self._position_history.values())[0]
+        reverse_poses = prev_poses[::-1]
+        # If undoing an 'unload' (aka reloading the pipette) offset the z above original position
+        # so that it doesn't collide with the bottom of the dish (which can happen) because of 
+        # differences in lengths between pipettes
+        if move_type == 'unload':
+            reverse_poses[-1][2] -= 300*self.UM_TO_NM
         # Run the trajectory
-        self._worker = aQWorker(self._run_trajectory, reverse_poses)
+        self._worker = aQWorker(self._run_trajectory, reverse_poses, 'undo')
         self._threader = aQThreader(self._worker)
         self._threader.start()
 
-    def _run_trajectory(self, positions:list):
+    def _run_trajectory(self, positions:list, type_:str):
         """
         Guide pipette along trajectory of positions
 
@@ -108,18 +116,19 @@ class TrajectoryModel(QObject):
                 time.sleep(0.1)
         self._mutex.unlock()
         # Add trajectory to movement history
-        self._update_position_history(prev_positions)
+        self._update_position_history(prev_positions, type_)
         # Emit signal of trajectory complete
         self.moving.emit(False)
 
-    def _update_position_history(self, prev_positions:list):
+    def _update_position_history(self, prev_positions:list, type_:str):
         """
-        Set the trajectory history to `prev_positions`
+        Set the trajectory history to {`type_`:`prev_positions`}
 
         Args:
             prev_positions (list): List of manipulator previous positions from oldest to newest
+            type_ (str): String identifier of trajectory type (like 'unload')
         """
-        self._position_history = list(prev_positions)
+        self._position_history = {type_: prev_positions}
 
 
 class ConvenienceTrajectories():

@@ -19,7 +19,7 @@ from src.video_control.video import VideoDisplay
 from src.motorcontrol.motorlocationThread import motorpositionThread
 from src.pythonarduino.injectioncontrolmod import injection
 from src.cfg_mgmt.cfg_mngr import CfgManager
-from src.GUI_utils.gui_objects import QHLine
+from src.GUI_utils.gui_objects import QHLine, SmallQLineEdit
 import src.GUI_utils.display_modifier_mvc as disp_mod_mvc
 from src.miscellaneous.standard_logger import StandardLogger as logr
 from src.miscellaneous import validify as val
@@ -704,42 +704,51 @@ class ControlWindow(QMainWindow):
         depth_label = QLabel("Depth ("+ mu +"m)")
         spacing_label = QLabel("Spacing ("+ mu +"m)")
         speed_label = QLabel(f"Speed ({mu}/s)")
-        self.approach_entry = QLineEdit(self)
-        # self.approach_display = QLineEdit()
-        # self.approach_display.setReadOnly(True)
-        self.depth_entry= QLineEdit(self)
-        # self.depth_display = QLineEdit()
-        # self.depth_display.setReadOnly(True)
-        self.spacing_entry = QLineEdit(self)
-        # self.spacing_display = QLineEdit()
-        # self.spacing_display.setReadOnly(True)
-        self.speed_entry = QLineEdit(self)
-        # self.speed_display = QLineEdit()
-        # self.speed_display.setReadOnly(True)
+        palette = QPalette()
+        palette.setColor(QPalette.ColorRole.Base, QColor('lightGray'))
+        self.approach_entry = QLineEdit()
+        self.approach_display = SmallQLineEdit()
+        self.approach_display.setReadOnly(True)
+        self.approach_display.setPalette(palette)
+        self.approach_display.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
+        self.depth_entry= SmallQLineEdit()
+        self.depth_display = SmallQLineEdit()
+        self.depth_display.setReadOnly(True)
+        self.depth_display.setPalette(palette)
+        self.depth_display.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
+        self.spacing_entry = SmallQLineEdit()
+        self.spacing_display = SmallQLineEdit()
+        self.spacing_display.setReadOnly(True)
+        self.spacing_display.setPalette(palette)
+        self.spacing_display.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
+        self.speed_entry = SmallQLineEdit()
+        self.speed_display = SmallQLineEdit()
+        self.speed_display.setReadOnly(True)
+        self.speed_display.setPalette(palette)
+        self.speed_display.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
         self.pressure_slider = self.pres_view.pressure_slider
         pressure_label = QLabel("Pressure")
         self.pressure_display = self.pres_view.pressure_display
-        # self.pressure_display2 = QLineEdit(self)
-        # self.pressure_display2.setReadOnly(True)
+        self.pressure_display.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
         self.set_values_button = QPushButton("Set Values")
         grid = QGridLayout()
         grid.addWidget(approach_label, 0, 0, 1, 1)
         grid.addWidget(self.approach_entry, 0, 1, 1, 1)
-        # grid.addWidget(self.approach_display, 0, 2, 1, 1)
+        grid.addWidget(self.approach_display, 0, 2, 1, 1)
         grid.addWidget(depth_label, 1, 0, 1, 1)
         grid.addWidget(self.depth_entry, 1, 1, 1, 1)
-        # grid.addWidget(self.depth_display, 1, 2, 1, 1)
+        grid.addWidget(self.depth_display, 1, 2, 1, 1)
         grid.addWidget(spacing_label, 2, 0, 1, 1)
         grid.addWidget(self.spacing_entry, 2, 1, 1, 1)
-        # grid.addWidget(self.spacing_display, 2, 2, 1, 1)
+        grid.addWidget(self.spacing_display, 2, 2, 1, 1)
         grid.addWidget(speed_label, 3, 0, 1, 1)
         grid.addWidget(self.speed_entry, 3, 1, 1, 1)
-        # grid.addWidget(self.speed_display, 3, 2, 1, 1)
-        grid.addWidget(self.set_values_button, 4, 0, 1, 2)
-        grid.addWidget(QHLine(), 5, 0, 1, 2)
+        grid.addWidget(self.speed_display, 3, 2, 1, 1)
+        grid.addWidget(self.set_values_button, 4, 0, 1, 3)
+        grid.addWidget(QHLine(), 5, 0, 1, 3)
         grid.addWidget(pressure_label, 6, 0, 1, 1)
-        grid.addWidget(self.pressure_slider, 7, 0, 1, 1)
-        grid.addWidget(self.pressure_display, 7, 1, 1, 1)
+        grid.addWidget(self.pressure_slider, 7, 0, 1, 2)
+        grid.addWidget(self.pressure_display, 7, 2, 1, 1)
         self.inj_parameter_group = QGroupBox('Automated Microinjection Controls')
         self.inj_parameter_group.setLayout(grid)
 
@@ -747,6 +756,10 @@ class ControlWindow(QMainWindow):
         """ Sets signal/slot connections for injection parameter widgets """
         self.set_values_button.clicked.connect(self.setautomatedparameters)
         self.pres_controller.errors.connect(self.show_recieved_exception)
+        self.approach_entry.textEdited.connect(self.eval_inj_param_setpoints)
+        self.depth_entry.textEdited.connect(self.eval_inj_param_setpoints)
+        self.spacing_entry.textEdited.connect(self.eval_inj_param_setpoints)
+        self.speed_entry.textEdited.connect(self.eval_inj_param_setpoints)
     
     def stateify_injection_parameter_widgets(self):
         ''' set initial states for injection parameter widgets'''
@@ -2202,28 +2215,69 @@ class ControlWindow(QMainWindow):
     Functions to control setting of injection parameters and running injections.
     ============================================================================================
     """
+    def eval_inj_param_setpoints(self):
+        """ Change color of parameter display boxes to mimic the setpoints. """
+        err_palette = QPalette()
+        err_palette.setColor(QPalette.ColorRole.Base, QColor.fromRgb(255,204,203))
+        palette = QPalette()
+        palette.setColor(QPalette.ColorRole.Base, QColor('lightGray'))
+        if self.approach_entry.text() != self.approach_display.text():
+            self.approach_display.setPalette(err_palette)
+        else:
+            self.approach_display.setPalette(palette)
+        if self.depth_entry.text() != self.depth_display.text():
+            self.depth_display.setPalette(err_palette)
+        else:
+            self.depth_display.setPalette(palette)
+        if self.spacing_entry.text() != self.spacing_display.text():
+            self.spacing_display.setPalette(err_palette)
+        else:
+            self.spacing_display.setPalette(palette)
+        if self.speed_entry.text() != self.speed_display.text():
+            self.speed_display.setPalette(err_palette)
+        else:
+            self.speed_display.setPalette(palette)
+
+    def mimic_parameter_entries(self):
+        """ Match the parameter display values to the parameter entry """
+        palette = QPalette()
+        palette.setColor(QPalette.ColorRole.Base, QColor('lightGray'))
+        self.approach_display.setText(self.approach_entry.text())
+        self.approach_display.setPalette(palette)
+        self.depth_display.setText(self.depth_entry.text())
+        self.depth_display.setPalette(palette)
+        self.spacing_display.setText(self.spacing_entry.text())
+        self.spacing_display.setPalette(palette)
+        self.speed_display.setText(self.speed_entry.text())
+        self.speed_display.setPalette(palette)
+    
     def setautomatedparameters(self):
         try:
-            self.approachdist = self.approach_entry.text()
-            self.depthintissue = self.depth_entry.text()
-            self.stepsize = self.spacing_entry.text()
-            self.motorspeed = self.speed_entry.text()
-            if not val.is_valid_number(self.approachdist):
-                raise InjectionParameterError(f"Invalid approach distance: {self.approachdist}. Must be a valid number.")
-            if float(self.approachdist) < 0:
-                raise InjectionParameterError(f"Invalid approach distance: {self.approachdist}. Must be positive.")
-            if not val.is_valid_number(self.depthintissue):
-                raise InjectionParameterError(f"Invalid depth: {self.depthintissue}. Must be a valid number.")
-            if float(self.depthintissue) < 0:
-                raise InjectionParameterError(f"Invalid approach distance: {self.depthintissue}. Must be positive.")
-            if not val.is_valid_number(self.stepsize):
-                raise InjectionParameterError(f"Invalid spacing: {self.stepsize}. Must be a valid number.")
-            if float(self.stepsize) < 0:
-                raise InjectionParameterError(f"Invalid approach distance: {self.stepsize}. Must be positive.")
-            if not val.is_valid_number(self.motorspeed):
-                raise InjectionParameterError(f"Invalid speed: {self.motorspeed}. Must be a valid number.")
-            if float(self.motorspeed) < 0:
-                raise InjectionParameterError(f"Invalid approach distance: {self.motorspeed}. Must be positive.")
+            approachdist = self.approach_entry.text()
+            depthintissue = self.depth_entry.text()
+            stepsize = self.spacing_entry.text()
+            motorspeed = self.speed_entry.text()
+            if not val.is_valid_number(approachdist):
+                raise InjectionParameterError(f"Invalid approach distance: {approachdist}. Must be a valid number.")
+            if float(approachdist) < 0:
+                raise InjectionParameterError(f"Invalid approach distance: {approachdist}. Must be positive.")
+            if not val.is_valid_number(depthintissue):
+                raise InjectionParameterError(f"Invalid depth: {depthintissue}. Must be a valid number.")
+            if float(depthintissue) < 0:
+                raise InjectionParameterError(f"Invalid approach distance: {depthintissue}. Must be positive.")
+            if not val.is_valid_number(stepsize):
+                raise InjectionParameterError(f"Invalid spacing: {stepsize}. Must be a valid number.")
+            if float(stepsize) < 0:
+                raise InjectionParameterError(f"Invalid approach distance: {stepsize}. Must be positive.")
+            if not val.is_valid_number(motorspeed):
+                raise InjectionParameterError(f"Invalid speed: {motorspeed}. Must be a valid number.")
+            if float(motorspeed) < 0:
+                raise InjectionParameterError(f"Invalid approach distance: {motorspeed}. Must be positive.")
+            # Set attributes that will be used in injectino trajectory after they are evaluated
+            self.approachdist = approachdist
+            self.depthintissue = depthintissue
+            self.stepsize = stepsize
+            self.motorspeed = motorspeed
         except InjectionParameterError as e:
             self.show_error_box(str(e))
             self.response_monitor_window.append(f">> User error = {e}")
@@ -2234,6 +2288,8 @@ class ControlWindow(QMainWindow):
         else:
             self.response_monitor_window.append(">> Values set")
             self._parameter_complete.emit(True)
+            # Update the parameter display to match
+            self.mimic_parameter_entries()
 
 
     def validate_ready_for_injection(self):

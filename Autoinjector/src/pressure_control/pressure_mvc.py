@@ -6,6 +6,7 @@ from PyQt6.QtCore import Qt, pyqtSignal, QObject, pyqtSlot
 from PyQt6.QtWidgets import QApplication, QSlider, QLineEdit, QPushButton, QGroupBox, QGridLayout
 from PyQt6.QtGui import QPalette, QColor
 from src.pythonarduino.injectioncontrolmod import injection
+from src.GUI_utils.gui_objects import SmallQLineEdit
 from src.miscellaneous import validify as val
 from src.miscellaneous.standard_logger import StandardLogger
 
@@ -239,7 +240,7 @@ class PressureView(QObject):
         self.pressure_slider.setMaximum(100)
         self.pressure_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         self.pressure_slider.setTickInterval(10)
-        self.pressure_display = QLineEdit()
+        self.pressure_display = SmallQLineEdit()
         self.pressure_display.setReadOnly(True)
         palette = QPalette()
         palette.setColor(QPalette.ColorRole.Base, QColor('lightGray'))

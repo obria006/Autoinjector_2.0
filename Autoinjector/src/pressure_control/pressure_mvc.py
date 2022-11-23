@@ -1,11 +1,9 @@
 """ Handles pressure control in Model-View-Controller software pattern """
 import sys
-import serial
-import time
 from PyQt6.QtCore import Qt, pyqtSignal, QObject, pyqtSlot
 from PyQt6.QtWidgets import QApplication, QSlider, QLineEdit, QPushButton, QGroupBox, QGridLayout
 from PyQt6.QtGui import QPalette, QColor
-from src.pythonarduino.injectioncontrolmod import injection
+from src.pressure_control.arduino_pressure import ArduinoPressure
 from src.GUI_utils.gui_objects import SmallQLineEdit
 from src.miscellaneous import validify as val
 from src.miscellaneous.standard_logger import StandardLogger
@@ -16,10 +14,10 @@ class PressureModel(QObject):
     arduino to send pressure commands. Arduino expects 8-bit pressure commands.
     """
 
-    def __init__(self, arduino):
+    def __init__(self, arduino: ArduinoPressure):
         """
         Args:
-            arduino: serial object for sending recieving commands
+            arduino (ArduinoPressure): serial object for send/recieve commands
         """
         super().__init__()
         self._logger = StandardLogger(__name__)
@@ -39,9 +37,14 @@ class PressureModel(QObject):
             pres = int(min(255, max(0, pres)))
 
         # Send the pressure command
-        pressure_command = injection(self.arduino, pres, 0, pres, 0, 'bp')
-        pressure_command.start()
+        self.arduino.backpressure(pres)
 
+    def purge(self):
+        """
+        Sends purge command to Arduino to open valve connected to high pressure
+        air supply.
+        """
+        self.arduino.purge()
 
 class PressureController(QObject):
     """
@@ -90,9 +93,9 @@ class PressureController(QObject):
             pres = float(pres_str)
             if (pres < self._VIEW_RANGE[0] or pres> self._VIEW_RANGE[1]):
                 raise ValueError(f"Invalid pressure value: {pres_str}. Must be between {self._VIEW_RANGE}.")
-            
             # Apply new backpressure from the slider value
             self.new_bp(pres, 'view')
+
         except Exception as e:
             msg = f"Errors while changing slider: {e}. See logs for more info."
             self._logger.exception(msg)
@@ -100,14 +103,14 @@ class PressureController(QObject):
         
 
     @pyqtSlot()
-    def on_clear_button(self):
+    def on_purge_button(self):
         """
-        Handles when the pressure "clear" button is clicked
+        Handles when the pressure "purge" button is clicked
         """
         try:
-            raise NotImplementedError("`Clear` button is not implimented.")
+            self._purge_pressure()
         except Exception as e:
-            msg = f"Errors while clearing pressure: {e}. See logs for more info."
+            msg = f"Errors while purging pressure: {e}. See logs for more info."
             self._logger.exception(msg)
             self.errors.emit(msg)
 
@@ -215,6 +218,9 @@ class PressureController(QObject):
         """ Return current pressure in model scale """
         return int(self._current_bp)
 
+    def _purge_pressure(self):
+        """ Purge at high pressure to unclog """
+        self._model.purge()
 
 class PressureView(QObject):
     """ 
@@ -245,7 +251,7 @@ class PressureView(QObject):
         palette = QPalette()
         palette.setColor(QPalette.ColorRole.Base, QColor('lightGray'))
         self.pressure_display.setPalette(palette)
-        self.clear_button = QPushButton("Clear")
+        self.purge_button = QPushButton("Purge")
 
     def _set_connections(self):
         """ 
@@ -256,7 +262,7 @@ class PressureView(QObject):
         self.pressure_slider.valueChanged.connect(lambda pres_val: self._mimic_slider(pres_val))
         # View signal to controller slots
         self.pressure_slider.sliderReleased.connect(lambda: self._controller.on_slider_change(self.pressure_slider.value()))
-        self.clear_button.clicked.connect(self._controller.on_clear_button)
+        self.purge_button.clicked.connect(self._controller.on_purge_button)
         # Controller signal to view slots
         self._controller.pressure_to_view.connect(lambda pres_val: self._update_view(pres_val))
 
@@ -305,12 +311,12 @@ class PressureApp(PressureView):
         layout = QGridLayout()
         layout.addWidget(self.pressure_slider,0,0,1,1)
         layout.addWidget(self.pressure_display,0,1,1,1)
-        layout.addWidget(self.clear_button,1,0,1,2)
+        layout.addWidget(self.purge_button,1,0,1,2)
         self.pressure_group.setLayout(layout)
 
 
 if __name__ == "__main__":
-    arduino = serial.Serial(str('com3'), 9600,timeout=5)
+    arduino = ArduinoPressure(com="com3", baud=9600, timeout=5)
     app = QApplication(sys.argv)
     model = PressureModel(arduino)
     controller = PressureController(model)

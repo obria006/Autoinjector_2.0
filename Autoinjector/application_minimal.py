@@ -43,6 +43,7 @@ from src.deep_learning.tissue_detection import ModelTissueDetection
 from src.deep_learning.yolov5_servers import Yolov5PipetteDetector
 from src.deep_learning.edge_utils.error_utils import EdgeNotFoundError
 from src.deep_learning.error_utils import TipNotFoundError
+from src.pressure_control.arduino_pressure import ArduinoPressure
 from src.pressure_control.pressure_mvc import PressureModel, PressureController, PressureView
 
 
@@ -86,13 +87,12 @@ class ControlWindow(QMainWindow):
             self.motorfound = False
 
         # open arduino port and report error if it is not found
-        global arduino
         try:
-            arduino = serial.Serial(str(com), 9600,timeout=5)
+            self.arduino = ArduinoPressure(com=str(com), baud=9600, timeout=5)
             self.arduinofound = True
             self.com = com
         except:
-            arduino = None
+            self.arduino = None
             msg = f"Arduino not detected on {com}.\n\n1. Ensure Arduino cord (pressure controller) is plugged in.\n2. Ensure {com} is correct COM port.\n3. See logs for more info."
             self.show_exception_box(msg)
             self.arduinofound = False
@@ -250,7 +250,7 @@ class ControlWindow(QMainWindow):
         self.disp_mod_view = disp_mod_mvc.View(self.disp_mod_controller)
         self.disp_mod_view_alt = disp_mod_mvc.View(self.disp_mod_controller)
         # Pressure control mvc
-        self.pres_model = PressureModel(arduino=arduino)
+        self.pres_model = PressureModel(arduino=self.arduino)
         self.pres_controller = PressureController(model= self.pres_model)
         self.pres_view = PressureView(controller=self.pres_controller)
 
@@ -727,6 +727,7 @@ class ControlWindow(QMainWindow):
         self.speed_display.setPalette(palette)
         self.speed_display.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
         self.pressure_slider = self.pres_view.pressure_slider
+        self.pressure_purge_but = self.pres_view.purge_button
         pressure_label = QLabel("Pressure")
         self.pressure_display = self.pres_view.pressure_display
         self.pressure_display.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
@@ -749,6 +750,7 @@ class ControlWindow(QMainWindow):
         grid.addWidget(pressure_label, 6, 0, 1, 1)
         grid.addWidget(self.pressure_slider, 7, 0, 1, 2)
         grid.addWidget(self.pressure_display, 7, 2, 1, 1)
+        grid.addWidget(self.pressure_purge_but, 8,0,1,3)
         self.inj_parameter_group = QGroupBox('Automated Microinjection Controls')
         self.inj_parameter_group.setLayout(grid)
 

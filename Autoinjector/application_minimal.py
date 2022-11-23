@@ -16,8 +16,6 @@ from src.video_control.video_utils import interpolate, AnnotationError
 from src.video_control.annotations import AnnotationManager
 from src.video_control.camera import MMCamera
 from src.video_control.video import VideoDisplay
-from src.motorcontrol.motorlocationThread import motorpositionThread
-from src.pythonarduino.injectioncontrolmod import injection
 from src.cfg_mgmt.cfg_mngr import CfgManager
 from src.GUI_utils.gui_objects import QHLine, SmallQLineEdit
 import src.GUI_utils.display_modifier_mvc as disp_mod_mvc

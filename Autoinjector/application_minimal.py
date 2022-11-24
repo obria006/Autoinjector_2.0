@@ -1762,6 +1762,12 @@ class ControlWindow(QMainWindow):
         try:
             # Make detection of tissue edge
             annotated_3d_edges = self.automatic_tissue_annotation(image=image, edge_type=edge_type, z_scope=None)
+            # Add the detected edge coordiantes to the list of targets to be injected
+            # (which will emit a signal to set a new injection trajectory)
+            self.annot_mgr.add_annotations(annotated_3d_edges)
+        except AnnotationError as e:
+            msg = f"Error while annotating injection target: {e}"
+            self.show_error_box(msg)
         except EdgeNotFoundError as e:
             # ONly show error boxes when not zstack. During zstack pass errors to log.
             msg = f"{e}\n\nManually annotate the edge."
@@ -1769,10 +1775,6 @@ class ControlWindow(QMainWindow):
         except:
             msg = "Error while detecting tissue.\n\nSee logs for more info."
             self.show_exception_box(msg)
-        else:
-            # Add the detected edge coordiantes to the list of targets to be injected
-            # (which will emit a signal to set a new injection trajectory)
-            self.annot_mgr.add_annotations(annotated_3d_edges)
 
     def zstack_automatic_annotation(self)->Tuple[np.ndarray, Union[list[list[float,float,float]],None]]:
         """
@@ -2011,9 +2013,19 @@ class ControlWindow(QMainWindow):
         the image and annotation to the z-stack
         """
         image, annotations = self.zstack_automatic_annotation()
-        if annotations is not None:
-            self.annot_mgr.add_annotations(annotations)
-        self.zstack.set_stack_data(image=image, annotation=annotations)
+        try:
+            # Add detected annotation to annotation manager to be injected
+            if annotations is not None:
+                self.annot_mgr.add_annotations(annotations)
+        except AnnotationError as e:
+            # Don't show error box during z-stack so z-stack can finish running
+            msg = f"Supressed during z-stack: {e}"
+            self.response_monitor_window.append(f">> Error - {msg}")
+            self.logger.error(msg)
+            annotations = None
+        finally:
+            # Set stack data so can move to next stack level
+            self.zstack.set_stack_data(image=image, annotation=annotations)
 
     def process_zstack_data(self, zstack_data:ZStackDataWithAnnotations):
         """

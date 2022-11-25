@@ -880,8 +880,8 @@ class ControlWindow(QMainWindow):
         default_left_layout = QVBoxLayout()
         default_left_layout.addWidget(self.pip_cal_group)
         default_left_layout.addWidget(self.default_annotation_group)
-        default_left_layout.addWidget(self.display_modification_group)
-        default_left_layout.addWidget(self.data_gen_group)
+        default_left_layout.addWidget(self.inj_parameter_group)
+        default_left_layout.addWidget(self.workflow_group)
         default_left_layout.addStretch()
         self.default_left_page.setLayout(default_left_layout)
     
@@ -891,8 +891,8 @@ class ControlWindow(QMainWindow):
         default_right_layout = QVBoxLayout()
         default_right_layout.addWidget(self.full_zen_app.zen_group)
         default_right_layout.addWidget(self.manipulator_group)
-        default_right_layout.addWidget(self.inj_parameter_group)
-        default_right_layout.addWidget(self.workflow_group)
+        default_right_layout.addWidget(self.display_modification_group)
+        default_right_layout.addWidget(self.data_gen_group)
         default_right_layout.addStretch()
         self.default_right_page.setLayout(default_right_layout)
 
@@ -2426,6 +2426,7 @@ class ControlWindow(QMainWindow):
         self.depth_entry.setEnabled(True)
         self.spacing_entry.setEnabled(True)
         self.speed_entry.setEnabled(True)
+        self.set_values_button.setEnabled(True)
 
     def disable_noninjection_widgets(self):
         """ Disables widgets that shouldn't be used during injection """
@@ -2446,6 +2447,7 @@ class ControlWindow(QMainWindow):
         self.depth_entry.setEnabled(False)
         self.spacing_entry.setEnabled(False)
         self.speed_entry.setEnabled(False)
+        self.set_values_button.setEnabled(False)
 
 
     def show_n_injected(self, n:int):

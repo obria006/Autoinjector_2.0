@@ -33,7 +33,6 @@ from src.manipulator_control.error_utils import (CalibrationError,
 from src.manipulator_control.sensapex_utils import SensapexDevice
 from src.manipulator_control.trajectories import ManipulatorModel, XYCalibrationTrajectory, AutofocusTrajectory
 from src.manipulator_control.injection_trajectory import SurfaceLineTrajectory3D, TrajectoryManager
-from src.manipulator_control.calibration_trajectory import SemiAutoCalibrationTrajectory
 from src.manipulator_control.convenience_trajectories import ConvenienceTrajectories
 from src.ZEN_interface.ZEN_mvc import ModelZEN, ControllerZEN, ViewZENComplete, ViewZENFocus
 from src.ZEN_interface.z_stack import ZStackManager, ZStackDataWithAnnotations

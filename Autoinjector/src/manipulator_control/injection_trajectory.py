@@ -186,8 +186,10 @@ class SurfacePointTrajectory3D(QThread):
     Signals:
         finished: Emitted when the thread is finished (aka when the trajectory is complete)
         goto_focus (float): Emitted when the trajectory wants the focus height to change
+        focussed_at_first: Emitted once the microscope focusses on the first injection position
     """
     goto_focus = pyqtSignal(float)
+    focussed_at_first = pyqtSignal()
 
     def __init__(self, dev:SensapexDevice, cal:Calibrator, ex_points_3D:list, approach_nm:int, depth_nm:int, speed_ums:int, pullout_nm:int, end_at_finish_pos:bool):
         """
@@ -273,6 +275,21 @@ class SurfacePointTrajectory3D(QThread):
         des_pos_m[0] -= self.pullout_nm
         self._logr.debug(f"Computed e-stop position: {des_pos_m}")
         return des_pos_m
+
+    def set_positions(self, poses:list):
+        """
+        Sets injeciton positions for the current trajectory. Must have same
+        number of positions as current trajectory.
+
+        !TODO: Make thread safe
+        
+        Args:
+            poses (list): list of positions as [[x, y, z], [x, y, z], ...]
+        """
+        if len(poses) != len(self.ex_points_3D):
+            raise ValueError(f"Cannot set injection positions because number of positions to set ({len(poses)}) does not match number of current positiosn {len(self.ex_points_3D)}")
+        else:
+            self.ex_points_3D = poses
         
     def implement_trajectory(self):
         """
@@ -296,6 +313,10 @@ class SurfacePointTrajectory3D(QThread):
                 des_inj_pos = self.ex_points_3D[i]
                 z = des_inj_pos[2]
                 self._focus_to_next(z)
+
+                # Emit signal when focus to the first injection position
+                if i == 0:
+                    self.focussed_at_first.emit()
 
                 # Get positoin in man CSYS and approach and depth distances along d
                 des_pos_m = self._compute_inj_position(des_pos_ex=des_inj_pos)
@@ -337,9 +358,9 @@ class SurfacePointTrajectory3D(QThread):
             z (float): Desired focus controller positoin
         """
         self.goto_focus.emit(z)
-        self._is_focussed = True
+        self._is_focussed = False
         while not self._is_focussed:
-            time.sleep(0.1)
+            time.sleep(0.01)
 
     def set_as_focussed(self):
         """ Set the `_is_focussed` attribute as True """
@@ -416,23 +437,51 @@ class SurfaceLineTrajectory3D(SurfacePointTrajectory3D):
         """
         # Get the pixel size from the calibration
         pix_size_nm = cal.model.pixel_size_nm
-        # Assume each entry in edge coords is 1 pixel
+        # Get points separated by spacing_nm converted to pixels
         n_pix = len(self.edge_3D)
         n_inj = int(ceil((n_pix*pix_size_nm) / spacing_nm))
         pixel_spacing = spacing_nm / pix_size_nm
-        self._logr.debug(f'For edge of {n_pix} pixels @ {round(pix_size_nm)}nm large with {spacing_nm}nm spacing, doing {n_inj} injections located {pixel_spacing} pixels apart')
-        inj_points = []
-        for i in range(n_inj):
-            try:
-                inj_points.append(self.edge_3D[int(i*pixel_spacing)])
-            except IndexError:
-                pass
+        inj_points = self._points_separated_by_spacing(pixel_spacing)
+        return inj_points
+
+    def _points_separated_by_spacing(self, spacing:int) -> list:
+        """
+        Create list of points that are separated by X,Y euclidean distance of
+        `spacing` pixels.
+
+        Starts at first point in list and iterates through list, appending points
+        that are at least `spacing` distance away from the last point in the list.
+
+        Args:
+            spacing (int): Euclidean distance between points (in pixels) for adding to list.
+
+        Returns:
+            list of points separated by X,Y euclidean distance of `spacing` pixels
+        """
+        # Start list of points
+        inj_points = [self.edge_3D[0]]
+        # Iterate through all points, and append point if spacing distance away form last point in inj_points
+        for ind, pt in enumerate(self.edge_3D):
+            if np.linalg.norm(np.array(pt[:2]) - np.array(inj_points[-1][:2])) > spacing:
+                inj_points.append(pt)
         return inj_points
 
 class TrajectoryManager(QObject):
-    """ Coordiantes trajectories across multiple trajectories """
+    """
+    Coordiantes trajectories across multiple trajectories.
+    
+    Signals:
+        started: emitted when first trajectory is started
+        finished emitted when last trajectory is finshed
+        trajectory_ready: emitted when current trajectory focussed on first position
+        trajectory_started: emitted each time a trajectory is started
+        trajectory_finished: emitted each time a trajectory is finished
+    """
     finished = pyqtSignal()
     started = pyqtSignal()
+    trajectory_ready = pyqtSignal()
+    trajectory_started = pyqtSignal()
+    trajectory_finished = pyqtSignal()
     n_injected_signal = pyqtSignal(float)
 
     def __init__(self, goto_z:Callable[[float], None], trajectories:list=None):
@@ -448,6 +497,7 @@ class TrajectoryManager(QObject):
         self.n_injected = 0
         self._cur_trajectory = None
         self._is_running = False
+        self.trajectory_index = 0
         # Prevent mutable default args
         if trajectories is None:
             self._trajectories = []
@@ -472,13 +522,50 @@ class TrajectoryManager(QObject):
         """
         self._trajectories.append(trajectory)
 
+    def positions(self, ind:int) -> list:
+        """
+        Returns list of injection positions for the trajectory located
+        at index `ind` in self._trajectories
+
+        Args:
+            ind (int): Index of trajectory in self._trajectories to query
+        
+        Returns:
+            list of injection positions as [[x, y, z], [x, y, z], ...]
+        """
+        return self._trajectories[ind].ex_points_3D
+
+    def set_positions(self, poses:list, ind:int) -> None:
+        """
+        Sets injection positions for the trajectory located at index `ind`
+        in self._trajectories. Number of positions must match between the
+        positions that are passed as an argument and the positions in the
+        trajectory that you are trying to set.
+        
+        Args:
+            poses (list): list of positions as [[x, y, z], [x, y, z], ...]
+            ind (int): Index of trajectory in self._trajectories to modify
+        """
+        
+        traj_poses = self._trajectories[ind].ex_points_3D
+        if len(poses) != len(traj_poses):
+            raise ValueError(f"Cannot set injection positions because number of positions to set ({len(poses)}) does not match number of current positiosn {len(traj_poses)}")
+        else:
+            self._trajectories[ind].set_positions(poses)
+
     def is_running(self)->bool:
         """ Returns true if it is currently running an injection trial."""
         return self._is_running
 
+    def inc_index(self):
+        """
+        Increment trajectory index. To be called everytime a trajectory is finished.
+        """
+        self.trajectory_index += 1
+
     def is_empty(self)->bool:
         """ Returns true if no trajectories in list """
-        return len(self._trajectories)==0
+        return len(self._trajectories)==0 or self.trajectory_index >= len(self._trajectories)
 
     def start(self):
         """ Run all trajectories stored in trajectories attribute """
@@ -496,12 +583,16 @@ class TrajectoryManager(QObject):
             self.n_injected += self._cur_trajectory.n_injected
         # Run the next injectory if there are still uncompleted trajectories
         if self.is_empty() is False:
-            self._cur_trajectory = self._trajectories.pop(0)
-            self._cur_trajectory.start()
-            # When the trajectory thread is finished, run the nex tand delete the current
+            self._cur_trajectory = self._trajectories[self.trajectory_index]
+            self.trajectory_started.emit()
+            # When the trajectory thread is finished, run the next and delete the current
             self._cur_trajectory.goto_focus.connect(self.goto_focus)
+            self._cur_trajectory.finished.connect(self.inc_index)
+            self._cur_trajectory.finished.connect(lambda: self.trajectory_finished.emit())
             self._cur_trajectory.finished.connect(self.run_next_trajectory)
             self._cur_trajectory.finished.connect(self._cur_trajectory.deleteLater)
+            self._cur_trajectory.focussed_at_first.connect(lambda: self.trajectory_ready.emit())
+            self._cur_trajectory.start()
         # When there are no more trajectoreis, its finished
         # ALWAYS END HERE BECAUSE CONNECT this fcn to finsihed from current trajectory
         # even if manually stop trajectroy the loop will end here when the current trajectory

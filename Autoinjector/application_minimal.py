@@ -42,7 +42,7 @@ from src.deep_learning.edge_utils.error_utils import EdgeNotFoundError
 from src.deep_learning.error_utils import TipNotFoundError
 from src.pressure_control.arduino_pressure import ArduinoPressure
 from src.pressure_control.pressure_mvc import PressureModel, PressureController, PressureView
-
+from src.tracking.tracking import TrackingManager
 
 
 class ControlWindow(QMainWindow):
@@ -723,12 +723,19 @@ class ControlWindow(QMainWindow):
         self.speed_display.setReadOnly(True)
         self.speed_display.setPalette(palette)
         self.speed_display.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
+        self.set_values_button = QPushButton("Set Values")
         self.pressure_slider = self.pres_view.pressure_slider
         self.pressure_purge_but = self.pres_view.purge_button
         pressure_label = QLabel("Pressure")
         self.pressure_display = self.pres_view.pressure_display
         self.pressure_display.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
-        self.set_values_button = QPushButton("Set Values")
+        tracking_label = QLabel("Annotation Tracking:")
+        self.track_annot_rbon = QRadioButton("On")
+        self.track_annot_rboff = QRadioButton("Off")
+        bg1 = QButtonGroup(self)
+        bg1.addButton(self.track_annot_rbon)
+        bg1.addButton(self.track_annot_rboff)
+        bg1.setExclusive(True)
         grid = QGridLayout()
         grid.addWidget(approach_label, 0, 0, 1, 1)
         grid.addWidget(self.approach_entry, 0, 1, 1, 1)
@@ -748,6 +755,12 @@ class ControlWindow(QMainWindow):
         grid.addWidget(self.pressure_slider, 7, 0, 1, 2)
         grid.addWidget(self.pressure_display, 7, 2, 1, 1)
         grid.addWidget(self.pressure_purge_but, 8,0,1,3)
+        grid.addWidget(QHLine(), 9, 0, 1, 3)
+        grid.addWidget(tracking_label, 10, 0, 1, 1)
+        hl = QHBoxLayout()
+        hl.addWidget(self.track_annot_rbon)
+        hl.addWidget(self.track_annot_rboff)
+        grid.addLayout(hl,10,1,1,2)
         self.inj_parameter_group = QGroupBox('Automated Microinjection Controls')
         self.inj_parameter_group.setLayout(grid)
 
@@ -759,6 +772,7 @@ class ControlWindow(QMainWindow):
         self.depth_entry.textEdited.connect(self.eval_inj_param_setpoints)
         self.spacing_entry.textEdited.connect(self.eval_inj_param_setpoints)
         self.speed_entry.textEdited.connect(self.eval_inj_param_setpoints)
+        self.track_annot_rbon.toggled.connect(self.on_track_annotation_toggle)
     
     def stateify_injection_parameter_widgets(self):
         ''' set initial states for injection parameter widgets'''
@@ -766,6 +780,7 @@ class ControlWindow(QMainWindow):
         self.depth_entry.insert('20')
         self.spacing_entry.insert('50')
         self.speed_entry.insert('1000')
+        self.track_annot_rboff.setChecked(True)
 
     """
     Initialize manipulator widgets ---------------------------------------------------------
@@ -2226,6 +2241,20 @@ class ControlWindow(QMainWindow):
     Functions to control setting of injection parameters and running injections.
     ============================================================================================
     """
+    @pyqtSlot()
+    def on_track_annotation_toggle(self):
+        """
+        Handles what to do when track annotation button is toggled. Only
+        action is to disable the annotation tracking widgets if tracking was 
+        on and then turned off during an injection trial.
+        """
+        # Disable tracking if turned off during injections
+        if hasattr(self, "inj_trajectory"):
+            if self.inj_trajectory.is_running() is True and self.track_annot_rbon.isChecked() is False:
+                self.tracking.stop()
+                self.track_annot_rbon.setEnabled(False)
+                self.track_annot_rboff.setEnabled(False)                
+
     def eval_inj_param_setpoints(self):
         """ Change color of parameter display boxes to mimic the setpoints. """
         err_palette = QPalette()
@@ -2345,6 +2374,13 @@ class ControlWindow(QMainWindow):
             self.inj_trajectory.n_injected_signal.connect(lambda n: self.show_n_injected(n))
             self.inj_trajectory.started.connect(self.on_trajectory_started)
             self.inj_trajectory.finished.connect(self.on_trajectory_finished)
+            # Instantiate tracker if the tracking button is clicked
+            if self.track_annot_rbon.isChecked() is True:
+                self.tracking = TrackingManager(self.annot_mgr, self.inj_trajectory)
+                # Handle errors if they occur during tracking
+                self.tracking.errors.connect(lambda err: self.on_tracking_errors(err))
+                # Send new frame to be tracked everytime one is available
+                self.vid_display.streamer.new_frame_available.connect(lambda: self.tracking.update_frame(self.vid_display.get_frame()))
             self.inj_trajectory.start()
         
         except TrajectoryError as e:
@@ -2398,6 +2434,22 @@ class ControlWindow(QMainWindow):
         
         return trajectory
 
+    @pyqtSlot()
+    def on_tracking_errors(self, err:Exception) -> None:
+        """
+        Turn off and disable tracking and show tracking error if error occurs.
+
+        Args:
+            err (Exception): Exception from tracker
+        """
+        # Turn off tracking button and stop tracking
+        self.track_annot_rboff.toggle()
+        self.tracking.stop()
+        # Show error message
+        # IDK why but must be delayed by singleShot to cause a non-blocking
+        # message. Otherwise video feed will pause while error box is shown. 
+        QTimer.singleShot(100, lambda: self.show_exception_box(f"Tracking error: {err}. Tracking is turned off but injections will continue.\n\nSee logs for more info."))
+
     def on_trajectory_started(self):
         """ Handles what to do when trajectory starts """
         self.disable_noninjection_widgets()
@@ -2426,6 +2478,8 @@ class ControlWindow(QMainWindow):
         self.spacing_entry.setEnabled(True)
         self.speed_entry.setEnabled(True)
         self.set_values_button.setEnabled(True)
+        self.track_annot_rbon.setEnabled(True)
+        self.track_annot_rboff.setEnabled(True)
 
     def disable_noninjection_widgets(self):
         """ Disables widgets that shouldn't be used during injection """
@@ -2447,6 +2501,9 @@ class ControlWindow(QMainWindow):
         self.spacing_entry.setEnabled(False)
         self.speed_entry.setEnabled(False)
         self.set_values_button.setEnabled(False)
+        if self.track_annot_rbon.isChecked() is False:
+            self.track_annot_rbon.setEnabled(False)
+            self.track_annot_rboff.setEnabled(False)
 
 
     def show_n_injected(self, n:int):
@@ -2458,6 +2515,8 @@ class ControlWindow(QMainWindow):
                 raise TrajectoryError("Cannot stop injection trajectory because no injection trajectory is running.")
             if not self.inj_trajectory.is_running():
                 raise TrajectoryError("Cannot stop injection trajectory because no injection trajectory is running.")
+            if hasattr(self, "tracking"):
+                self.tracking.stop()
             self.inj_trajectory.stop()
         except TrajectoryError as e:
             msg = f"{e}\n\nPlease start injection trajectory first."

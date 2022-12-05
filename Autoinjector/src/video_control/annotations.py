@@ -24,7 +24,6 @@ class AnnotationManager(QObject):
         """
         super().__init__()
         self.annotation_dict = {'raw':[], 'interpolated':[]}
-
     
     def is_empty(self) -> bool:
         """ Returns true if no annotations exist """
@@ -110,6 +109,24 @@ class AnnotationManager(QObject):
         else:
             raise NotImplementedError(f"Invalid annotation coords: {coords}. Must be in ['xy', 'xyz']")
 
+    def set_annotation_by_ind(self, annot: list, ind:int):
+        """
+        Set annotation at index `ind` to `annot`.
+
+        The raw annotation will be set to `annot`. This fcn also interpolates
+        `annot` for setting the interpolated annotaiton.
+        
+        Args:
+            annot: Ordered list of annotation as [[x1,y1,z1],[x2,y2,z2],...]
+            ind (int): Index of annotation to set/update.
+        """
+        if not val.is_of_types(ind, [int]):
+            raise TypeError(f"Invalid index type: {type(ind)}. Must be int.")
+        inter_annot = self._interpolate_annotation(annot)
+        self.annotation_dict['raw'][ind] = annot
+        self.annotation_dict['interpolated'][ind] = inter_annot
+        self.annotation_changed.emit(self.annotation_dict['interpolated'])
+        
     def rm_annotation_by_inds(self, inds):
         """
         Remove annotations from `annot_dict` by their indices

@@ -2253,7 +2253,7 @@ class ControlWindow(QMainWindow):
             if self.inj_trajectory.is_running() is True and self.track_annot_rbon.isChecked() is False:
                 self.tracking.stop()
                 self.track_annot_rbon.setEnabled(False)
-                self.track_annot_rboff.setEnabled(False)                
+                self.track_annot_rboff.setEnabled(False)
 
     def eval_inj_param_setpoints(self):
         """ Change color of parameter display boxes to mimic the setpoints. """
@@ -2376,11 +2376,10 @@ class ControlWindow(QMainWindow):
             self.inj_trajectory.finished.connect(self.on_trajectory_finished)
             # Instantiate tracker if the tracking button is clicked
             if self.track_annot_rbon.isChecked() is True:
-                self.tracking = TrackingManager(self.annot_mgr, self.inj_trajectory)
+                # Create the tracker to conduct tracking
+                self.tracking = TrackingManager(self.annot_mgr, self.inj_trajectory, self.vid_display.streamer.new_frame_available, self.vid_display.get_frame)
                 # Handle errors if they occur during tracking
                 self.tracking.errors.connect(lambda err: self.on_tracking_errors(err))
-                # Send new frame to be tracked everytime one is available
-                self.vid_display.streamer.new_frame_available.connect(lambda: self.tracking.update_frame(self.vid_display.get_frame()))
             self.inj_trajectory.start()
         
         except TrajectoryError as e:

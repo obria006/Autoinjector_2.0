@@ -9,7 +9,6 @@ import os
 import cv2
 import math
 import numpy as np
-import pandas as pd
 from PyQt6.QtCore import (pyqtSlot,
                           pyqtSignal,
                           QObject,
@@ -45,14 +44,35 @@ class TrackingManager(QObject):
     new_frame_available = pyqtSignal()
     errors = pyqtSignal(Exception)
 
-    def __init__(self, annot_mgr, inj_trajectory):
+    def __init__(self, annot_mgr, inj_trajectory, new_frame_sig, get_frame_fcn):
+        """
+        Args:
+            annot_mgr (AnnotationManager): Annotation manager for modifying
+                annotations with tracked points.
+            inj_trajectory (TrajectoryManagers): Injeciton trajectories to be
+                modified with the tracekd points.
+            new_frame_sig (pyqtSignal): Signal indicating that a new frame is
+                available from the camera.
+            get_frame_fcn (Callable): Funciton that returns frame from camera.
+        """
         super().__init__()
         self.annot_mgr = annot_mgr
         self.inj_trajectory = inj_trajectory
+        self.new_frame_sig = new_frame_sig
+        self.get_frame = get_frame_fcn
         self.frame = None
         self._is_tracking = True
         self.R_TOL = 0.035 # rotation of 2 degrees (arcsin(0.035) = 2 degree)
         self.T_TOL = 3 # pixel translation
+
+        # Make tracker
+        self.tracker = TrackerMFLK()
+        # Handle what to do when tracker returns newly tracked points
+        self.tracker.new_points.connect(lambda p: self.on_tracked_points(p))
+        # When a new video frame is available, send to tracker for compute new points
+        self.new_frame_available.connect(lambda: self.tracker.track(self.frame))
+        # Stop tracking when the trajecotyr is done
+        self.inj_trajectory.trajectory_finished.connect(self.tracker.stop)
 
         # Everytime new trajectory is started, init and start new tracking
         # Needs a new tracker for each new trajectory because the annotation
@@ -61,6 +81,7 @@ class TrackingManager(QObject):
         # while the manipulator is injecting in a different focal plane. Hence,
         # the median flow tracker cannot track points it cannot see.
         self.inj_trajectory.trajectory_ready.connect(lambda: QTimer.singleShot(250,self._start_new_tracking))
+        self.new_frame_sig.connect(lambda: self.update_frame(self.get_frame()))
 
     @pyqtSlot()
     def update_frame(self, frame:np.ndarray):
@@ -122,9 +143,7 @@ class TrackingManager(QObject):
     def stop(self):
         """ Stop tracking """
         self._is_tracking = False
-        if hasattr(self, "tracker"):
-            self.tracker.stop()
-            del self.tracker
+        self.tracker.stop()
 
     def _start_new_tracking(self):
         """
@@ -142,16 +161,7 @@ class TrackingManager(QObject):
                 # Sample points to track from interpolated annotation
                 points = self._points_from_annotation(self.inj_trajectory.trajectory_index)
                 self.p0 = np.copy(points)
-                # Intialize median flow tracker
-                self.tracker = TrackerMFLK(self.frame, points)
-                # Handle what to do when tracker returns newly tracked points
-                self.tracker.new_points.connect(lambda p: self.on_tracked_points(p))
-                # When a new video frame is available, send to tracker for compute new points
-                self.new_frame_available.connect(lambda: self.tracker.track(self.frame))
-                # Stop tracking when the trajecotyr is done
-                self.inj_trajectory.trajectory_finished.connect(self.tracker.stop)
-                # Begin tracking
-                self.tracker.start()
+                self.tracker.start(self.frame, points)
         except Exception as e:
             self.stop()
             self.errors.emit(e)
@@ -194,24 +204,14 @@ class TrackerMFLK(QObject):
     
     Signals:
         new_points (list): Updates/measured points computed from LK algo.
-        new_state (pd.Dataframe): Dataframe of tracked points and status
         
     Slots:
         track: Pass image frame to conduct object tracking
     """
     new_points = pyqtSignal(list)
-    new_state = pyqtSignal(pd.DataFrame)
 
-    def __init__(self, frame:np.ndarray, points:list):
-        """
-        Args:
-            frame (np.ndarray): Initial image frame from camera
-            points (list): Coordinates points in image frame to track
-            dt (int): Time between tracking events in ms
-        """
+    def __init__(self):
         super().__init__()
-        assert len(frame.shape) == 2, "Must be a grayscale frame"
-        self._validate_points(points)
         # Boolean to conduct tracking
         self._is_active = False
         # Parameters for Lucas-Kanade optical flow algorithim
@@ -220,23 +220,37 @@ class TrackerMFLK(QObject):
             maxLevel = 3, # number of levels in pyramid
             criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03)
             )
+
+    def start(self, frame:np.ndarray, points:list):
+        """
+        Start tracking new set of points for new set of `points` defined in image
+        `frame`.
+
+        Args:
+            frame (np.ndarray): Initial image frame for tracking
+            points (list): [[x,y,z],...] coordinates in frame to track
+        """
+        assert len(frame.shape) == 2, "Must be a grayscale frame"
+        self._validate_points(points)
         # Set frame for image gradient
         self.prev_frame = np.copy(frame)
         # The cv2 optical flow tracker expects features/points as an np.ndarray
         # with shape = (n,1,2), so recast `points` to match
         points = self._recast_points(points)
-        self._state = pd.DataFrame({
-            'x0':points[:,0,0],
-            'y0':points[:,0,1],
-            'z0':points[:,0,2],
-            'x':points[:,0,0],
-            'y':points[:,0,1],
-            'z':points[:,0,2],
-            'status':[1]*len(points),
-        })
         # Set features
         self.prev_points = points[:,:,0:2]
         self._x0 = self.prev_points[:,0,:]
+
+        # Boolean to start tracking
+        self._is_active = True
+    
+    def stop(self):
+        """ Stop tracking """
+        self._is_active = False
+
+    def is_tracking(self) -> bool:
+        """ Returns boolean of whether actively tracking """
+        return self._is_active
 
     @pyqtSlot()
     def track(self, frame:np.ndarray):
@@ -244,7 +258,8 @@ class TrackerMFLK(QObject):
         Compute optical flow tracking for new image `frame`.
 
         Args:
-            frame (np.ndarray): Initial image frame from camera
+            frame (np.ndarray): Image frame from camera to track (compared
+                against previous image)
         """
         if self._is_active:
             frame = np.copy(frame)
@@ -252,8 +267,6 @@ class TrackerMFLK(QObject):
             points, status, errors = cv2.calcOpticalFlowPyrLK(self.prev_frame, frame, self.prev_points, None, **self.lk_params)
             # get the 'good' points
             if points is not None:
-                # self._update_state(points, status)
-                # good_points = points
                 good_points = points[status==1]
                 # Emit signal of points
                 self._send_tracked_points(good_points)
@@ -261,18 +274,7 @@ class TrackerMFLK(QObject):
                 self.prev_frame = frame
                 self.prev_points = np.copy(good_points)
                 if len(self.prev_points.shape) ==2:
-                    self.prev_points = self.prev_points[:,np.newaxis,:]
-
-    def start(self):
-        self._is_active = True
-
-    def stop(self):
-        self._is_active = False
-        self.deleteLater()
-
-    def is_tracking(self) -> bool:
-        """ Returns boolean of whether actively tracking """
-        return self._is_active
+                    self.prev_points = self.prev_points[:,np.newaxis,:]     
 
     def _validate_points(self, points):
         """ Validate that points are x,y or xyz style list or array """
@@ -311,9 +313,3 @@ class TrackerMFLK(QObject):
         else:
             raise ValueError(f"Unexpected shape for tracked points: {points.shape}. Expects (n,1,2) or (n,2)")
         self.new_points.emit(points_list)
-
-    # def _update_state(self, points:np.ndarray, status:np.ndarray):
-    #     self._state.loc[:,'x'] = self.prev_points[:,0,0]
-    #     self._state.loc[:,'y'] = self.prev_points[:,0,1]
-    #     self._state.loc[:,'status'] = status[:]
-    #     self.new_state.emit(self._state)

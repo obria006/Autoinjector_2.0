@@ -9,7 +9,7 @@ import os
 import sys
 import cv2
 import numpy as np
-from skimage.util import img_as_ubyte
+import time
 from PyQt6.QtCore import (Qt,
                           QObject,
                           pyqtSignal,
@@ -68,6 +68,8 @@ class VideoDisplay(QWidget):
         self.annotated_camera_pixels = []
         self.is_annotating = False
         self._make_widgets()
+        self._t0 = time.time()
+        self._dt = 0
         # Update the video display when a new frame available from the camera
         self.streamer.new_frame_available.connect(self.set_new_frame)
         # Continuously query the focus z-height so painter can change annotaiton display
@@ -210,6 +212,20 @@ class VideoDisplay(QWidget):
         # Convert camera image to rgb image for display
         canvas_frame = self.get_frame()
         self.canvas.update_(canvas_frame)
+        # Compute sampling time between dispaly updates
+        self._estimate_frame_rate()
+
+    def _estimate_frame_rate(self):
+        """
+        Estimates the frame rate of the video display. Comptues a psuedo 
+        moving averge of the amount of time between displaying frames
+        """
+        self._dt = 0.9*self._dt + 0.1*(time.time() - self._t0)
+        self._t0 = time.time()
+
+    def get_fps(self) -> int:
+        """ Returns the estimated frame rate of the video display """
+        return int(1/(self._dt + 1e-6))
 
     def show_tip_position(self, bool_:bool):
         """

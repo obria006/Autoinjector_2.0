@@ -856,11 +856,22 @@ class ControlWindow(QMainWindow):
     """
     def make_system_status_widgets(self):
         layout = QVBoxLayout()
+        hl = QHBoxLayout()
+        self.fps_label = QLabel("")
+        self.fps_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.response_monitor_window = QTextBrowser()
         self.response_monitor_window.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        hl.addWidget(QLabel("Video FPS:"))
+        hl.addWidget(self.fps_label)
+        hl.addStretch()
+        layout.addLayout(hl)
         layout.addWidget(self.response_monitor_window)
         self.system_status_group = QGroupBox('System Status')
         self.system_status_group.setLayout(layout)
+        # Make a timer to periodically update the fps of the video
+        self.fps_timer = QTimer()
+        self.fps_timer.timeout.connect(self.update_fps)
+        self.fps_timer.start(100)
 
 
     """
@@ -994,6 +1005,12 @@ class ControlWindow(QMainWindow):
         Show exception box for a given error
         """
         self.show_exception_box(err)
+
+    @pyqtSlot()
+    def update_fps(self):
+        """ Update the fps display with the value from the video """
+        fps = self.vid_display.get_fps()
+        self.fps_label.setText(str(fps))
 
     def closeEvent(self, event):
         """ Functions to call when gui is closed (`X` is clicked) """

@@ -1,10 +1,20 @@
 # Autoinjector 2.0
 -------------
-This repo is developed to expand the functionality of [BSBRL autoinjector](https://github.com/bsbrl/autoinjector/tree/Python3). I intend to include features for automated 3D targetting of annotated injection regions, automated tissue detection, and potentially automated 3D pipette calibration.
+Autoinjector 2.0 is an updated iteration of the original Autoinjector system ([GitHub](https://github.com/bsbrl/autoinjector/tree/Python3), [EMBO Journal Paper](https://www.embopress.org/doi/full/10.15252/embr.201947880)) designed for conducting automated microinjections in embryonic mouse brain tissue and human brain organoids. Autoinjector 2.0 improves upon the original Autoinjector by acheiving greater levels of automation via updated hardware, more sophisticted software control, and an upgraded user experience. The main improvements include:
+- Zeiss microscope system with automated hardware features including computer controllable objective changer, optovar changer, reflector changer, focus controller, and stage. In addition, the transmitted light source and epifluorescence LED light source are computer controllable.
+- Updated pressure control system with computer controllable option for high pressure unclogging of the microinjection needle.
+- 3D microscope-manipulator calibration to enable 3D microinjection targetting without needing to update/revise the calibration when changing focus heights (as was required for the original Autoinjector).
+- Neural network detection of microinjection needle tip for automated microscope-manipulator calibration process.
+- Neural network detection of tissue and tissue edges for automated target annotation.
+- Computer vision annotation tracking for accurate targetting during tissue displacement caused by micronjection.
+
+Autoinjector 2.0 was developed at Human Technopole in Milan Italy from June 2022 to December 2022 for the [Taverna Group](https://humantechnopole.it/en/research-groups/taverna-group/). The goal in developing Autoinjector 2.0 was to further increase microinjection throughput (over the original Autoinjector) and accelerate the study of novel tissue types like human brain organoids.	These goals strive to enable more complex biological experiments requiring large numbers of injected cells in well-developed and nascent biological model systems.
+
+As of December 2022, the Autoinjector 2.0 has been used to conduct microinjection of fluorescent dextran into embryonic mouse telencephalon and human brain organoids grown with Pasca and Lancaster protocols.
 
 -------------
 
-The autoinjector is an automated computer vision guided platform to serially inject tissue with user parameter selection along a specified trajectory using a 4-axis micromanipulator. This read me takes you through the system requirements, install instructions, operating instructions, and how to customize the code based on different cameras. For a complete description of the device see the Autoinjector paper and supplementary materials. 
+The Autoinjector 2.0 is a robotic, vision-guided platform for conducting automated microinjection along a user-specified trajectory in organotypic slices. Autoinjector 2.0 uses robotic control and computer vision to automate laborious and repetitive tasks of the manual microinjection process. This read me takes you through the system requirements and installation instructions. Consult the documentation for a more comprehensive explanation of the Autoinjector 2.0 system.
 
 1. [System Requirements](https://github.com/obria006/Autoinjector_2.0#system-requirements)
 	- [Hardware Requirements](https://github.com/obria006/Autoinjector_2.0#hardware-requirements)
@@ -13,178 +23,135 @@ The autoinjector is an automated computer vision guided platform to serially inj
 3. [Running the Application](https://github.com/obria006/Autoinjector_2.0#running-the-application)
 4. [License](https://github.com/obria006/Autoinjector_2.0#license)
 
-It is recommended to start in order. 
 
 ## System requirements 
-A complete list of available cameras can be found at micromanager's device support (https://micro-manager.org/wiki/Device_Support). Manipulator support exists for Sensapex manipulators only. However, if the manipulators have available SDK, custom API can be made using Python's ctypes. Contact G. Shull for additional support for adapting SDKs for python use. 
 
 ### Hardware Requirements
-1. Computer
+1. Computer (Windows 10 OS)
+	- GPU is not necessary. While a GPU will increase speed of neural network detections, the computer used during development only used the CPU and was sufficiently speedy.
 2. Arduino Uno
-3. Microscope (brightfield, phase contrast, or DIC)
-4. Microscope camera (tested with Hamamatsu Orca Dcam, and Cool Snap Dyno PVCam)
-5. Sensapex Three/Four axis uMp Micromanipulator 
-6. Custom pressure rig
+3. Zeiss Axio Observer 7 microscope with motorized objective changer, optovar changer, reflector changer, focus controller (Z-drive), and stage.
+4. Microscope camera (tested with Hamamatsu Orca Dcam)
+	- A complete list of available cameras can be found at [Micro-Manager's device support](https://micro-manager.org/Device_Support). Additional cameras may be used (for instance the [Dage-MTI IR-2000](https://dagemti.com/products/cameras/ir-2000-camera/)), but additional custom Python software must be written to support these cameras. 
+5. Sensapex uMp-4 4-axis micromanipulator. 
+6. Custom pressure rig.
+	- [EMBO Autoinjector Journal Paper](https://www.embopress.org/doi/full/10.15252/embr.201947880) for some details on pressure controller. Supplementary information includes info on pressure controller.
+	- [Setting up and using the autopatcher for automated intracellular neural recording in vivo - Supplementary Data 4](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4877510/) for PCB files.
 
 ### Software Requirements
-Currently, the autoinjector is only available with Windows support. The following libraries are used in the Autoinjector software (see install instructions for how to install). 
-1. [Python 3.7+](https://github.com/obria006/Autoinjector_2.0#1-python)
-	- [Packages](https://github.com/obria006/Autoinjector_2.0#python-packages)
-		- pip 
-		- Native python libraties
-			- time
-			- sys
-			- os
-			- user
-		- Matplotlib 3.5.2
-		- NumPy 1.21.6
-		- OpenCV 4.5.5.64
-		- pymmcore 10.1.1.70.5
-		- PyQt 6.3.0
-		- Pyserial 3.5
-		- pywin32 304
-		- Sensapex 1.22.6
-		- scikit-image 0.19.2
-		- Scipy 1.7.3
-2. [Arduino 1.8+](https://github.com/obria006/Autoinjector_2.0#2-arduino)
+Autoinjector 2.0 has only been tested with Windows 10 using Python 3.9.13.
+1. [Python 3.9.13 and Autoinjector software](https://github.com/obria006/Autoinjector_2.0#1-python-and-autoinjector-software)
+2. [Arduino IDE](https://github.com/obria006/Autoinjector_2.0#2-arduino)
 3. [Micromanager 2.0+](https://github.com/obria006/Autoinjector_2.0#3-micromanager)
 4. [Sensapex software](https://github.com/obria006/Autoinjector_2.0#4-sensapex-software)
-5. [ZEN Interface](https://github.com/obria006/Autoinjector_2.0#5-zen-interface)
+5. [Zeiss ZEN Pro microscope software](https://github.com/obria006/Autoinjector_2.0#5-zen-interface)
 6. [Your camera driver](https://github.com/obria006/Autoinjector_2.0#6-your-camera-driver)
-7. [The Autoinjector software](https://github.com/obria006/Autoinjector_2.0#7-autoinjector-software)
+
 
 ## Install Instructions
 
-Install the following software to operate the Autoinjector. It is recommended to install the software in the order it is listed. Make sure to run every file as administrator (right click, "Run as administrator")! Otherwise, the install may fail. 
+Install the following software to operate the Autoinjector 2.0. It is highly advisable to create a virtual environment in which to install the Autoinjector 2.0 software.
 
-### 1. Python
-*Note: The following section links to Python 3.7.5, but GUI has been tested and successfully opened in 3.9.13 and 3.10.5.*
-1. Download the python windows installer [here](https://www.python.org/downloads/release/python-375/). 
-2. Launch the installer and follow installation instructions on screen.
-3. Add Python to system environment path by following [these instructions](https://superuser.com/questions/143119/how-do-i-add-python-to-the-windows-path) so that you can run python from any windows command prompt.
 
-	#### Python Packages
+### 1. Python and Autoinjector software
+1. Download [Python 3.9.13](https://www.python.org/downloads/release/python-3913/) for Windows. For our 64-bit Windows 10 computer we downloaded the *"Windows installer (64-bit)"* file.
 
-	1. To download the python packages run the following commands from the command prompt (for more info/support, click the names of the packages):
-		- [Matplotlib](https://matplotlib.org/stable/users/installing/index.html)
-			```
-			python -m pip install matplotlib==3.5.2
-			```
+2. Launch the installer and follow the prompts to install Python on your computer.
 
-		- [NumPy](http://www.numpy.org/)
-			```
-			python -m pip install numpy==1.21.6
-			```
+3. (Optional but highly recommended) Create a Python 3.9.13 virtual environment to contain and manage the Autoinjector 2.0 files. A virtual environment is a way to compartmentalize Python projects, so that one project requiring certain software versions doesn't impact a project with different software version requirements. [Guidance for installing packages with pip and virtual environments.](https://packaging.python.org/en/latest/guides/installing-using-pip-and-virtual-environments/)
 
-		- [OpenCV](https://pypi.org/project/opencv-python/4.5.5.64/)
-			```
-			python -m pip install opencv-python==4.5.5.64
-			```
+    - If you are unfamiliar with virtual environments, one method to create an environment is to run the following command in the Windows command prompt: `path-to-python-installation -m -venv path-to-create-env`. See [venv documentation](https://docs.python.org/3/library/venv.html) for more information. A "real-world" example of the command is:
+	
+    ```
+    C:\Program Files\Python39\python.exe -m venv C:\Users\Public\Documents\Autoinjector_2
+    ```
+	
+    - The above command uses the Python installation located at *"C:\Program Files\Python39\python.exe"* to create a virtual environment in a directory located at *"C:\Users\Public\Documents\Autoinjector_2"*.
 
-		- [PyQt6](https://pypi.org/project/PyQt6/)
-			```
-			python -m pip install pyqt6==6.3
-			```
+4. (Required if using a virtual environment) Activate the virtual environment. See ["Activating a virtual environment"](https://packaging.python.org/en/latest/guides/installing-using-pip-and-virtual-environments/#activating-a-virtual-environment) for guidance. After this step, all the following commands must be in the Windows command prompt of an activated virtual environment (if using a virtual environment).
+    
+    - To activate the virtual environment you must run the "activate" file in the created virtual environment. To activate the virtual environment created above, run the following command in the Windows command prompt:
+    ```
+    C:\Users\Public\Documents\Autoinjector_2\Scripts\activate
+    ```
 
-		- [Pyserial](https://pypi.org/project/pyserial/3.5/)
-			```
-			python -m pip install pyserial==3.5
-			```
+5. Download the Autoinjector files from the GitHub.
 
-		- [pymmcore](https://pypi.org/project/pymmcore/)
-			```
-			python -m pip install pymmcore==10.1.1.70.5
-			```
+    - (Option 1) Clone the repository to your virtual environment/desired directory.
 
-		- [pywin32](https://pypi.org/project/pywin32/304/)
-			```
-			python -m pip install pywin32==304
-			```
+    - (Option 2) Download a zip file of the code by clicking the green "Code" box in the upper right corner of the GitHub page and selecting "Download ZIP". After its downloaded, extract its contents to your virtual environment/desired directory.
 
-		- [scikit-image](http://scikit-image.org/docs/dev/install.html)
-			```
-			python -m pip install scikit-image==0.19.2
-			```
+6. Install the necessary dependencies of the Autoinjector project. In the Windows Command Prompt, ensure you are in an activated virtual environment (if you are using one), and make sure you are located in the virtual environment directory.
+	- Your command prompt should look something like below. The `(Autoinjector_2)` means you are in an activated virtual environment named "Autoinjector_2". If the virtual environment wasn't activated, then you wouldn't see `(Autoinjector_2)`. The `C:\Users\Public\Documents\Autoinjector_2>` means that you are located at in the directory of *"C:\Users\Public\Documents\Autoinjector_2"*.
+	```
+	(Autoinjector_2) C:\Users\Public\Documents\Autoinjector_2>
+	```
 
-		- [Scipy](https://www.scipy.org/install.html)
-			```
-			python -m pip install scipy==1.7.3
-			```
+	- Navigate into the downloaded Autoinjectr folder with the command `cd Autoinjector`. Now your command prompt should look like:
+	```
+	(Autoinjector_2) C:\Users\Public\Documents\Autoinjector_2\Autoinjector>
+	```
 
-		- [Sensapex](https://pypi.org/project/sensapex/1.22.6/)
-			```
-			python -m pip install sensapex==1.22.6
-			```
-			**Note: Installing sensapex from pip will likely be an incomplete installation. You will likely need to follow the guidance in this [GitHub issue](https://github.com/sensapex/sensapex-py/issues/9) to properly install the Sensapex package. In short, you must download the 1.022 binaries from [Sensapex](http://dist.sensapex.com/misc/um-sdk/latest/) and place the "libum.dll" file in the senspex package folder containing "sensapex.py" (i.e. `/python-installation-path/Lib/site-packages/sensapex`)**
+	- Finally you can install Autoinjector software with the following command. This will install the dependencies specified in the *"setup.py"* file and (more importantly) find the necessary packages within the Autoinjector folder:
+	```
+	python -m pip install .
+	```
+
+	- To ensure you have the correct dependency versions run the following command:
+	```
+	python -m pip install -r requirements.txt
+	```
+
 
 ### 2. Arduino
-1. Download the arduino windows installer [here](https://www.arduino.cc/en/Main/Software?).
+1. Download the arduino IDE windows installer [here](https://www.arduino.cc/en/software). For our 64-bit Windows 10 computer, we downloaded the file "Windows Win 10 and newer, 64 bits".
+
 2. Launch the installer and follow installation instructions on screen.
 
+3. Connect your arduino to your computer via USB.
+4. In the downloaded Autoinjector folder, open the following file in the Arduino IDE: *"Autoinjector\src\pressure_control\arduino_pressure_control\arduino_pressure_control.ino"*.
+
+3. Follow the instructions to identify your Arduino COM port and connect to the Arduino device to the Arduino IDE as shown in [this tutorial](https://www.arduino.cc/en/Guide/ArduinoUno#toc5). Take note of which COM port your Arduino is on i.e. COM3.
+
+4. Upload the *"arduino_pressure_control.ino"* file to the Arduino device as shown in [this tutorial](https://www.arduino.cc/en/Guide/ArduinoUno#toc6).
+
+
 ### 3. Micromanager
-1. Download the micromanager windows installer [here](https://micro-manager.org/wiki/Download_Micro-Manager_Latest_Release).
+1. Download the micromanager Windows installer [here](https://micro-manager.org/wiki/Download_Micro-Manager_Latest_Release). We downloaded the Micro-Manager 2.0.0 "Windows 64-bit" file.
+
 2. Launch the installer and follow installation instructions on screen.
-3. Make sure it is installed at `C://Program Files/Micro-Manager-2.0`
-	* *Note: Your device interface version must match between your Micro-Manager installation and the installed pymmcore version. Detials are located at [pymmcore GitHub](https://github.com/micro-manager/pymmcore#matching-micro-manager-and-pymmcore-versions)*
+	- It is highly recommended that you install the file at *"C:/Program Files/Micro-Manager-2.0"*. You will need to reference the Micro-Manager file later when configuring the Autoinjector 2.0.
+	* **Note: Your device interface version must match between your Micro-Manager installation and the installed pymmcore version. Detials are located at [pymmcore GitHub](https://github.com/micro-manager/pymmcore#matching-micro-manager-and-pymmcore-versions)**
+
 
 ### 4. Sensapex software
 1. Start with pip installing the sensapex package as detailed above. However, pip installing the sensapex package likely resulted in an incomplete installation (a missing piece of software).
+
 2. Follow the guidance in this [GitHub issue](https://github.com/sensapex/sensapex-py/issues/9) to properly install the Sensapex package.
-	* To complete the installation, you must download the 1.022 binaries from [Sensapex](http://dist.sensapex.com/misc/um-sdk/latest/) and place the "libum.dll" file in the senspex package folder containing "sensapex.py" (i.e. `/python-installation-path/Lib/site-packages/sensapex`)
+	* To complete the installation, you must download the 1.022 binaries from [Sensapex](http://dist.sensapex.com/misc/um-sdk/latest/) and place the *"libum.dll"* file in the senspex package folder containing *"sensapex.py"* (i.e. *"/python-installation-path/Lib/site-packages/sensapex"*)
+
 
 ### 5. Zen interface
-*Note: Python interfaces with ZEN software to control the automated movements of the microscope. This interface is achieved via the COM interface in Zeiss's [Open Application Development](https://github.com/zeiss-microscopy/OAD). Further info/guidance for the COM interface is available on the [OAD GitHub](https://github.com/zeiss-microscopy/OAD/tree/master/Interfaces/COM_interface)*
-1. Download the "regScripting_Release.bat" file from Zeiss's [OAD GitHub](https://github.com/zeiss-microscopy/OAD/tree/master/Interfaces/COM_interface/Sourcecode_COM_Python). The file should be located in `/OAD/Interfaces/COM_interface/Sourcecode_COM_Python`.
-2. Modify the paths of `dll-1` and `dll-2` to match the installation paths on your system.
-3. Run "regScripting_Release.bat" as admin to make the ZEN commands available to Python. 
+**Note: Python interfaces with Zeiss ZEN software to control the automated movements of the microscope. This interface is achieved via the COM interface in Zeiss's [Open Application Development](https://github.com/zeiss-microscopy/OAD). Further info/guidance for the COM interface is available on the [OAD GitHub](https://github.com/zeiss-microscopy/OAD/tree/master/Interfaces/COM_interface)**
+
+1. Ensure Zeiss ZEN Pro is installed on the computer. Likely this is already installed on the computer if you have the Zeiss microscope.
+
+2. Download the *"regScripting_Release.bat"* file from Zeiss's [OAD GitHub](https://github.com/zeiss-microscopy/OAD/tree/master/Interfaces/COM_interface/Sourcecode_COM_Python). The file should be located in *"/OAD/Interfaces/COM_interface/Sourcecode_COM_Python"*
+
+3. Modify the paths of `dll-1` and `dll-2` to match the installation paths on your system.
+
+4. Run *"regScripting_Release.bat"* as admin to make the ZEN commands available to Python. 
+
 
 ### 6. Your Camera Driver
 Follow the instructions for your camera driver install. In our work we have used the [Hamamatsu Orca Camera](https://www.hamamatsu.com/us/en/product/type/C13440-20CU/index.html) and [Photometrics Cool Snap Dyno PVCam](https://www.photometrics.com/products/ccdcams/coolsnap-dyno.php)
 
-### 7. Autoinjector Software 
-1. Download or clone this repository by clicking "Clone or Download" button on the top right area of the [Autoinjector Respository](https://github.com/obria006/Autoinjector_2.0) and extract the files. 
-
-2. Upload arduino code:
-	1. Once the arduino is installed, connect your arduino to your computer via USB.
-	2. In the downloaded Autoinjector folder, open the file `/autoinjector/pythonarduino/pythonarduinotriggeropen.ino`
-	3. Follow the instructions to identify your port and connect to the arduino from the arudino software as shown in [this tutorial](https://www.arduino.cc/en/Guide/ArduinoUno#toc5). Take note of which COM port your arduino is on i.e. COM6.
-	4. Upload the pythonarduinotriggeropen.ino file as shown in [this tutorial](https://www.arduino.cc/en/Guide/ArduinoUno#toc6).
-
-3. Test autoinjector code:
-	1. Run the command prompt as administrator
-	2. Navigate to the folder of the downloaded and extracted zip file. For example, if I extracted the zipped download to "C:\Users\Gabi\Downloads\Autoinjector-" I would go to this directory in the command prompt by typing:
-		```
-		cd C:\Users\Gabi\Downloads\Autoinjector-
-		```
-	3. To test that the software was downloaded properly, type:
-		```
-		python launchapp.py
-		```
-		This will launch the Autoinjector and report any problems to the command prompt if there is an error in the downloaded sotware. 
-
-## Running the Application
-When interfacing with the microscope and its accessories, the Autoinjector software establishes a COM connection with Zeiss ZEN software to coordinate hardware control. Usually, a user would also use the camera in the ZEN software, but we want to stream video to an external GUI (not in the ZEN software). Consequently, its important to follow the correct series of startup steps to prevent ZEN from "taking control" of the camera and preventing other applications (the Autoinjector GUI) from accessing it.
-
-1. Turn on associated Zeiss hardware in the following order: SMC 2009 -> Focus Controller.2 -> Power Supply 232 -> Power button on microscope
-
-2. Open ZEN pro software.
-
-3. Conduct the initial calibration. **Ensure the motorized stage will not collide with anything!**
-
-4. Turn on the camera power.
-
-5. To run the program normally, click the file "launchapp.py" in the Autoinjector folder. This will launch the GUI and report any errors with hardware. For additional operating instructions see the user manual included with the publication.
+## First time configuration
+TODO
 
 ## TODO List
   - [ ] First time setup to make folders (configs, logs)
   - [ ] GUI to check whether necessary folders exist (configs, logs, data, etc)
-  - [ ] Improve hardware check to not error out when not detected
-  - [ ] Get threading to work with the Zeiss software (at least for goto focus so doesn't block execution)
-  - [ ] Catch error when ZEN is not open
-  - [ ] Give warning and ask to continue when large focus request
-  - [ ] Update ZEN portion of GUI to reflect manual user changes
-  - [ ] Rectify GUI ZEN display before injection because user could have manually changed it (if relies on display for functioning)
-  - [ ] set z polarity by user in GUI
 
 
 

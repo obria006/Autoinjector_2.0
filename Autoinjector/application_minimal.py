@@ -1326,9 +1326,10 @@ class ControlWindow(QMainWindow):
             "1. 'Exit' will return to the main screen without computing the calibration")
         if self.updating_calibration is True:
             msg = ("Process:\n1. Using the focus knob/widgets or manipulator wheels, bring tip "
-            "into focus\n2. Click on the in-focus tip to register the manipulator position. "
-            "(Multiple clicks will overwrite the last click.)\n3. 'Complete Calibration' or "
-            "'Save and Complete Calibration' to finish and return to the main screen.")
+            "into focus\n2. Click on the in-focus tip (or click `Auto-Calibrate` if it is enabled) "
+            "to register the manipulator position. (Multiple clicks will overwrite the last click.)"
+            "\n3. 'Complete Calibration' or 'Save and Complete Calibration' to finish and return to "
+            "the main screen.")
         else:
             if cal_mode.lower() == 'manual':
                 msg = ("Process:\n1. Using the focus knob/widgets or manipulator wheels, bring "
@@ -1346,15 +1347,15 @@ class ControlWindow(QMainWindow):
                 "click multiple times in the same spot.)\n3. The pipette will automatically move "
                 "to a new position. Click ONCE on the tip after it stops moving.\n4. Repeat step "
                 "3 as the pipette automatically moves to the four corners before returning to the "
-                "center.\n5. 'Complete Calibration' or 'Save and Complete Calibration' to finish "
-                "and return to the main screen.")
+                "center. (Also click when it returns to center.)\n5. 'Complete Calibration' or 'Save "
+                "and Complete Calibration' to finish and return to the main screen.")
             elif cal_mode.lower() == 'automatic':
                 msg = ("Process:\n1. Ensure the field-of-view is free of obstructions. (The "
                 "pipette will automatically move to the edges of the field-of-view.)\n2. Using "
                 "the focus knob/widgets or manipulator wheels, bring tip into focus near center.\n"
-                "2. Click ONCE on `Auto-Calibrate`.\n3. Wait as the pipette automatically moves "
-                "to the four corners and the center.\n4. 'Complete Calibration' or 'Save and "
-                "Complete Calibration' to finish and return to the main screen.")
+                "2. Click ONCE on `Auto-Calibrate`.\n3. Wait as the pipette is autofocussed and as it "
+                "automatically moves to the four corners and the center.\n4. 'Complete Calibration' "
+                "or 'Save and Complete Calibration' to finish and return to the main screen.")
         msg = f"{msg}\n\n{cal_notes}"
         self.calibration_guidance.setText(msg)
 
@@ -1922,13 +1923,15 @@ class ControlWindow(QMainWindow):
             "exisiting annotation will remove it.\n2. Selecting `Exit` will exit without any "
             "annotations.")
         if annot_mode == "Manual":
-            msg = ("Process:\n1. In video display, left-click-and-drag mouse along tissue "
-            f"edge.\n2. Select `Complete Annotation` to exit to main GUI.\n\n{annot_notes}")
+            msg = ("Process:\n1. Adjust focus to tissue.\n2. In video display, left-click-and-drag "
+            "along injection target.\n3. Repeat for desired number of injection targets.\n2. Select "
+            f"`Complete Annotation` to exit to main GUI with annotations.\n\n{annot_notes}")
         elif annot_mode == "Automatic":
             msg = ("Process:\n1. Adjust focus to tissue.\n2. Select the edge-type to annotate.\n3. "
             "Either `Run Single Auto. Annotation` or focus to desired z-stack positions and set "
             "the starting and ending heights, enter the number of slices, and `Run Z-Stack Auto. "
-            "Annotation`.\n4. Add manual annotations with left-click-and-drag in video display."
+            "Annotation`. `Run Single Auto. Annotation` can be clicked multiple times to make "
+            "multiple annotations.\n4. Add manual annotations with left-click-and-drag in video display."
             f"\n5. Select `Complete Annotation` to exit to main GUI.\n\n{annot_notes}")
         else:
             err_msg = f"Invalid annotation mode: {annot_mode}. Must be in ['Manual', 'Auotmatic']"

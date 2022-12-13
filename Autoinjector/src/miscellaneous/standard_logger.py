@@ -1,7 +1,8 @@
 ''' Class for handling logging '''
+import os
 import logging
 from datetime import datetime
-from src.miscellaneous import validify as val
+from src.cfg_mgmt.definitions import LOG_DIR
 
 class StandardLogger(logging.Logger):
     '''
@@ -26,8 +27,13 @@ class StandardLogger(logging.Logger):
         Returns:
             instance of logging.Logger
         '''
+        # Make logging directory if doesnt exist
+        if not os.path.isdir(LOG_DIR):
+            os.makedirs(LOG_DIR)
+
+        # Initialize
         super().__init__(name=name)
-        if val.is_of_types(name, [str]) is False:
+        if not isinstance(name, str):
             raise TypeError('name of logger must be a string')
         # self = logging.getLogger(name)
         s_handler = logging.StreamHandler()
@@ -36,7 +42,7 @@ class StandardLogger(logging.Logger):
         s_handler.setFormatter(s_formatter)
         self.addHandler(s_handler)
         now = datetime.now().strftime("%Y%m%d")
-        log_path = f"Autoinjector/logs/{now}.log"
+        log_path = f"{LOG_DIR}/{now}.log"
         f_handler = logging.FileHandler(log_path)
         f_handler.setLevel(logging.WARNING)
         f_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s: %(message)s')

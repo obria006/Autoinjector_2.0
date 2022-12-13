@@ -789,9 +789,9 @@ class CalibrationModel():
         if z_polarity == 0:
             raise ValueError('Z polarity must be positive of negative number. Positive = same direction. Negative = opposite direction')
         elif z_polarity >0:
-            T_z = 1*nm2um
+            T_z = 1*nm2um*0.741
         else:
-            T_z = -1*nm2um
+            T_z = -1*nm2um*0.741
 
         # Transformation from manipulator x, y, z, d to manipulator x, y, z
         self.T_mxyzd_to_mxyz = np.array([[1, 0, 0, np.cos(pip_angle)],

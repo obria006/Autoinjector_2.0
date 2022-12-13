@@ -3,6 +3,8 @@ import os
 from datetime import datetime
 from pathlib import Path
 from dataclasses import dataclass, asdict
+from src.cfg_mgmt.definitions import CONFIG_DIR, CONFIG_PATH, CAMERA_PARAMS
+from src.cfg_mgmt.io import yaml_to_dict, dict_to_yaml
 from src.cfg_mgmt.cfg_io import YamlIOHandler
 from src.miscellaneous import validify as val
 from src.miscellaneous.standard_logger import StandardLogger as logr
@@ -16,7 +18,7 @@ class CfgManager():
         self._logger = logr(__name__)
 
         # Default the configuration dir
-        cfg_dir = Path("Autoinjector/configs/pointer.yaml").parent.absolute()
+        cfg_dir = CONFIG_DIR
         if os.path.isdir(cfg_dir) is False:
             self._logger.critical(f'No "configs" directory found at: {cfg_dir}')
             raise IOError(f'No "configs" directory found at: {cfg_dir}')
@@ -106,7 +108,7 @@ class CfgPointer():
         ''' Initializes pointer from filepath '''
         self._logger = logr(__name__)
         # Confirm a configs directory exists
-        ptr_path = "Autoinjector/configs/pointer.yaml"
+        ptr_path = f"{CONFIG_DIR}/pointer.yaml"
         ptr_dir = Path(ptr_path).parent.absolute()
         if os.path.isdir(ptr_dir) is False:
             self._logger.critical(f'No "configs" directory found at: {ptr_dir}')
@@ -168,10 +170,31 @@ class Configuration:
     """ Handles parameters for gui configuration """
 
     # The default values for Configuration
-    data_directory: str = 'C:/Users/Public/Documents/envs/Autoinjector_2/Autoinjector/data'
     micromanager_path: str = 'C:/Program Files/Micro-Manager-2.0'
+    camera: str = "Hamamatsu Orca DCAM"
+    com: str = "com3"
+    sensapex_id: int = 1
     z_polarity: int = -1
+    z_scaling: float = 0.741
     pullout_nm: int = 200000
+
+    def __post_init__(self):
+        """
+        Called after initialization. Make the configuration directory if
+        it doesn't exist.
+        """
+        if not os.path.isdir(CONFIG_DIR):
+            os.makedirs(CONFIG_DIR)
+
+    @classmethod
+    def init_from_file(cls, filename:str = None):
+        # Read the configuraiton dictionary from file
+        if filename is None:
+            fpath = CONFIG_PATH
+        else:
+            fpath = os.path.join(CONFIG_DIR, filename)
+        data = yaml_to_dict(fpath)
+        return cls(**data)
 
     def set_values_from_dict(self, dict_:dict)->None:
         """
@@ -191,5 +214,61 @@ class Configuration:
         for key, value in dict_.items():
             setattr(self,key,value)
 
+    def from_file(self, filename:str = None):
+        '''
+        Load config values from a YAML file
+
+        Args:
+            filename (str): Path to YAML configuration file
+        '''
+        # Read the configuraiton dictionary from file
+        if filename is None:
+            fpath = CONFIG_PATH
+        else:
+            fpath = os.path.join(CONFIG_DIR, filename)
+        data = yaml_to_dict(fpath)
+        self.set_values_from_dict(data)
+
+    def to_file(self, filename:str = None):
+        '''
+        Save config values to a YAML file
+
+        Args:
+            filename (str): Path to YAML configuration file
+        '''
+        if filename is None:
+            fpath = CONFIG_PATH
+        else:
+            fpath = os.path.join(CONFIG_DIR, filename)
+        data = asdict(self)
+        dict_to_yaml(fpath, data)
+
+@dataclass
+class CameraConfiguration:
+    """ Handles parameters for gui configuration """
+
+    # The default values for Configuration
+    devicename: str
+    brand: str
+    devicevalue: str
+    bins: str
+    rotate: int
+    bits: int
+    scalefactor: float
+    
+    @classmethod
+    def init_from_camera_name(cls, name:str):
+        """
+        Load camera configuration from defined camera parameters in
+        definitions.py.
         
+        Args:
+            name (str): name of the camera in `CAMERA_PARAMS`
+        """
+        logger = logr(__name__)
+        try:
+            params = CAMERA_PARAMS[name]
+            return cls(**params)
+        except Exception as e:
+            logger.exception(f"Could not load camera configuration. {e}")
 

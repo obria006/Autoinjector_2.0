@@ -12,11 +12,12 @@ from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
 from PyQt6.QtGui import QIcon, QPalette, QColor, QAction
 import pandas as pd
-from src.video_control.video_utils import interpolate, AnnotationError
+from src.video_control.video_utils import AnnotationError
 from src.video_control.annotations import AnnotationManager
 from src.video_control.camera import MMCamera
 from src.video_control.video import VideoDisplay
-from src.cfg_mgmt.cfg_mngr import CfgManager
+from src.cfg_mgmt.cfg_mngr import Configuration, CameraConfiguration
+from src.cfg_mgmt.definitions import CONFIG_PATH, DATA_DIR, UNET_WEIGHTS_PATH, YOLO_WEIGHTS_PATH
 from src.GUI_utils.gui_objects import QHLine, SmallQLineEdit
 import src.GUI_utils.display_modifier_mvc as disp_mod_mvc
 from src.miscellaneous.standard_logger import StandardLogger as logr
@@ -44,7 +45,6 @@ from src.pressure_control.arduino_pressure import ArduinoPressure
 from src.pressure_control.pressure_mvc import PressureModel, PressureController, PressureView
 from src.tracking.tracking import TrackingManager
 
-
 class ControlWindow(QMainWindow):
     """ QWidget class to control video stream and capture
     This class controls the GUI of the autoinjector and all subsequent controls including:
@@ -60,7 +60,7 @@ class ControlWindow(QMainWindow):
     leaving_calibration = pyqtSignal()
     cal_pos_added = pyqtSignal()
 
-    def __init__(self,cam,brand,val,bins,rot,imagevals,scale,com, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
         self.logger = logr(__name__)
         self._central_widget = QWidget(self)
@@ -73,43 +73,77 @@ class ControlWindow(QMainWindow):
         self.warn_msg.setIcon(QMessageBox.Icon.Warning)
         self.warn_msg.setWindowTitle("Warning")
 
+        # Try to load the configuration file
+        if not os.path.exists(CONFIG_PATH):
+            # Ask the user to create configuration file if it doesn't exist
+            self.configured = False
+            qm = QMessageBox()
+            ret = qm.question(self,'Create configuration?',f'Autoinjector 2 requires a configuration file, but configuration file not found at {CONFIG_PATH}\n\nWould you like to open the configuration application to make the configuration file?')
+            # Raise error if they choose not to configure
+            if ret == QMessageBox.StandardButton.No:
+                msg = f"Configuration file not found at {CONFIG_PATH}. User elected not to make configuration."
+                self.logger.error(msg)
+                raise OSError(f"Configuration file not found at {CONFIG_PATH}. User elected not to make configuration.")
+            # Open configuration app to make config file
+            else:
+                from configure_autoinjector import AutoinjectorConfigWindow
+                self.close()
+                config_window = AutoinjectorConfigWindow()
+                config_window.show()
+                return
+        else:
+            # Otherwise load configuration values from the config file
+            self.configured = True
+            self.cfg = Configuration.init_from_file()
+            self.camera_cfg = CameraConfiguration.init_from_camera_name(self.cfg.camera)
+            
         # initiate thread to poll position of motors and report error if they are not found
         try:
-            dev = SensapexDevice(1)
+            dev = SensapexDevice(self.cfg.sensapex_id)
             self.motorfound = True
         except:
-            msg = "Manipulators not detected. Wait 2 minutes then relaunch the app. If this does not work, replug manipulators into computer."
+            msg = f"Manipulator device number ({self.cfg.sensapex_id}) not detected.\n\n1. Ensure the manipulator is turned on and active.\n2. Ensure ({self.cfg.sensapex_id}) is the correct device number. (The device number can be modified in the configuration app.)\n3. Restart the manipulator and try again.\n4. See logs for more info."
             self.show_exception_box(msg)
-            print("Manipulators not detected")
             self.motorfound = False
+            self.configured = False
+            qm = QMessageBox()
+            ret = qm.question(self,'Open configuration?',f'Do you want to open the configuration app to change the manipulator number?')
+            # Raise error if they choose not to configure
+            if ret == QMessageBox.StandardButton.No:
+                raise
+            # Open configuration app to make config file
+            else:
+                from configure_autoinjector import AutoinjectorConfigWindow
+                self.close()
+                config_window = AutoinjectorConfigWindow()
+                config_window.show()
+                return
 
         # open arduino port and report error if it is not found
         try:
-            self.arduino = ArduinoPressure(com=str(com), baud=9600, timeout=5)
+            self.arduino = ArduinoPressure(com=str(self.cfg.com), baud=9600, timeout=5)
             self.arduinofound = True
-            self.com = com
         except:
             self.arduino = None
-            msg = f"Arduino not detected on {com}.\n\n1. Ensure Arduino cord (pressure controller) is plugged in.\n2. Ensure {com} is correct COM port.\n3. See logs for more info."
+            msg = f"Arduino not detected on {self.cfg.com}.\n\n1. Ensure Arduino cord (pressure controller) is plugged in.\n2. Ensure {self.cfg.com} is correct COM port. (The COM port can be modified in the configuration app.)\n3. See logs for more info."
             self.show_exception_box(msg)
             self.arduinofound = False
-            raise
+            self.configured = False
+            qm = QMessageBox()
+            ret = qm.question(self,'Open configuration?',f'Do you want to open the configuration app to change the COM port?')
+            # Raise error if they choose not to configure
+            if ret == QMessageBox.StandardButton.No:
+                raise
+            # Open configuration app to make config file
+            else:
+                from configure_autoinjector import AutoinjectorConfigWindow
+                self.close()
+                config_window = AutoinjectorConfigWindow()
+                config_window.show()
+                return
 
-        #initiate video stream thread using camera settings
-        self.cam_ = cam
-        self.brand_ = brand
-        self.val_ = val
-        self.bins_ = bins
-        self.rot_ = rot
-        self.imagevals_ = imagevals
-        self.file_selected = 0
+        # Make the GUI
         self.setup_gui()
-
-        #initiate parameters for injection
-        self.ninjection = 0 
-        self.injectpressurevoltage = 0
-        self.pulseduration = 0
-        self.edgedetected = False
     
     """
     ============================================================================================
@@ -127,29 +161,31 @@ class ControlWindow(QMainWindow):
         # Initialize attributes
         self.initialize_attributes()
 
-        # Load the configuration values
-        self.get_gui_cfg()
-
         # Define necessary directories
         self.define_dirs()
 
         # Instantiate imports
         self.pip_cal = Calibrator(cal_data_dir=self.cal_data_dir)
         self.angle_io = AngleIO(ang_data_dir=self.cal_data_dir)
-        ckpt_path = "Autoinjector/src/deep_learning/weights/20220824_180000_Colab_gpu/best.pth"
-        self.tissue_model = ModelTissueDetection(ckpt_path)
-        yolo_path = "Autoinjector/src/deep_learning/weights/yolov5_train_exp6/best.onnx"
-        self.tip_detector = Yolov5PipetteDetector(yolo_path)
-        dev = SensapexDevice(1)
+        self.tissue_model = ModelTissueDetection(UNET_WEIGHTS_PATH)
+        self.tip_detector = Yolov5PipetteDetector(YOLO_WEIGHTS_PATH)
+        dev = SensapexDevice(self.cfg.sensapex_id)
         self.convenience_trajectories = ConvenienceTrajectories(dev=dev)
-        z_polarity = self.cfg.values.z_polarity
         self.mdl = ManipulatorModel(dev)
         self.mdl.errors.connect(self.show_recieved_exception)
 
         # Instantiate the imported camera
         try:
-            mm_path = self.cfg.values.micromanager_path.replace('\\','/')
-            self.cam_MM = MMCamera(mm_path, self.cam_, self.brand_, self.val_, self.bins_, self.rot_, self.imagevals_)
+            mm_path = self.cfg.micromanager_path.replace('\\','/')
+            img_vals = np.power(2, self.camera_cfg.bits)
+            self.cam_MM = MMCamera(
+                mm_path,
+                self.camera_cfg.devicename, 
+                self.camera_cfg.brand,
+                self.camera_cfg.devicevalue,
+                self.camera_cfg.bins,
+                self.camera_cfg.rotate,
+                img_vals)
         except RuntimeError as e:
             msg = f"Error while interfacing with camera.\n\n1. Make sure camera is on.\n2. Make sure camera was turned on AFTER Zeiss ZEN pro is open an running\n3. See logs for more info."
             self.show_exception_box(msg)
@@ -164,6 +200,9 @@ class ControlWindow(QMainWindow):
         self.annot_mgr = AnnotationManager()
         self.vid_display = VideoDisplay(self.cam_MM, self.annot_mgr, height=900, fps=50)
         self.zstack = ZStackManager(self.zen_controller)
+
+        # Create the menu
+        self._construct_menu()
 
         # Create main gui widgets
         self.make_widgets()
@@ -191,15 +230,10 @@ class ControlWindow(QMainWindow):
         self._is_annotation_set = False
         self._is_parameters_set = False
 
-    def get_gui_cfg(self):
-        ''' Loads the configuration values for the GUI '''
-        self.cfg = CfgManager()
-        self.cfg.from_pointer_file()
-
     def define_dirs(self):
         ''' Set dirs (and create if necessary) for GUI '''
         # General data directory
-        self.data_dir = self.cfg.values.data_directory.replace('\\','/')
+        self.data_dir = DATA_DIR
         if os.path.isdir(self.data_dir) is False:
             os.makedirs(self.data_dir)
             self.logger.info(f'Created data directory: {self.data_dir}')
@@ -1033,7 +1067,7 @@ class ControlWindow(QMainWindow):
         if self.arduinofound == False:
             self.response_monitor_window.append(">> Arduino not detected, make sure you selected the correct com port, plug in, and try again")
         else:
-            self.response_monitor_window.append(">> Arduino connected and working on port " + str(self.com))
+            self.response_monitor_window.append(">> Arduino connected and working on port " + str(self.cfg.com))
 
     def show_recieved_exception(self, err:Exception):
         """
@@ -1049,9 +1083,10 @@ class ControlWindow(QMainWindow):
 
     def closeEvent(self, event):
         """ Functions to call when gui is closed (`X` is clicked) """
-        self.pres_controller.zero_bp()
-        self.vid_display.stop()
-        time.sleep(0.5)
+        if self.configured:
+            self.pres_controller.zero_bp()
+            self.vid_display.stop()
+            time.sleep(0.5)
         self.close()
 
 
@@ -1157,7 +1192,7 @@ class ControlWindow(QMainWindow):
             self.set_angle_button.setEnabled(False)
             self.load_angle_button.setEnabled(False)
             # Get angle
-            dev = SensapexDevice(1)
+            dev = SensapexDevice(self.cfg.sensapex_id)
             ang = dev.get_axis_angle()
             # Display in box
             self.angle_entry.clear()
@@ -1276,7 +1311,7 @@ class ControlWindow(QMainWindow):
         if self.conducting_calibration is True:
             z_scope = self.zen_controller.get_focus_um()
             ex_pos = [x_click, y_click, z_scope]
-            dev = SensapexDevice(1)
+            dev = SensapexDevice(self.cfg.sensapex_id)
             man_pos = dev.get_pos()
             self.pip_cal.data.add_cal_position(ex=ex_pos, man=man_pos)
             self.cal_pos_added.emit()
@@ -1290,7 +1325,7 @@ class ControlWindow(QMainWindow):
             self.pip_cal.data.rm_all()
             z_scope = self.zen_controller.get_focus_um()
             ex_pos = [x_click, y_click, z_scope]
-            dev = SensapexDevice(1)
+            dev = SensapexDevice(self.cfg.sensapex_id)
             man_pos = dev.get_pos()
             self.pip_cal.data.add_cal_position(ex=ex_pos, man=man_pos)
             self.cal_pos_added.emit()
@@ -1406,7 +1441,8 @@ class ControlWindow(QMainWindow):
         img_height = self.cam_MM.height
         _, _, obj_mag = self.zen_controller.get_current_objective()
         _, _, opto_mag = self.zen_controller.get_current_optovar()
-        z_polarity = self.cfg.values.z_polarity
+        z_scaling = self.cfg.z_scaling
+        z_polarity = self.cfg.z_polarity
         self.cal_trajectory = XYCalibrationTrajectory(mdl = self.mdl, cal=self.pip_cal, img_w=img_width, img_h=img_height, z_polarity=z_polarity,pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
         self.cal_pos_added.connect(self.cal_trajectory.next_cal_position)
         # delete calibraiton trajecotory otherwise it will conintue to handle stuff from
@@ -1425,7 +1461,7 @@ class ControlWindow(QMainWindow):
         """
         Make a autofocus trajectory instance
         """
-        z_polarity = self.cfg.values.z_polarity
+        z_polarity = self.cfg.z_polarity
         self.autofocus = AutofocusTrajectory(self.mdl, z_polarity)
         self.autofocus.ask_for_focus.connect(self.pass_focus)
         self.autofocus.errors.connect(self.show_recieved_exception)
@@ -1612,7 +1648,8 @@ class ControlWindow(QMainWindow):
             _, _, obj_mag = self.zen_controller.get_current_objective()
             _, _, opto_mag = self.zen_controller.get_current_optovar()
             self.logger.info(f"Computing calibration with data\n{self.pip_cal.data.data_df}")
-            z_polarity = self.cfg.values.z_polarity
+            z_polarity = self.cfg.z_polarity
+            z_scaling = self.cfg.z_scaling
             self.pip_cal.compute(z_polarity=z_polarity, pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
         except CalibrationDataError as e:
             msg = f"Calibration not completed. Error: {e}\n\nMake sure you click on the tip to register at least 3 points (that don't lie on a line) before unchecking 'Calibrate'."
@@ -2213,7 +2250,7 @@ class ControlWindow(QMainWindow):
                 self.pip_disp_timer.start(self.pip_disp_timeout)
             if self.pip_cal.is_calibrated() is True:
                 self.vid_display.show_tip_position(True)
-                dev = SensapexDevice(1)
+                dev = SensapexDevice(self.cfg.sensapex_id)
                 pos = dev.get_pos()
                 ex = self.pip_cal.model.forward(man=pos)
                 z_scope = self.zen_controller.get_focus_um_approx()
@@ -2419,8 +2456,8 @@ class ControlWindow(QMainWindow):
             depth_nm = int(float(self.depthintissue)*um2nm)
             spacing_nm = int(float(self.stepsize)*um2nm)
             speed_ums = int((self.motorspeed))
-            pullout_nm = self.cfg.values.pullout_nm
-            dev = SensapexDevice(1)
+            pullout_nm = self.cfg.pullout_nm
+            dev = SensapexDevice(self.cfg.sensapex_id)
             cal = self.pip_cal
             goto_z = self.zen_controller.goto_focus_absolute
             self.inj_trajectory = TrajectoryManager(goto_z)
@@ -2628,13 +2665,10 @@ class ControlWindow(QMainWindow):
         except:
             self.show_exception_box("Error while moving away pipette.\n\nSee log for more info.")
 
-
-    
-
 if __name__ == "__main__":
     import sys
     app = QApplication(sys.argv)
-    app.setApplicationName('MyWindow')
-    main = ControlWindow('HamamatsuHam_DCAM', 'HamamatsuHam', 'HamamatsuHam_DCAM', '2x2', 180, 256, 1.3, 'com3')
+    app.setApplicationName('Autoinjector 2')
+    main = ControlWindow()
     main.show()
     sys.exit(app.exec())

@@ -10,7 +10,7 @@ import serial
 import numpy as np
 from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
-from PyQt6.QtGui import QIcon, QPalette, QColor
+from PyQt6.QtGui import QIcon, QPalette, QColor, QAction
 import pandas as pd
 from src.video_control.video_utils import interpolate, AnnotationError
 from src.video_control.annotations import AnnotationManager
@@ -250,6 +250,41 @@ class ControlWindow(QMainWindow):
         self.pres_model = PressureModel(arduino=self.arduino)
         self.pres_controller = PressureController(model= self.pres_model)
         self.pres_view = PressureView(controller=self.pres_controller)
+
+    def _construct_menu(self):
+        """ Makes menu bar for occasional user options """
+        self._create_actions()
+        self._create_menu()
+        self._connect_actions()
+
+    def _create_actions(self):
+        """ Makes actions for the menu bar """
+        self.config_action = QAction("Open Configuration", self)
+        self.practice_action = QAction("Practice Mode", self)
+
+    def _create_menu(self):
+        # make the menu bar
+        menu_bar = self.menuBar()
+        self.setMenuBar(menu_bar)
+
+        # Add options to the menu
+        self.menu = QMenu("Menu", self)
+        menu_bar.addMenu(self.menu)
+        self.menu.addAction(self.config_action)
+        self.menu.addAction(self.practice_action)
+
+    def _connect_actions(self):
+        self.config_action.triggered.connect(self.on_config)
+        self.practice_action.triggered.connect(self.on_practice)
+
+    @pyqtSlot()
+    def on_config(self):
+        self.show_warning_box("This action is not implemented yet.")
+
+        
+    @pyqtSlot()
+    def on_practice(self):
+        self.show_warning_box("This action is not implemented yet.")
 
     def make_widgets(self):
         """ Create the GUI's widgets """
@@ -926,7 +961,7 @@ class ControlWindow(QMainWindow):
         self.annotation_mode_left_page = QWidget()
         layout = QVBoxLayout()
         layout.addWidget(self.alt_annotation_group)
-        layout.addWidget(self.display_modification_group_alt)
+        layout.addWidget(self.auto_annotation_group)
         layout.addStretch()
         self.annotation_mode_left_page.setLayout(layout)
 
@@ -935,7 +970,7 @@ class ControlWindow(QMainWindow):
         self.annotation_mode_right_page = QWidget()
         layout = QVBoxLayout()
         layout.addWidget(self.focus_zen_app1.zen_group)
-        layout.addWidget(self.auto_annotation_group)
+        layout.addWidget(self.display_modification_group_alt)
         layout.addStretch()
         self.annotation_mode_right_page.setLayout(layout)
     
@@ -1311,6 +1346,7 @@ class ControlWindow(QMainWindow):
         self.leave_calibration_mode()
 
     def switch_to_calibration_mode(self):
+        self.menu.setEnabled(False)
         self.left_stacked_layout.setCurrentWidget(self.calibration_mode_left_page)
         self.right_stacked_layout.setCurrentWidget(self.calibration_mode_right_page)
 
@@ -1904,6 +1940,7 @@ class ControlWindow(QMainWindow):
 
     def switch_to_annotation_mode(self):
         """ Modify GUI to show annotation mode layout """
+        self.menu.setEnabled(False)
         self.left_stacked_layout.setCurrentWidget(self.annotation_mode_left_page)
         self.right_stacked_layout.setCurrentWidget(self.annotation_mode_right_page)
         self.vid_display.enable_annotations(True)
@@ -1912,6 +1949,7 @@ class ControlWindow(QMainWindow):
 
     def switch_to_default_mode(self):
         """ Modify GUI to show default application layout """
+        self.menu.setEnabled(True)
         self.left_stacked_layout.setCurrentWidget(self.default_left_page)
         self.right_stacked_layout.setCurrentWidget(self.default_right_page)
 
@@ -2479,6 +2517,7 @@ class ControlWindow(QMainWindow):
 
     def enable_noninjection_widgets(self):
         """ Reactivates widgets that may have been disabled during injection """
+        self.menu.setEnabled(True)
         self.run_button.setEnabled(True)
         self.pip_cal_group.setEnabled(True)
         self.default_annotation_group.setEnabled(True)
@@ -2502,6 +2541,7 @@ class ControlWindow(QMainWindow):
 
     def disable_noninjection_widgets(self):
         """ Disables widgets that shouldn't be used during injection """
+        self.menu.setEnabled(False)
         self.run_button.setEnabled(False)
         self.pip_cal_group.setEnabled(False)
         self.default_annotation_group.setEnabled(False)

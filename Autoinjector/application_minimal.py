@@ -187,7 +187,7 @@ class ControlWindow(QMainWindow):
                 self.camera_cfg.rotate,
                 img_vals)
         except RuntimeError as e:
-            msg = f"Error while interfacing with camera.\n\n1. Make sure camera is on.\n2. Make sure camera was turned on AFTER Zeiss ZEN pro is open an running\n3. See logs for more info."
+            msg = f"Error while interfacing with camera.\n\n1. Make sure camera is on.\n2. Make sure camera was turned on AFTER Zeiss ZEN pro is open an running\n3. Try restarting the Autoinjector software.\n4. See logs for more info."
             self.show_exception_box(msg)
             raise
         except Exception as e:
@@ -295,6 +295,7 @@ class ControlWindow(QMainWindow):
         """ Makes actions for the menu bar """
         self.config_action = QAction("Open Configuration", self)
         self.practice_action = QAction("Practice Mode", self)
+        self.standard_action = QAction("Standard Mode", self)
 
     def _create_menu(self):
         # make the menu bar
@@ -306,19 +307,31 @@ class ControlWindow(QMainWindow):
         menu_bar.addMenu(self.menu)
         self.menu.addAction(self.config_action)
         self.menu.addAction(self.practice_action)
+        self.menu.addAction(self.standard_action)
 
     def _connect_actions(self):
         self.config_action.triggered.connect(self.on_config)
         self.practice_action.triggered.connect(self.on_practice)
+        self.standard_action.triggered.connect(self.on_standard)
 
     @pyqtSlot()
     def on_config(self):
         self.show_warning_box("This action is not implemented yet.")
 
-        
     @pyqtSlot()
     def on_practice(self):
-        self.show_warning_box("This action is not implemented yet.")
+        try:
+            ret = self.vid_display.switch_to_practice_mode()
+        except Exception as e:
+            self.show_exception_box(f"Error while switching to practice mode: {e}\n\nSee logs for more info.")
+
+        if ret == False:
+            self.show_error_box(f"Could not switch to practice mode because no demo images were found.")
+
+    @pyqtSlot()
+    def on_standard(self):
+        self.vid_display.switch_to_standard_mode()
+
 
     def make_widgets(self):
         """ Create the GUI's widgets """

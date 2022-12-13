@@ -13,6 +13,7 @@ ROOT_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', '..'))
 # Specify other paths in project relative to ROOT_DIR
 LOG_DIR = os.path.join(ROOT_DIR, 'logs')
 DATA_DIR = os.path.join(ROOT_DIR, 'data')
+DEMO_DATA_DIR = os.path.join(DATA_DIR, 'demo')
 CONFIG_DIR = os.path.join(ROOT_DIR, 'configs')
 CONFIG_PATH = os.path.join(CONFIG_DIR, 'config.yaml')
 UNET_WEIGHTS_PATH = os.path.join(ROOT_DIR, 'src/deep_learning/weights/20220824_180000_Colab_gpu/best.pth')

@@ -9,6 +9,7 @@ import os
 import sys
 import cv2
 import numpy as np
+from PIL import Image
 import time
 from PyQt6.QtCore import (Qt,
                           QObject,
@@ -21,11 +22,14 @@ from PyQt6.QtWidgets import (QApplication,
                             QWidget,
                             )
 from PyQt6.QtGui import QImage, QPixmap, QColorConstants
+from src.cfg_mgmt.definitions import DEMO_DATA_DIR
+from src.deep_learning.edge_utils.img_utils import blend_images
 from src.video_control.camera import MMCamera, VideoStreamer
 from src.video_control.annotations import AnnotationManager
 from src.video_control import video_utils as utils
 from src.miscellaneous.standard_logger import StandardLogger
 from src.miscellaneous.utils import MplColorHelper
+from src.miscellaneous.paths import list_images
 
 
 class VideoDisplay(QWidget):
@@ -68,8 +72,11 @@ class VideoDisplay(QWidget):
         self.annotated_camera_pixels = []
         self.is_annotating = False
         self._make_widgets()
+        self.practice_mode = False
         self._t0 = time.time()
         self._dt = 0
+        # Get image paths for demo mode
+        self._demo_imgpaths = list(list_images(DEMO_DATA_DIR))
         # Update the video display when a new frame available from the camera
         self.streamer.new_frame_available.connect(self.set_new_frame)
         # Continuously query the focus z-height so painter can change annotaiton display
@@ -78,7 +85,6 @@ class VideoDisplay(QWidget):
         self._timer.timeout.connect(self.ask_for_focus_z.emit)
         TIMEOUT_MS = 100
         self._timer.start(TIMEOUT_MS)
-
 
     def _make_widgets(self):
         self.canvas = Canvas(self.width, self.height)
@@ -91,6 +97,19 @@ class VideoDisplay(QWidget):
         layout.addWidget(self.canvas)
         self.setLayout(layout)
 
+    def switch_to_practice_mode(self):
+        in_practice_mode = False
+        if len(self._demo_imgpaths) >0:
+            img_path = np.random.choice(self._demo_imgpaths, 1)
+            self.demo_img = np.array(Image.open(img_path[0]))
+            self.demo_img = cv2.resize(self.demo_img, dsize = (self.cam.width, self.cam.height), interpolation=cv2.INTER_AREA) 
+            self.practice_mode = True
+            in_practice_mode = True
+        return in_practice_mode
+    
+    def switch_to_standard_mode(self):
+        self.practice_mode = False
+
     def set_new_frame(self, frame:np.ndarray):
         """
         Set the `frame` attribute from the argument and call to update the display.
@@ -98,7 +117,10 @@ class VideoDisplay(QWidget):
         Args:
             frame (np.ndarray): image from camera
         """
-        self.frame = frame
+        if self.practice_mode is True:
+            self.frame = blend_images([frame, self.demo_img], [0.5, 0.5])
+        else:
+            self.frame = frame
         self.update_display()
 
     def get_frame(self)->np.ndarray:

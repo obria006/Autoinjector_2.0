@@ -146,5 +146,8 @@ share
 *.ps1
 .vscode
 configs
-data
+**/data/calibration/
+**/data/pipette/
+**/data/tissue/
+**/data/zstacks/
 results

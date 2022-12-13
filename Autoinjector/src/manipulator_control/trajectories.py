@@ -110,7 +110,7 @@ class XYCalibrationTrajectory(QObject):
     move_started = pyqtSignal()
     errors = pyqtSignal(Exception)
 
-    def __init__(self, mdl:ManipulatorModel, cal:Calibrator, img_w:int, img_h:int, z_polarity:int, pip_angle:float, obj_mag:float, opto_mag:float, delta_nm:float=50000, speed_ums:int=1000):
+    def __init__(self, mdl:ManipulatorModel, cal:Calibrator, img_w:int, img_h:int, z_polarity:int, z_scaling:float, pip_angle:float, obj_mag:float, opto_mag:float, delta_nm:float=50000, speed_ums:int=1000):
         """
         Arguments:
             mdl (ManipulatorModel): Object that manipulates the sensapex manipulator
@@ -118,6 +118,7 @@ class XYCalibrationTrajectory(QObject):
             img_w (int): Pixel width of screen/image
             img_h (int): Pixel height of screen/image
             z_polarity (int): Polarity between focus and man. z. +1 if same direction, else -1
+            z_scaling (float): Ratio of microscope z to manipulator z (microscope z/ manipulator z)
             pip_angle (float): manipulator angle in radians
             obj_mag (float): Current objective magnification
             opto_mag (float): Current optovar magnification
@@ -133,6 +134,7 @@ class XYCalibrationTrajectory(QObject):
         self.cal = cal
         self.speed_ums = speed_ums
         self.z_polarity = z_polarity
+        self.z_scaling = z_scaling
         self.pip_angle = pip_angle
         self.obj_mag = obj_mag
         self.opto_mag = opto_mag
@@ -231,7 +233,7 @@ class XYCalibrationTrajectory(QObject):
             # Compute calibration if have reached first 3 calibraiton points
             if self._move_index == len(self._man_disps):
                 # Dont save temp calibration model
-                self.cal.compute(z_polarity=self.z_polarity, pip_angle=self.pip_angle, obj_mag=self.obj_mag, opto_mag=self.opto_mag, save=False)
+                self.cal.compute(z_polarity=self.z_polarity, z_scaling=self.z_scaling, pip_angle=self.pip_angle, obj_mag=self.obj_mag, opto_mag=self.opto_mag, save=False)
                 # COmpute secondary calibration positiosn
                 ex_z = np.mean(self.cal.data.data_df['ex_z'].to_numpy())
                 self.compute_man_positions(ex_z=ex_z)

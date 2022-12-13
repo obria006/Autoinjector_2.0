@@ -1443,7 +1443,7 @@ class ControlWindow(QMainWindow):
         _, _, opto_mag = self.zen_controller.get_current_optovar()
         z_scaling = self.cfg.z_scaling
         z_polarity = self.cfg.z_polarity
-        self.cal_trajectory = XYCalibrationTrajectory(mdl = self.mdl, cal=self.pip_cal, img_w=img_width, img_h=img_height, z_polarity=z_polarity,pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
+        self.cal_trajectory = XYCalibrationTrajectory(mdl = self.mdl, cal=self.pip_cal, img_w=img_width, img_h=img_height, z_polarity=z_polarity, z_scaling=z_scaling, pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
         self.cal_pos_added.connect(self.cal_trajectory.next_cal_position)
         # delete calibraiton trajecotory otherwise it will conintue to handle stuff from
         # its connections even after it is finished
@@ -1650,7 +1650,7 @@ class ControlWindow(QMainWindow):
             self.logger.info(f"Computing calibration with data\n{self.pip_cal.data.data_df}")
             z_polarity = self.cfg.z_polarity
             z_scaling = self.cfg.z_scaling
-            self.pip_cal.compute(z_polarity=z_polarity, pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
+            self.pip_cal.compute(z_polarity=z_polarity, z_scaling=z_scaling, pip_angle=self.pip_angle, obj_mag=obj_mag, opto_mag=opto_mag)
         except CalibrationDataError as e:
             msg = f"Calibration not completed. Error: {e}\n\nMake sure you click on the tip to register at least 3 points (that don't lie on a line) before unchecking 'Calibrate'."
             self.show_warning_box(msg)

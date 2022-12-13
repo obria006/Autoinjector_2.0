@@ -34,7 +34,6 @@ class Calibrator():
         '''
         Arguments:
             cal_data_dir (str): Directory to calibration data
-            Arguments:
             ang_tol_deg (float): Alloted deviation in angle (degrees) to still be considered match
                 Match if within plus or minus ang_tol_deg
         '''
@@ -45,13 +44,15 @@ class Calibrator():
         self._ang_tol_deg = ang_tol_deg
         self.tmp_storage = ModelStorage(ang_tol_deg=self._ang_tol_deg)
 
-    def compute(self, z_polarity=-1, pip_angle:float=np.deg2rad(45), obj_mag:float=None, opto_mag:float=None, save:bool = True):
+    def compute(self, z_polarity=-1, z_scaling=1, pip_angle:float=np.deg2rad(45), obj_mag:float=None, opto_mag:float=None, save:bool = True):
         '''
         Use CalibrationModel to compute the transformation matrices
         
         Arguments:
             z_polarity (int): Indicator of directionality between external z and manipulator z.
                 Positive = same direction. Negative = opposite direction.
+            z_scaling (float): Ratio of microscope z-movement to equivalent manipulator z
+                movement. (i.e. microscope z / manipulator z)
             pip_angle (float): Angle of pipette relative to horizontal axis. Co-linear with
                 horizontal = 0. Pointing straight down = +pi/2 (90 degrees)
         '''
@@ -59,7 +60,7 @@ class Calibrator():
             raise CalibrationDataError('Calibration data contain at least 3 calibration points.')
         else:
             data = self.data.data_df
-            self.model.compute_transform_simplest(data, z_polarity, pip_angle)
+            self.model.compute_transform_simplest(data, z_polarity, z_scaling, pip_angle)
             T_mxyzd_to_mxyz = self.model.T_mxyzd_to_mxyz
             T_mxyz_to_exxyz = self.model.T_mxyz_to_exxyz
             x_0 = self.model.x_0
@@ -699,7 +700,7 @@ class CalibrationModel():
         self.pixel_size_nm = None
         self._is_calibrated = False
         
-    def compute_transform_simplest(self, data:CalibrationData, z_polarity:int, pip_angle:float):
+    def compute_transform_simplest(self, data:CalibrationData, z_polarity:int, z_scaling:float, pip_angle:float):
         '''
         Computes the transformation matrices according to simplest relationship between
         and manipulator and external coordinate system.
@@ -709,6 +710,8 @@ class CalibrationModel():
                 z and d positions should not change.
             z_polarity (int): Directionality between manipulator z and external z.
                 Positive = same direction. Negative = opposite direction
+            z_scaling (float): Ratio of microscope z-movement to equivalent manipulator z
+                movement. (i.e. microscope z / manipulator z)
             pip_angle (float): Angle of pipette below horizontal axis (radians)
 
         Assumptions:
@@ -789,9 +792,9 @@ class CalibrationModel():
         if z_polarity == 0:
             raise ValueError('Z polarity must be positive of negative number. Positive = same direction. Negative = opposite direction')
         elif z_polarity >0:
-            T_z = 1*nm2um*0.741
+            T_z = 1*nm2um*z_scaling
         else:
-            T_z = -1*nm2um*0.741
+            T_z = -1*nm2um*z_scaling
 
         # Transformation from manipulator x, y, z, d to manipulator x, y, z
         self.T_mxyzd_to_mxyz = np.array([[1, 0, 0, np.cos(pip_angle)],

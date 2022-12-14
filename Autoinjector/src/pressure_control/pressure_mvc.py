@@ -253,12 +253,14 @@ class PressureView(QObject):
         self.pressure_slider.setMaximum(100)
         self.pressure_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         self.pressure_slider.setTickInterval(10)
+        self.pressure_slider.setToolTip("Set and apply compensation and injection pressure")
         self.pressure_display = SmallQLineEdit()
         self.pressure_display.setReadOnly(True)
         palette = QPalette()
         palette.setColor(QPalette.ColorRole.Base, QColor('lightGray'))
         self.pressure_display.setPalette(palette)
         self.purge_button = QPushButton("Purge")
+        self.purge_button.setToolTip("Apply brief high-pressure pulse (for unclogging)")
 
     def _set_connections(self):
         """ 

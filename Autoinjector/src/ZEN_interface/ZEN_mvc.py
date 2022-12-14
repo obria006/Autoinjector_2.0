@@ -1249,28 +1249,35 @@ class ViewZEN(QObject):
         self.foc_disp = QLineEdit()
         self.foc_disp.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.foc_disp.setReadOnly(True)
+        self.foc_disp.setToolTip("Current microscope focus position")
         palette = QPalette()
         palette.setColor(QPalette.ColorRole.Base, QColor('lightGray'))
         self.foc_disp.setPalette(palette)
 
         # Change in focus increment
         self.foc_inc = QLineEdit()
+        self.foc_inc.setToolTip("Enter movement increment for '+'/'-' buttons")
 
         # Change focus buttons
         self.btn_minus = QPushButton('-')
+        self.btn_minus.setToolTip("Decrease focus position")
         self.btn_plus = QPushButton('+')
+        self.btn_plus.setToolTip("Increase focus position")
 
         # Objective selector combobox
         self.obj_selector = QComboBox()
         self.obj_selector.setPlaceholderText('Magnification')
+        self.obj_selector.setToolTip("Choose microscope objective")
 
         # Optovar selector combobox
         self.opto_selector = QComboBox()
         self.opto_selector.setPlaceholderText('Magnification')
+        self.opto_selector.setToolTip("Choose microscope optovar")
 
         # Reflector selector combobox
         self.ref_selector = QComboBox()
         self.ref_selector.setPlaceholderText('Name')
+        self.ref_selector.setToolTip("Choose microscope reflector")
 
         # LED values for each position (copied from ZEN software)
         self.led_wavelengths = {1: 385, 
@@ -1283,18 +1290,25 @@ class ViewZEN(QObject):
         # Light source buttons
         self.lamp_button = QRadioButton('Lamp')
         self.lamp_button.setAutoExclusive(False)
+        self.lamp_button.setToolTip("Turn on/off transmitted light source")
         self.led1_button = QRadioButton(str(self.led_wavelengths[1]))
         self.led1_button.setAutoExclusive(False)
+        self.led1_button.setToolTip("Turn on/off LED source")
         self.led2_button = QRadioButton(str(self.led_wavelengths[2]))
         self.led2_button.setAutoExclusive(False)
+        self.led2_button.setToolTip("Turn on/off LED source")
         self.led3_button = QRadioButton(str(self.led_wavelengths[3]))
         self.led3_button.setAutoExclusive(False)
+        self.led3_button.setToolTip("Turn on/off LED source")
         self.led4_button = QRadioButton(str(self.led_wavelengths[4]))
         self.led4_button.setAutoExclusive(False)
+        self.led4_button.setToolTip("Turn on/off LED source")
         self.led5_button = QRadioButton(str(self.led_wavelengths[5]))
         self.led5_button.setAutoExclusive(False)
+        self.led5_button.setToolTip("Turn on/off LED source")
         self.led6_button = QRadioButton(str(self.led_wavelengths[6]))
         self.led6_button.setAutoExclusive(False)
+        self.led6_button.setToolTip("Turn on/off LED source")
         self.led_button_dict = {1: self.led1_button,
                                 2: self.led2_button,
                                 3: self.led3_button,
@@ -1309,15 +1323,18 @@ class ViewZEN(QObject):
         self.lamp_slider.setMaximum(100)
         self.lamp_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         self.lamp_slider.setTickInterval(10)
+        self.lamp_slider.setToolTip("Adjust transmitted light source power")
 
         # LED intensity combobox and slider
         self.led_selector = QComboBox()
         self.led_selector.setPlaceholderText('LED')
+        self.led_selector.setToolTip("Select LED wavelength power to adjust")
         self.led_slider = QSlider(Qt.Orientation.Horizontal)
         self.led_slider.setMinimum(0)
         self.led_slider.setMaximum(100)
         self.led_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         self.led_slider.setTickInterval(10)
+        self.led_slider.setToolTip("Adjust currently selected LED power")
     
     def _stateify_widgets(self):
         """

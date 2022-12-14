@@ -36,14 +36,14 @@ setup(
         "opencv-python",
         "pandas",
         "Pillow",
-        "pymmcore",
+        "pymmcore==10.1.1.70.5", # HAD CAMERA ISSUES WITH DIFFERENT VERSION
         "PyQt6",
         "pyserial",
         "pywin32",
         "PyYAML",
         "scikit-image",
         "scipy",
-        "sensapex",
+        "sensapex>=1.22.6,<1.22.8", # ENCOUNTERED INSTALL ERROR WITH 1.22.8
         "tifffile",
         "torch",
         "torchvision"

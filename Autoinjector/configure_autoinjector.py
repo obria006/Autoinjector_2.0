@@ -362,6 +362,7 @@ class AutoinjectorConfigWindow(QDialog):
         else:
             cfg = Configuration(**params)
             cfg.to_file()
+            self.is_saved = True
 
     @pyqtSlot()
     def on_autoinjector(self):

@@ -41,6 +41,9 @@ class AutoinjectorConfigWindow(QDialog):
         self._layout_app()
 
     def _initialize_attributes(self):
+        # Indicator for if parameters were saved
+        self.is_saved = False
+
         # WhatsThis dialog for micromanager
         self.UMANAGER_WT = ("<i>Micro-Manager</i> is a open-source software "
         "for controlling various microscope hardware. The Autoinjector uses "
@@ -362,6 +365,7 @@ class AutoinjectorConfigWindow(QDialog):
 
     @pyqtSlot()
     def on_autoinjector(self):
+        """ Handles what to do if open autoinjector is clicked """
         if not os.path.exists(CONFIG_PATH):
             self.error_msg = QMessageBox()
             self.error_msg.setIcon(QMessageBox.Icon.Critical)
@@ -370,6 +374,18 @@ class AutoinjectorConfigWindow(QDialog):
             self.error_msg.setText(msg)
             self.error_msg.exec()
         else:
+            self.open_autoinjector()
+
+    def open_autoinjector(self):
+        """ Opens autoinjector app """
+        open_app = True
+        if self.is_saved is False:
+            qm = QMessageBox()
+            ret = qm.question(self,'Open without new configuration?','No new configuration was saved. Do you want to open with the previous configuration?')
+            if ret == QMessageBox.StandardButton.No:
+                open_app = False
+        
+        if open_app is True:
             self.close()
             self.main_app = ControlWindow()
             self.main_app.show()

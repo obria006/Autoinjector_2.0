@@ -187,7 +187,7 @@ class ControlWindow(QMainWindow):
                 self.camera_cfg.rotate,
                 img_vals)
         except RuntimeError as e:
-            msg = f"Error while interfacing with camera.\n\n1. Make sure camera is on.\n2. Make sure camera was turned on AFTER Zeiss ZEN pro is open an running\n3. Try restarting the Autoinjector software.\n4. See logs for more info."
+            msg = f"Error while interfacing with camera: {self.cfg.camera}.\n\n1. Make sure camera is on.\n2. Make sure camera was turned on AFTER Zeiss ZEN pro is open an running\n3. Try restarting the Autoinjector software.\n4. See logs for more info."
             self.show_exception_box(msg)
             raise
         except Exception as e:

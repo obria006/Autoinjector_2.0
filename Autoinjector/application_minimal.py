@@ -205,7 +205,8 @@ class ControlWindow(QMainWindow):
         self.vid_display = VideoDisplay(self.cam_MM, self.annot_mgr, height=900, fps=50)
         self.zstack = ZStackManager(self.zen_controller)
 
-        # Create the menu
+        # Create the menu and status bar
+        self._construct_statusbar()
         self._construct_menu()
 
         # Create main gui widgets
@@ -289,6 +290,12 @@ class ControlWindow(QMainWindow):
         self.pres_controller = PressureController(model= self.pres_model)
         self.pres_view = PressureView(controller=self.pres_controller)
 
+    def _construct_statusbar(self):
+        self.perm_label = QLabel("Standard Mode")
+        self.status_bar = QStatusBar()
+        self.setStatusBar(self.status_bar)
+        self.status_bar.addPermanentWidget(self.perm_label)
+
     def _construct_menu(self):
         """ Makes menu bar for occasional user options """
         self._create_actions()
@@ -300,6 +307,7 @@ class ControlWindow(QMainWindow):
         self.config_action = QAction("Open Configuration", self)
         self.practice_action = QAction("Practice Mode", self)
         self.standard_action = QAction("Standard Mode", self)
+        self.developer_action = QAction("Developer Mode", self)
 
     def _create_menu(self):
         # make the menu bar
@@ -310,16 +318,20 @@ class ControlWindow(QMainWindow):
         self.menu = QMenu("Menu", self)
         menu_bar.addMenu(self.menu)
         self.menu.addAction(self.config_action)
-        self.menu.addAction(self.practice_action)
+        self.menu.addSeparator()
         self.menu.addAction(self.standard_action)
+        self.menu.addAction(self.practice_action)
+        self.menu.addAction(self.developer_action)
 
     def _connect_actions(self):
         self.config_action.triggered.connect(self.on_config)
         self.practice_action.triggered.connect(self.on_practice)
         self.standard_action.triggered.connect(self.on_standard)
+        self.developer_action.triggered.connect(self.on_developer)
 
     @pyqtSlot()
     def on_config(self):
+        """ Handles what to do when user clicks open configuration in menu """
         from configure_autoinjector import AutoinjectorConfigWindow
         self.new_win = AutoinjectorConfigWindow()
         self.new_win.show()
@@ -327,6 +339,7 @@ class ControlWindow(QMainWindow):
 
     @pyqtSlot()
     def on_practice(self):
+        """ Handles what to do when switching to practice mode """
         try:
             ret = self.vid_display.switch_to_practice_mode()
         except Exception as e:
@@ -334,11 +347,21 @@ class ControlWindow(QMainWindow):
 
         if ret == False:
             self.show_error_box(f"Could not switch to practice mode because no demo images were found.")
+        else:
+            self.perm_label.setText("Practice Mode")
 
     @pyqtSlot()
     def on_standard(self):
+        """ Handles what to do when switching to standard mode """
         self.vid_display.switch_to_standard_mode()
+        self.data_gen_group.hide()
+        self.perm_label.setText("Standard Mode")
 
+    @pyqtSlot()
+    def on_developer(self):
+        """ Handles what to do when swtiching to developer mode """
+        self.data_gen_group.show()
+        self.perm_label.setText("Developer Mode")
 
     def make_widgets(self):
         """ Create the GUI's widgets """
@@ -578,11 +601,13 @@ class ControlWindow(QMainWindow):
 
         self.data_gen_group = QGroupBox('GUI Data Acquisition')
         self.data_gen_group.setLayout(form)
+        # Hide immediately to only show in developer mode
+        self.data_gen_group.hide()
 
     def stateify_data_generator_widgets(self):
         ''' Set initial states for data generator widgets '''
-        self.save_tip_annot_rbon.setChecked(True)
-        self.save_tiss_annot_rbon.setChecked(True)
+        self.save_tip_annot_rbon.setChecked(False)
+        self.save_tiss_annot_rbon.setChecked(False)
 
 
     """

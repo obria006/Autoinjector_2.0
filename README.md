@@ -1,6 +1,6 @@
 # Autoinjector 2.0
 -------------
-Autoinjector 2.0 is an updated iteration of the original Autoinjector system ([GitHub](https://github.com/bsbrl/autoinjector/tree/Python3), [EMBO Journal Paper](https://www.embopress.org/doi/full/10.15252/embr.201947880)) designed for conducting automated microinjections in embryonic mouse brain tissue and human brain organoids. Autoinjector 2.0 improves upon the original Autoinjector by acheiving greater levels of automation via updated hardware, more sophisticted software control, and an upgraded user experience. The main improvements include:
+Autoinjector 2.0 is an updated iteration of the original Autoinjector system ([GitHub - Python3 branch](https://github.com/bsbrl/autoinjector/tree/Python3), [EMBO Journal Paper](https://www.embopress.org/doi/full/10.15252/embr.201947880)) designed for conducting automated microinjections in embryonic mouse brain tissue and human brain organoids. Autoinjector 2.0 improves upon the original Autoinjector by acheiving greater levels of automation via updated hardware, more sophisticted software control, and an upgraded user experience. The main improvements include:
 - Zeiss microscope system with automated hardware features including computer controllable objective changer, optovar changer, reflector changer, focus controller, and stage. In addition, the transmitted light source and epifluorescence LED light source are computer controllable.
 - Updated pressure control system with computer controllable option for high pressure unclogging of the microinjection needle.
 - 3D microscope-manipulator calibration to enable 3D microinjection targetting without needing to update/revise the calibration when changing focus heights (as was required for the original Autoinjector).
@@ -21,7 +21,8 @@ The Autoinjector 2.0 is a robotic, vision-guided platform for conducting automat
 	- [Software Requirements](https://github.com/obria006/Autoinjector_2.0#software-requirements)
 2. [Install Instructions](https://github.com/obria006/Autoinjector_2.0#install-instructions)
 3. [Running the Application](https://github.com/obria006/Autoinjector_2.0#running-the-application)
-4. [License](https://github.com/obria006/Autoinjector_2.0#license)
+4. [Troubleshooting](https://github.com/obria006/Autoinjector_2.0#troubleshooting)
+5. [License](https://github.com/obria006/Autoinjector_2.0#license)
 
 
 ## System requirements 
@@ -31,7 +32,7 @@ The Autoinjector 2.0 is a robotic, vision-guided platform for conducting automat
 	- GPU is not necessary. While a GPU will increase speed of neural network detections, the computer used during development only used the CPU and was sufficiently speedy.
 2. Arduino Uno
 3. Zeiss Axio Observer 7 microscope with motorized objective changer, optovar changer, reflector changer, focus controller (Z-drive), and stage.
-4. Microscope camera (tested with Hamamatsu Orca Dcam)
+4. Microscope camera (tested with Hamamatsu Orca Flash 4.0)
 	- A complete list of available cameras can be found at [Micro-Manager's device support](https://micro-manager.org/Device_Support). Additional cameras may be used (for instance the [Dage-MTI IR-2000](https://dagemti.com/products/cameras/ir-2000-camera/)), but additional custom Python software must be written to support these cameras. 
 5. Sensapex uMp-4 4-axis micromanipulator. 
 6. Custom pressure rig.
@@ -50,7 +51,7 @@ Autoinjector 2.0 has only been tested with Windows 10 using Python 3.9.13.
 
 ## Install Instructions
 
-Install the following software to operate the Autoinjector 2.0. It is highly advisable to create a virtual environment in which to install the Autoinjector 2.0 software.
+Install the following software to operate the Autoinjector 2.0. It is highly recommended to create a virtual environment in which to install the Autoinjector 2.0 software.
 
 
 ### 1. Python and Autoinjector software
@@ -97,7 +98,7 @@ Install the following software to operate the Autoinjector 2.0. It is highly adv
 	python -m pip install .
 	```
 
-	- To ensure you have the correct dependency versions run the following command:
+	- (Optional) To ensure you have the correct dependency versions run the following command:
 	```
 	python -m pip install -r requirements.txt
 	```
@@ -121,7 +122,7 @@ Install the following software to operate the Autoinjector 2.0. It is highly adv
 
 2. Launch the installer and follow installation instructions on screen.
 	- It is highly recommended that you install the file at *"C:/Program Files/Micro-Manager-2.0"*. You will need to reference the Micro-Manager file later when configuring the Autoinjector 2.0.
-	* **Note: Your device interface version must match between your Micro-Manager installation and the installed pymmcore version. Detials are located at [pymmcore GitHub](https://github.com/micro-manager/pymmcore#matching-micro-manager-and-pymmcore-versions)**
+	* **Note: Your device interface version must match between your Micro-Manager installation and the installed pymmcore Python package version. Details are located at [pymmcore GitHub](https://github.com/micro-manager/pymmcore#matching-micro-manager-and-pymmcore-versions)**
 
 
 ### 4. Sensapex software
@@ -136,24 +137,54 @@ Install the following software to operate the Autoinjector 2.0. It is highly adv
 
 1. Ensure Zeiss ZEN Pro is installed on the computer. Likely this is already installed on the computer if you have the Zeiss microscope.
 
-2. Download the *"regScripting_Release.bat"* file from Zeiss's [OAD GitHub](https://github.com/zeiss-microscopy/OAD/tree/master/Interfaces/COM_interface/Sourcecode_COM_Python). The file should be located in *"/OAD/Interfaces/COM_interface/Sourcecode_COM_Python"*
+2. Download the *"regScripting_Release.bat"* file from Zeiss's [OAD GitHub](https://github.com/zeiss-microscopy/OAD/tree/master/Interfaces/COM_interface/Sourcecode_COM_Python). The file should be located in the OAD GitHub at *"/OAD/Interfaces/COM_interface/Sourcecode_COM_Python"*
 
-3. Modify the paths of `dll-1` and `dll-2` to match the installation paths on your system.
+3. Open the *"regScripting_Release.bat"* file in a text editor (like Notepad), and modify the paths of `dll-1` and `dll-2` to match the installation paths on your system.
 
 4. Run *"regScripting_Release.bat"* as admin to make the ZEN commands available to Python. 
 
 
 ### 6. Your Camera Driver
-Follow the instructions for your camera driver install. In our work we have used the [Hamamatsu Orca Camera](https://www.hamamatsu.com/us/en/product/type/C13440-20CU/index.html) and [Photometrics Cool Snap Dyno PVCam](https://www.photometrics.com/products/ccdcams/coolsnap-dyno.php)
+**Note: This step might not be necessary. This step was included in the [Autoinjector 1.0 GitHub - master branch](https://github.com/bsbrl/autoinjector), but I didn't actually follow this steps for Autoinjector 2.0. However, the microscope and camera system that I used to develop Autoinjector 2.0 were configured by a Zeiss technician, so they could have installed the camera driver before I arrived.**
 
-## First time configuration
-TODO
+From Autinjector 1.0: 
+> Follow the instructions for your camera driver install. In our work we have used the [Hamamatsu Orca Camera](https://www.hamamatsu.com/us/en/product/type/C13440-20CU/index.html) and [Photometrics Cool Snap Dyno PVCam](https://www.photometrics.com/products/ccdcams/coolsnap-dyno.php)
 
-## TODO List
-  - [ ] First time setup to make folders (configs, logs)
-  - [ ] GUI to check whether necessary folders exist (configs, logs, data, etc)
+## Running the application
+Once you've installed the above software, you are ready to run the Autoinjector 2.0 application. To run the application you must run *"configure_autoinjector.py"* (or *"application_minimal.py"* but this will prompt you to open *"configure_autoinjector.py"* if you haven't completed the configuration yet). Run the *"configure_autoinjector.py"* script with the following command in the command prompt: `path-to-virtual-environment-python path-to-configure_autoinjector.py`. A real world example is shown below:
 
+```
+C:/Users/Public/Documents/envs/Autoinjector_2/Scripts/python.exe C:/Users/Public/Documents/envs/Autoinjector_2/Autoinjector/configure_autoinjector.py
+```
 
+This command means use the Python installed at *"C:/Users/Public/Documents/envs/Autoinjector_2/Scripts/python.exe"* (which is in the virtual environment where you installed the necessary packages) to run the *"C:/Users/Public/Documents/envs/Autoinjector_2/Autoinjector/configure_autoinjector.py"* file.
+
+The *"configure_autoinjector.py"* will open a user interface where you will need to specify several important parameters that dictate how the Autoinjector system operates. See the user manual for more information about the configuration app. After you enter the parameters, click "Save Configuration" and "Open Autoinjector". If everything is installed correctly, and you specified the correct parameters in the configuration, then the main Autoinjector 2.0 application will open.
+
+Once you saved the configuration, you can directly open the Autoinjector 2.0 app (and bypass the configuration app) by running *"application_minimal.py"*. A real world example of this command is shown below:
+
+```
+C:/Users/Public/Documents/envs/Autoinjector_2/Scripts/python.exe C:/Users/Public/Documents/envs/Autoinjector_2/Autoinjector/application_minimal.py
+```
+
+## Troubleshooting
+
+### Sensapex Issues
+**TLDR: If you have sensapex issues try `pip install sensapex==1.22.7`.**
+
+There are some known issues with some versions of the sensapex Python package (but I haven't encountered issues with version 1.22.7). Start with pip installing the sensapex package as detailed above (this automatically happens during the `python -m pip install .` step in [Python 3.9.13 and Autoinjector software](https://github.com/obria006/Autoinjector_2.0#1-python-and-autoinjector-software) installation). 
+
+1. First issue: pip installing the sensapex package (for package versions<=1.22.6) may result in an incomplete installation (a missing piece of software).
+
+	- Follow the guidance in this [GitHub issue](https://github.com/sensapex/sensapex-py/issues/9) to properly install the Sensapex package. 
+		- Long story short, to complete the installation, you must download the 1.022 binaries from [Sensapex](http://dist.sensapex.com/misc/um-sdk/latest/) and place the *"libum.dll"* file in the sensapex package folder containing *"sensapex.py"* (i.e. *"/python-installation-path/Lib/site-packages/sensapex"*)
+
+2. Second issue: pip installing sensapex version 1.22.8 simply wouldn't install. 1.22.8 is the most recent at the time of writing this on December 14, 2022.  So `pip install sensapex==1.22.7` to revert to the previous version.
+
+### Micro-Manager Python Package (pymmcore)
+Your device interface version must match between your Micro-Manager installation and the installed pymmcore Python package version. Details are located at [pymmcore GitHub](https://github.com/micro-manager/pymmcore#matching-micro-manager-and-pymmcore-versions).
+
+If you keep getting an error in the user interface that says your getting a camera error, but you know that everything is correct (camera is turned on and connected with computer) it may be a symptom of the version error. I've pinned the pymmcore dependency that worked for me in setup.py to overcome this issue at Human Technopole.
 
 ## License
 This work is lisenced under the MIT lisence. See LISENCE.txt for additional information.  

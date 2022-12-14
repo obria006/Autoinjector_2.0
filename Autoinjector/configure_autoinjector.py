@@ -371,8 +371,8 @@ class AutoinjectorConfigWindow(QDialog):
             self.error_msg.exec()
         else:
             self.close()
-            main_app = ControlWindow()
-            main_app.show()
+            self.main_app = ControlWindow()
+            self.main_app.show()
 
     def get_dir(self):
         """ Open directory to browse for a directory. """

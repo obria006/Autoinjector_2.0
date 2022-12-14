@@ -46,6 +46,9 @@ class PressureModel(QObject):
         """
         self.arduino.purge()
 
+    def close(self):
+        self.arduino.close()
+
 class PressureController(QObject):
     """
     MVC controller to coordinate betweeen the model and views. Pressure values
@@ -159,6 +162,10 @@ class PressureController(QObject):
             raise ValueError(f"Invalid pressure: {model_pres}. Must be between {self._MODEL_RANGE}")
         
         self._model.backpressure(model_pres)
+    
+    def close(self):
+        self.zero_bp()
+        self._model.close()
 
     def zero_bp(self):
         """

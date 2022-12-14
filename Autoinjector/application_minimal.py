@@ -94,6 +94,9 @@ class ControlWindow(QMainWindow):
         else:
             # Otherwise load configuration values from the config file
             self.configured = True
+            self.motorfound = False
+            self.arduinofound = False
+            self.camerafound = False
             self.cfg = Configuration.init_from_file()
             self.camera_cfg = CameraConfiguration.init_from_camera_name(self.cfg.camera)
             
@@ -186,8 +189,9 @@ class ControlWindow(QMainWindow):
                 self.camera_cfg.bins,
                 self.camera_cfg.rotate,
                 img_vals)
+            self.camerafound = True
         except RuntimeError as e:
-            msg = f"Error while interfacing with camera: {self.cfg.camera}.\n\n1. Make sure camera is on.\n2. Make sure camera was turned on AFTER Zeiss ZEN pro is open an running\n3. Try restarting the Autoinjector software.\n4. See logs for more info."
+            msg = f"Error while interfacing with camera: {self.cfg.camera}.\n\n1. Make sure camera is on.\n2. Make sure camera was turned on AFTER Zeiss ZEN pro is open an running\n3. Try restarting the Autoinjector software.\n4. Ensure {self.cfg.camera} is the correct camera. (This can be modified in the configuration app.)\n5. See logs for more info."
             self.show_exception_box(msg)
             raise
         except Exception as e:
@@ -316,7 +320,10 @@ class ControlWindow(QMainWindow):
 
     @pyqtSlot()
     def on_config(self):
-        self.show_warning_box("This action is not implemented yet.")
+        from configure_autoinjector import AutoinjectorConfigWindow
+        self.new_win = AutoinjectorConfigWindow()
+        self.new_win.show()
+        self.close()
 
     @pyqtSlot()
     def on_practice(self):
@@ -1097,8 +1104,10 @@ class ControlWindow(QMainWindow):
     def closeEvent(self, event):
         """ Functions to call when gui is closed (`X` is clicked) """
         if self.configured:
-            self.pres_controller.zero_bp()
-            self.vid_display.stop()
+            if self.arduinofound is True:
+                self.pres_controller.close()
+            if self.camerafound is True:
+                self.vid_display.stop()
             time.sleep(0.5)
         self.close()
 

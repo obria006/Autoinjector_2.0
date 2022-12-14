@@ -139,6 +139,7 @@ class MMCamera():
         Stop the continuous camera acquisition.
         """
         self.cap.stopSequenceAcquisition()
+        self.cap.unloadAllDevices()
 
 
 class VideoStreamer(QObject):

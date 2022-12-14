@@ -68,3 +68,6 @@ class ArduinoPressure(QObject):
         """ Recieve message from Arduino """
         response = self.arduino.read(self.arduino.inWaiting())
         print(response)
+
+    def close(self):
+        QTimer.singleShot(300, self.arduino.close)

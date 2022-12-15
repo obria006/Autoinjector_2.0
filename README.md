@@ -1,4 +1,5 @@
 # Autoinjector 2.0
+![autoinjector_2_system](https://user-images.githubusercontent.com/60007263/207665344-35e8f56a-a40b-4dce-8dff-3479653bf2f0.png)
 -------------
 Autoinjector 2.0 is an updated iteration of the original Autoinjector system ([GitHub - Python3 branch](https://github.com/bsbrl/autoinjector/tree/Python3), [EMBO Journal Paper](https://www.embopress.org/doi/full/10.15252/embr.201947880)) designed for conducting automated microinjections in embryonic mouse brain tissue and human brain organoids. Autoinjector 2.0 improves upon the original Autoinjector by acheiving greater levels of automation via updated hardware, more sophisticted software control, and an upgraded user experience. The main improvements include:
 - Zeiss microscope system with automated hardware features including computer controllable objective changer, optovar changer, reflector changer, focus controller, and stage. In addition, the transmitted light source and epifluorescence LED light source are computer controllable.
@@ -44,9 +45,8 @@ Autoinjector 2.0 has only been tested with Windows 10 using Python 3.9.13.
 1. [Python 3.9.13 and Autoinjector software](https://github.com/obria006/Autoinjector_2.0#1-python-and-autoinjector-software)
 2. [Arduino IDE](https://github.com/obria006/Autoinjector_2.0#2-arduino)
 3. [Micromanager 2.0+](https://github.com/obria006/Autoinjector_2.0#3-micromanager)
-4. [Sensapex software](https://github.com/obria006/Autoinjector_2.0#4-sensapex-software)
-5. [Zeiss ZEN Pro microscope software](https://github.com/obria006/Autoinjector_2.0#5-zen-interface)
-6. [Your camera driver](https://github.com/obria006/Autoinjector_2.0#6-your-camera-driver)
+4. [Zeiss ZEN Pro microscope software](https://github.com/obria006/Autoinjector_2.0#4-zen-interface)
+5. [Your camera driver](https://github.com/obria006/Autoinjector_2.0#5-your-camera-driver)
 
 
 ## Install Instructions
@@ -124,15 +124,7 @@ Install the following software to operate the Autoinjector 2.0. It is highly rec
 	- It is highly recommended that you install the file at *"C:/Program Files/Micro-Manager-2.0"*. You will need to reference the Micro-Manager file later when configuring the Autoinjector 2.0.
 	* **Note: Your device interface version must match between your Micro-Manager installation and the installed pymmcore Python package version. Details are located at [pymmcore GitHub](https://github.com/micro-manager/pymmcore#matching-micro-manager-and-pymmcore-versions)**
 
-
-### 4. Sensapex software
-1. Start with pip installing the sensapex package as detailed above. However, pip installing the sensapex package likely resulted in an incomplete installation (a missing piece of software).
-
-2. Follow the guidance in this [GitHub issue](https://github.com/sensapex/sensapex-py/issues/9) to properly install the Sensapex package.
-	* To complete the installation, you must download the 1.022 binaries from [Sensapex](http://dist.sensapex.com/misc/um-sdk/latest/) and place the *"libum.dll"* file in the senspex package folder containing *"sensapex.py"* (i.e. *"/python-installation-path/Lib/site-packages/sensapex"*)
-
-
-### 5. Zen interface
+### 4. Zen interface
 **Note: Python interfaces with Zeiss ZEN software to control the automated movements of the microscope. This interface is achieved via the COM interface in Zeiss's [Open Application Development](https://github.com/zeiss-microscopy/OAD). Further info/guidance for the COM interface is available on the [OAD GitHub](https://github.com/zeiss-microscopy/OAD/tree/master/Interfaces/COM_interface)**
 
 1. Ensure Zeiss ZEN Pro is installed on the computer. Likely this is already installed on the computer if you have the Zeiss microscope.
@@ -144,7 +136,7 @@ Install the following software to operate the Autoinjector 2.0. It is highly rec
 4. Run *"regScripting_Release.bat"* as admin to make the ZEN commands available to Python. 
 
 
-### 6. Your Camera Driver
+### 5. Your Camera Driver
 **Note: This step might not be necessary. This step was included in the [Autoinjector 1.0 GitHub - master branch](https://github.com/bsbrl/autoinjector), but I didn't actually follow this steps for Autoinjector 2.0. However, the microscope and camera system that I used to develop Autoinjector 2.0 were configured by a Zeiss technician, so they could have installed the camera driver before I arrived.**
 
 From Autinjector 1.0: 
@@ -159,7 +151,10 @@ C:/Users/Public/Documents/envs/Autoinjector_2/Scripts/python.exe C:/Users/Public
 
 This command means use the Python installed at *"C:/Users/Public/Documents/envs/Autoinjector_2/Scripts/python.exe"* (which is in the virtual environment where you installed the necessary packages) to run the *"C:/Users/Public/Documents/envs/Autoinjector_2/Autoinjector/configure_autoinjector.py"* file.
 
-The *"configure_autoinjector.py"* will open a user interface where you will need to specify several important parameters that dictate how the Autoinjector system operates. See the [user manual](/Autoinjector/docs/Autoinjector%202.0%20Manual%20v1.0.pdf) for more information about the configuration app. After you enter the parameters, click "Save Configuration" and "Open Autoinjector". If everything is installed correctly, and you specified the correct parameters in the configuration, then the main Autoinjector 2.0 application will open.
+The *"configure_autoinjector.py"* will open a user interface where you will need to specify several important parameters that dictate how the Autoinjector system operates (shown below). See the [user manual](/Autoinjector/docs/Autoinjector%202.0%20Manual%20v1.0.pdf) for more information about the configuration app. After you enter the parameters, click "Save Configuration" and "Open Autoinjector". If everything is installed correctly, and you specified the correct parameters in the configuration, then the main Autoinjector 2.0 application will open.
+
+![configuration_app](https://user-images.githubusercontent.com/60007263/207665541-240e6fed-a621-4639-961c-5ac0d71ed19d.png)
+
 
 Once you saved the configuration, you can directly open the Autoinjector 2.0 app (and bypass the configuration app) by running *"application_minimal.py"*. A real world example of this command is shown below:
 

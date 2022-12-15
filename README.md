@@ -14,7 +14,7 @@ As of December 2022, the Autoinjector 2.0 has been used to conduct microinjectio
 
 -------------
 
-The Autoinjector 2.0 is a robotic, vision-guided platform for conducting automated microinjection along a user-specified trajectory in organotypic slices. Autoinjector 2.0 uses robotic control and computer vision to automate laborious and repetitive tasks of the manual microinjection process. This read me takes you through the system requirements and installation instructions. Consult the documentation for a more comprehensive explanation of the Autoinjector 2.0 system.
+The Autoinjector 2.0 is a robotic, vision-guided platform for conducting automated microinjection along a user-specified trajectory in organotypic slices. Autoinjector 2.0 uses robotic control and computer vision to automate laborious and repetitive tasks of the manual microinjection process. This read me takes you through the system requirements and installation instructions. Consult the [user manual](/Autoinjector/docs/) for a more comprehensive explanation of the Autoinjector 2.0 system.
 
 1. [System Requirements](https://github.com/obria006/Autoinjector_2.0#system-requirements)
 	- [Hardware Requirements](https://github.com/obria006/Autoinjector_2.0#hardware-requirements)
@@ -159,7 +159,7 @@ C:/Users/Public/Documents/envs/Autoinjector_2/Scripts/python.exe C:/Users/Public
 
 This command means use the Python installed at *"C:/Users/Public/Documents/envs/Autoinjector_2/Scripts/python.exe"* (which is in the virtual environment where you installed the necessary packages) to run the *"C:/Users/Public/Documents/envs/Autoinjector_2/Autoinjector/configure_autoinjector.py"* file.
 
-The *"configure_autoinjector.py"* will open a user interface where you will need to specify several important parameters that dictate how the Autoinjector system operates. See the user manual for more information about the configuration app. After you enter the parameters, click "Save Configuration" and "Open Autoinjector". If everything is installed correctly, and you specified the correct parameters in the configuration, then the main Autoinjector 2.0 application will open.
+The *"configure_autoinjector.py"* will open a user interface where you will need to specify several important parameters that dictate how the Autoinjector system operates. See the [user manual](/Autoinjector/docs/Autoinjector%202.0%20Manual%20v1.0.pdf) for more information about the configuration app. After you enter the parameters, click "Save Configuration" and "Open Autoinjector". If everything is installed correctly, and you specified the correct parameters in the configuration, then the main Autoinjector 2.0 application will open.
 
 Once you saved the configuration, you can directly open the Autoinjector 2.0 app (and bypass the configuration app) by running *"application_minimal.py"*. A real world example of this command is shown below:
 

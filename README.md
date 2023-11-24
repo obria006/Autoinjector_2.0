@@ -1,6 +1,8 @@
 # Autoinjector 2.0
 ![autoinjector_2_system](https://user-images.githubusercontent.com/60007263/207665344-35e8f56a-a40b-4dce-8dff-3479653bf2f0.png)
 -------------
+**Note: if you're trying to use Autoinjector 2.0 at UMN (using IR2000 camera instead of MicroManager based cameras and a MFC1 focus controller instead of comptuterized Zeiss microscope), see "UMN_Autoinjector_2.1" branch in the [Robotag 2.0 repository](https://github.com/obria006/Robotag_2.0/tree/UMN_Autoinjector_2.1).**
+
 Autoinjector 2.0 is an updated iteration of the original Autoinjector system ([GitHub - Python3 branch](https://github.com/bsbrl/autoinjector/tree/Python3), [EMBO Journal Paper](https://www.embopress.org/doi/full/10.15252/embr.201947880)) designed for conducting automated microinjections in embryonic mouse brain tissue and human brain organoids. Autoinjector 2.0 improves upon the original Autoinjector by acheiving greater levels of automation via updated hardware, more sophisticted software control, and an upgraded user experience. The main improvements include:
 - Zeiss microscope system with automated hardware features including computer controllable objective changer, optovar changer, reflector changer, focus controller, and stage. In addition, the transmitted light source and epifluorescence LED light source are computer controllable.
 - Updated pressure control system with computer controllable option for high pressure unclogging of the microinjection needle.
